@@ -129,6 +129,7 @@ namespace AppStrings {
     extern const wchar_t* Toolbar_Tooltip_AnimNext;
     extern const wchar_t* Toolbar_Tooltip_AnimDirtyOn;
     extern const wchar_t* Toolbar_Tooltip_AnimDirtyOff;
+    extern const wchar_t* Toolbar_Tooltip_AnimSpeed;
 
     // OSD Messages
     extern const wchar_t* OSD_Copied;

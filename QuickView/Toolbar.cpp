@@ -726,50 +726,71 @@ void Toolbar::Render(ID2D1RenderTarget *pRT) {
     pRT->PopLayer();
   }
 
-  for (const auto &btn : m_buttons) {
-    const wchar_t *tipText = GetTooltipText(btn);
-    if (btn.isHovered && tipText && tipText[0] != 0) {
-      static ComPtr<IDWriteTextFormat> tooltipFormat;
-      static float tooltipScale = 0.0f;
-      if (tooltipFormat && fabsf(tooltipScale - m_uiScale) >= 0.001f) {
-        tooltipFormat.Reset();
-      }
-      if (!tooltipFormat && m_dwriteFactory) {
-        m_dwriteFactory->CreateTextFormat(
-            L"Segoe UI", NULL, DWRITE_FONT_WEIGHT_NORMAL,
-            DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
-            12.0f * m_uiScale, L"en-us", &tooltipFormat);
-        if (tooltipFormat) {
-          tooltipFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-          tooltipFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-          tooltipScale = m_uiScale;
-        }
-      }
+  const wchar_t *activeTip = nullptr;
+  D2D1_RECT_F activeRect = {0, 0, 0, 0};
 
-      if (tooltipFormat) {
-        size_t tipLen = wcslen(tipText);
-        ComPtr<IDWriteTextLayout> textLayout;
-        float tipWidth = tipLen * 10.0f * m_uiScale + 16.0f * m_uiScale;
-        if (m_dwriteFactory) {
-          m_dwriteFactory->CreateTextLayout(tipText, (UINT32)tipLen, tooltipFormat.Get(), 500.0f * m_uiScale, 40.0f * m_uiScale, &textLayout);
-          if (textLayout) {
-            DWRITE_TEXT_METRICS metrics;
-            textLayout->GetMetrics(&metrics);
-            tipWidth = metrics.width + 16.0f * m_uiScale;
-          }
-        }
-        float tipHeight = 22.0f * m_uiScale;
-        float tipX = (btn.rect.left + btn.rect.right) / 2 - tipWidth / 2;
-        float tipY = m_bgRect.rect.top - tipHeight - 8.0f * m_uiScale;
-        if (tipX < 5.0f * m_uiScale) tipX = 5.0f * m_uiScale;
-        D2D1_RECT_F tipRect = D2D1::RectF(tipX, tipY, tipX + tipWidth, tipY + tipHeight);
-        ComPtr<ID2D1SolidColorBrush> tipBg;
-        D2D1_COLOR_F tipBgBase = isLight ? D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.95f) : D2D1::ColorF(0.15f, 0.15f, 0.15f, 0.95f);
-        pRT->CreateSolidColorBrush(tipBgBase, &tipBg);
-        pRT->FillRoundedRectangle(D2D1::RoundedRect(tipRect, 4.0f * m_uiScale, 4.0f * m_uiScale), tipBg.Get());
-        pRT->DrawText(tipText, (UINT32)tipLen, tooltipFormat.Get(), tipRect, m_brushIcon.Get());
-      }
+  for (const auto &btn : m_buttons) {
+    if (btn.isHovered) {
+      activeTip = GetTooltipText(btn);
+      activeRect = btn.rect;
       break;
+    }
+  }
+
+  if (!activeTip && m_animMode && m_animSpeedHover) {
+    activeTip = AppStrings::Toolbar_Tooltip_AnimSpeed;
+    activeRect = m_animSpeedRect;
+  }
+
+  if (activeTip && activeTip[0] != 0) {
+    static ComPtr<IDWriteTextFormat> tooltipFormat;
+    static float tooltipScale = 0.0f;
+    if (tooltipFormat && fabsf(tooltipScale - m_uiScale) >= 0.001f) {
+      tooltipFormat.Reset();
+    }
+    if (!tooltipFormat && m_dwriteFactory) {
+      m_dwriteFactory->CreateTextFormat(
+          L"Segoe UI", NULL, DWRITE_FONT_WEIGHT_NORMAL,
+          DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+          12.0f * m_uiScale, L"en-us", &tooltipFormat);
+      if (tooltipFormat) {
+        tooltipFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+        tooltipFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+        tooltipScale = m_uiScale;
+      }
+    }
+
+    if (tooltipFormat) {
+      size_t tipLen = wcslen(activeTip);
+      ComPtr<IDWriteTextLayout> textLayout;
+      float tipWidth = tipLen * 10.0f * m_uiScale + 16.0f * m_uiScale;
+      if (m_dwriteFactory) {
+        m_dwriteFactory->CreateTextLayout(activeTip, (UINT32)tipLen,
+                                          tooltipFormat.Get(), 500.0f * m_uiScale,
+                                          40.0f * m_uiScale, &textLayout);
+        if (textLayout) {
+          DWRITE_TEXT_METRICS metrics;
+          textLayout->GetMetrics(&metrics);
+          tipWidth = metrics.width + 16.0f * m_uiScale;
+        }
+      }
+      float tipHeight = 22.0f * m_uiScale;
+      float tipX = (activeRect.left + activeRect.right) / 2 - tipWidth / 2;
+      float tipY = m_bgRect.rect.top - tipHeight - 8.0f * m_uiScale;
+      if (tipX < 5.0f * m_uiScale)
+        tipX = 5.0f * m_uiScale;
+      D2D1_RECT_F tipRect =
+          D2D1::RectF(tipX, tipY, tipX + tipWidth, tipY + tipHeight);
+      ComPtr<ID2D1SolidColorBrush> tipBg;
+      D2D1_COLOR_F tipBgBase =
+          isLight ? D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.95f)
+                  : D2D1::ColorF(0.15f, 0.15f, 0.15f, 0.95f);
+      pRT->CreateSolidColorBrush(tipBgBase, &tipBg);
+      pRT->FillRoundedRectangle(
+          D2D1::RoundedRect(tipRect, 4.0f * m_uiScale, 4.0f * m_uiScale),
+          tipBg.Get());
+      pRT->DrawText(activeTip, (UINT32)tipLen, tooltipFormat.Get(), tipRect,
+                    m_brushIcon.Get());
     }
   }
 }

@@ -8248,7 +8248,7 @@ SKIP_EDGE_NAV:;
         if (g_config.InvertWheel) delta = -delta;
 
         bool isCtrl = (GET_KEYSTATE_WPARAM(wParam) & MK_CONTROL) != 0;
-        bool isAlt = (GET_KEYSTATE_WPARAM(wParam) & MK_ALT) != 0;
+        bool isAlt = (GetKeyState(VK_MENU) & 0x8000) != 0;
 
         if (isAlt) {
             g_config.WheelZoomSpeed += (delta > 0) ? 5.0f : -5.0f;
@@ -8260,8 +8260,11 @@ SKIP_EDGE_NAV:;
             return 0;
         }
 
-        bool wheelPrimaryNavigate = (g_config.WheelActionMode == 1);
-        bool shouldNavigate = wheelPrimaryNavigate ? !isCtrl : isCtrl;
+        // [Fix] Resolve conflict between WheelActionMode and Ctrl modifier.
+        // Rule: Ctrl + Wheel ALWAYS means "Locked-Window Zoom".
+        // If WheelActionMode is Navigate (1), then Wheel (without Ctrl) means Navigate.
+        // If WheelActionMode is Zoom (0), then Wheel (without Ctrl) means Smart Zoom.
+        bool shouldNavigate = (g_config.WheelActionMode == 1) && !isCtrl;
 
         if (IsCompareModeActive()) {
             if (shouldNavigate) {
@@ -8356,6 +8359,11 @@ SKIP_EDGE_NAV:;
         }
         break;
 
+    case WM_SYSKEYUP:
+    case WM_KEYUP:
+        if (wParam == VK_MENU) return 0; // 拦截 Alt 释放，防止进入菜单循环导致焦点丢失
+        break;
+
     case WM_SYSKEYDOWN:
     case WM_KEYDOWN: {
         // Verification Control (Phase 5 - Ctrl+1..5)
@@ -8445,13 +8453,13 @@ SKIP_EDGE_NAV:;
         bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
         bool alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
         
-        // ?F10 绌?(F10 閫氬父浜х敓 WM_SYSKEYDOWN)
-        // 鍏朵粬绯荤粺閿粛浜ょ粰 DefWindowProc 澶勭悊
-        if (message == WM_SYSKEYDOWN && wParam != VK_F10 && wParam != VK_LEFT && wParam != VK_RIGHT) {
-            break; // 鍏朵粬绯荤粺閿氦缁欓粯璁ゅ?
+        // [Fix] 增加对 VK_MENU 的排除，防止 Alt 键交给 DefWindowProc 触发菜单系统
+        if (message == WM_SYSKEYDOWN && wParam != VK_F10 && wParam != VK_LEFT && wParam != VK_RIGHT && wParam != VK_MENU) {
+            break; // 其他系统键交给默认处理
         }
         
         switch (wParam) {
+        case VK_MENU: return 0; // 拦截 Alt 键按下，配合 WM_SYSKEYUP 彻底消除菜单循环问题
         // Navigation
         case VK_LEFT: 
             if (alt && g_imageResource.animator) {

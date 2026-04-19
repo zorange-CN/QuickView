@@ -153,6 +153,7 @@ const wchar_t *Toolbar_Tooltip_AnimPrev = nullptr;
 const wchar_t *Toolbar_Tooltip_AnimNext = nullptr;
 const wchar_t *Toolbar_Tooltip_AnimDirtyOn = nullptr;
 const wchar_t *Toolbar_Tooltip_AnimDirtyOff = nullptr;
+const wchar_t *Toolbar_Tooltip_AnimSpeed = nullptr;
 
 
 const wchar_t *OSD_Copied = nullptr;
@@ -535,7 +536,7 @@ struct EN {
   static constexpr const wchar_t *Toolbar_Tooltip_RotateR = L"Rotate Right (R)";
   static constexpr const wchar_t *Toolbar_Tooltip_FlipH =
       L"Flip Horizontal (H)";
-  static constexpr const wchar_t *Toolbar_Tooltip_Lock = L"Lock Window";
+  static constexpr const wchar_t *Toolbar_Tooltip_Lock = L"Lock Window (Temp)";
   static constexpr const wchar_t *Toolbar_Tooltip_Unlock = L"Unlock Window";
   static constexpr const wchar_t *Toolbar_Tooltip_Gallery = L"Gallery (T)";
   static constexpr const wchar_t *Toolbar_Tooltip_Info = L"Info Panel";
@@ -577,6 +578,7 @@ struct EN {
   static constexpr const wchar_t *Toolbar_Tooltip_AnimNext = L"Next Frame";
   static constexpr const wchar_t *Toolbar_Tooltip_AnimDirtyOn = L"Dirty Rect Debug: ON";
   static constexpr const wchar_t *Toolbar_Tooltip_AnimDirtyOff = L"Dirty Rect Debug: OFF";
+  static constexpr const wchar_t *Toolbar_Tooltip_AnimSpeed = L"Animation Speed";
 
 
   // OSD
@@ -798,8 +800,8 @@ struct EN {
       L"Right Button Drag Zoom";
   static constexpr const wchar_t *Settings_Label_WheelZoomSpeed = L"Wheel Zoom Speed";
   static constexpr const wchar_t *Settings_Label_RightDragZoomSpeed = L"Right Drag Zoom Speed";
-  static constexpr const wchar_t *OSD_WheelZoomSpeed = L"Zoom Speed: ";
-  static constexpr const wchar_t *Help_Action_AdjustZoomSpeed = L"Adjust Zoom Speed";
+  static constexpr const wchar_t *OSD_WheelZoomSpeed = L"Zoom Speed (Temp): ";
+  static constexpr const wchar_t *Help_Action_AdjustZoomSpeed = L"Temporarily Adjust Zoom Speed";
   static constexpr const wchar_t *Help_Action_LockWindowZoom = L"Temporarily Lock Window Zoom";
   static constexpr const wchar_t *Settings_Label_InvertButtons =
       L"Invert Side Buttons";
@@ -1193,8 +1195,8 @@ struct CN {
       L"右键拖动缩放";
   static constexpr const wchar_t *Settings_Label_WheelZoomSpeed = L"滚轮缩放速度";
   static constexpr const wchar_t *Settings_Label_RightDragZoomSpeed = L"右键拖拽缩放速度";
-  static constexpr const wchar_t *OSD_WheelZoomSpeed = L"缩放速度: ";
-  static constexpr const wchar_t *Help_Action_AdjustZoomSpeed = L"调节缩放速度";
+  static constexpr const wchar_t *OSD_WheelZoomSpeed = L"缩放速度(临时): ";
+  static constexpr const wchar_t *Help_Action_AdjustZoomSpeed = L"临时调节缩放速度";
   static constexpr const wchar_t *Help_Action_LockWindowZoom = L"临时锁定窗口缩放";
   static constexpr const wchar_t *Settings_Label_InvertButtons = L"反转侧键";
   static constexpr const wchar_t *Settings_Label_ZoomModeIn = L"放大插值算法";
@@ -1388,7 +1390,7 @@ struct CN {
       L"向左旋转 (Shift+R)";
   static constexpr const wchar_t *Toolbar_Tooltip_RotateR = L"向右旋转 (R)";
   static constexpr const wchar_t *Toolbar_Tooltip_FlipH = L"水平翻转 (H)";
-  static constexpr const wchar_t *Toolbar_Tooltip_Lock = L"锁定窗口";
+  static constexpr const wchar_t *Toolbar_Tooltip_Lock = L"锁定窗口(临时)";
   static constexpr const wchar_t *Toolbar_Tooltip_Unlock = L"解锁窗口";
   static constexpr const wchar_t *Toolbar_Tooltip_Gallery = L"缩略图 (T)";
   static constexpr const wchar_t *Toolbar_Tooltip_Info = L"信息面板";
@@ -1428,6 +1430,7 @@ struct CN {
   static constexpr const wchar_t *Toolbar_Tooltip_AnimNext = L"下一帧";
   static constexpr const wchar_t *Toolbar_Tooltip_AnimDirtyOn = L"脏矩形调试: 开";
   static constexpr const wchar_t *Toolbar_Tooltip_AnimDirtyOff = L"脏矩形调试: 关";
+  static constexpr const wchar_t *Toolbar_Tooltip_AnimSpeed = L"动画速度调节";
 
 
   // OSD
@@ -1608,7 +1611,7 @@ struct TW {
       L"向左旋轉 (Shift+R)";
   static constexpr const wchar_t *Toolbar_Tooltip_RotateR = L"向右旋轉 (R)";
   static constexpr const wchar_t *Toolbar_Tooltip_FlipH = L"水平翻轉 (H)";
-  static constexpr const wchar_t *Toolbar_Tooltip_Lock = L"鎖定視窗";
+  static constexpr const wchar_t *Toolbar_Tooltip_Lock = L"鎖定視窗(臨時)";
   static constexpr const wchar_t *Toolbar_Tooltip_Unlock = L"解鎖視窗";
   static constexpr const wchar_t *Toolbar_Tooltip_Gallery = L"縮圖 (T)";
   static constexpr const wchar_t *Toolbar_Tooltip_Info = L"資訊面板";
@@ -1648,6 +1651,7 @@ struct TW {
   static constexpr const wchar_t *Toolbar_Tooltip_AnimNext = L"下一幀";
   static constexpr const wchar_t *Toolbar_Tooltip_AnimDirtyOn = L"髒矩形偵錯: 開";
   static constexpr const wchar_t *Toolbar_Tooltip_AnimDirtyOff = L"髒矩形偵錯: 關";
+  static constexpr const wchar_t *Toolbar_Tooltip_AnimSpeed = L"動畫速度調節";
 
   static constexpr const wchar_t *OSD_Copied = L"已複製!";
   static constexpr const wchar_t *OSD_CoordinatesCopied = L"座標已複製!";
@@ -1787,8 +1791,8 @@ struct TW {
       L"右鍵拖曳縮放";
   static constexpr const wchar_t *Settings_Label_WheelZoomSpeed = L"滾輪縮放速度";
   static constexpr const wchar_t *Settings_Label_RightDragZoomSpeed = L"右鍵拖曳縮放速度";
-  static constexpr const wchar_t *OSD_WheelZoomSpeed = L"縮放速度: ";
-  static constexpr const wchar_t *Help_Action_AdjustZoomSpeed = L"調節縮放速度";
+  static constexpr const wchar_t *OSD_WheelZoomSpeed = L"縮放速度(臨時): ";
+  static constexpr const wchar_t *Help_Action_AdjustZoomSpeed = L"臨時調節縮放速度";
   static constexpr const wchar_t *Help_Action_LockWindowZoom = L"臨時鎖定視窗縮放";
   static constexpr const wchar_t *Settings_Label_InvertButtons = L"反轉側鍵";
   static constexpr const wchar_t *Settings_Label_ZoomModeIn = L"放大插值演算法";
@@ -2115,7 +2119,7 @@ struct JA {
   static constexpr const wchar_t *Toolbar_Tooltip_RotateL = L"左回転 (Shift+R)";
   static constexpr const wchar_t *Toolbar_Tooltip_RotateR = L"右回転 (R)";
   static constexpr const wchar_t *Toolbar_Tooltip_FlipH = L"水平反転 (H)";
-  static constexpr const wchar_t *Toolbar_Tooltip_Lock = L"ウィンドウをロック";
+  static constexpr const wchar_t *Toolbar_Tooltip_Lock = L"ウィンドウをロック(一時的)";
   static constexpr const wchar_t *Toolbar_Tooltip_Unlock =
       L"ウィンドウ固定を解除";
   static constexpr const wchar_t *Toolbar_Tooltip_Gallery = L"ギャラリー (T)";
@@ -2160,6 +2164,7 @@ struct JA {
   static constexpr const wchar_t *Toolbar_Tooltip_AnimNext = L"次のフレーム";
   static constexpr const wchar_t *Toolbar_Tooltip_AnimDirtyOn = L"ダーティ領域デバッグ: オン";
   static constexpr const wchar_t *Toolbar_Tooltip_AnimDirtyOff = L"ダーティ領域デバッグ: オフ";
+  static constexpr const wchar_t *Toolbar_Tooltip_AnimSpeed = L"アニメーション速度";
 
   static constexpr const wchar_t *OSD_Copied = L"コピーしました!";
   static constexpr const wchar_t *OSD_CoordinatesCopied =
@@ -2312,8 +2317,8 @@ struct JA {
       L"右ドラッグでズーム";
   static constexpr const wchar_t *Settings_Label_WheelZoomSpeed = L"ホイールズーム速度";
   static constexpr const wchar_t *Settings_Label_RightDragZoomSpeed = L"右ドラッグズーム速度";
-  static constexpr const wchar_t *OSD_WheelZoomSpeed = L"ズーム速度: ";
-  static constexpr const wchar_t *Help_Action_AdjustZoomSpeed = L"ズーム速度を調整";
+  static constexpr const wchar_t *OSD_WheelZoomSpeed = L"ズーム速度(一時的): ";
+  static constexpr const wchar_t *Help_Action_AdjustZoomSpeed = L"一時的にズーム速度を調整";
   static constexpr const wchar_t *Help_Action_LockWindowZoom = L"ウィンドウのズームを一時的にロック";
   static constexpr const wchar_t *Settings_Label_InvertButtons =
       L"サイドボタン反転";
@@ -2665,7 +2670,7 @@ struct RU {
   static constexpr const wchar_t *Toolbar_Tooltip_RotateR = L"Повернуть вправо (R)";
   static constexpr const wchar_t *Toolbar_Tooltip_FlipH =
       L"Отразить по горизонтали (H)";
-  static constexpr const wchar_t *Toolbar_Tooltip_Lock = L"Заблокировать окно";
+  static constexpr const wchar_t *Toolbar_Tooltip_Lock = L"Заблокировать окно (временно)";
   static constexpr const wchar_t *Toolbar_Tooltip_Unlock = L"Разблокировать окно";
   static constexpr const wchar_t *Toolbar_Tooltip_Gallery = L"Галерея (T)";
   static constexpr const wchar_t *Toolbar_Tooltip_Info = L"Информационная панель";
@@ -2707,6 +2712,7 @@ struct RU {
   static constexpr const wchar_t *Toolbar_Tooltip_AnimNext = L"Следующий кадр";
   static constexpr const wchar_t *Toolbar_Tooltip_AnimDirtyOn = L"Отладка вид. обл.: ДА";
   static constexpr const wchar_t *Toolbar_Tooltip_AnimDirtyOff = L"Отладка вид. обл.: НЕТ";
+  static constexpr const wchar_t *Toolbar_Tooltip_AnimSpeed = L"Скорость анимации";
 
 
   // OSD
@@ -2928,8 +2934,8 @@ struct RU {
       L"Масштаб правой кнопкой мыши";
   static constexpr const wchar_t *Settings_Label_WheelZoomSpeed = L"Скорость зума колесиком";
   static constexpr const wchar_t *Settings_Label_RightDragZoomSpeed = L"Скорость зума правой кнопкой";
-  static constexpr const wchar_t *OSD_WheelZoomSpeed = L"Скорость зума: ";
-  static constexpr const wchar_t *Help_Action_AdjustZoomSpeed = L"Настроить скорость зума";
+  static constexpr const wchar_t *OSD_WheelZoomSpeed = L"Скорость зума (временно): ";
+  static constexpr const wchar_t *Help_Action_AdjustZoomSpeed = L"Временно настроить скорость зума";
   static constexpr const wchar_t *Help_Action_LockWindowZoom = L"Временно заблокировать масштаб окна";
   static constexpr const wchar_t *Settings_Label_InvertButtons =
       L"Инвертировать действие боковых кнопок";
@@ -3228,7 +3234,7 @@ struct DE {
       L"Rechts drehen (R)";
   static constexpr const wchar_t *Toolbar_Tooltip_FlipH =
       L"Horizontal spiegeln (H)";
-  static constexpr const wchar_t *Toolbar_Tooltip_Lock = L"Fenster sperren";
+  static constexpr const wchar_t *Toolbar_Tooltip_Lock = L"Fenster sperren (temp)";
   static constexpr const wchar_t *Toolbar_Tooltip_Unlock =
       L"Fenster entsperren";
   static constexpr const wchar_t *Toolbar_Tooltip_Gallery = L"Galerie (T)";
@@ -3276,6 +3282,7 @@ struct DE {
   static constexpr const wchar_t *Toolbar_Tooltip_AnimNext = L"Nächster Frame";
   static constexpr const wchar_t *Toolbar_Tooltip_AnimDirtyOn = L"Dirty Rect Debug: AN";
   static constexpr const wchar_t *Toolbar_Tooltip_AnimDirtyOff = L"Dirty Rect Debug: AUS";
+  static constexpr const wchar_t *Toolbar_Tooltip_AnimSpeed = L"Animationsgeschwindigkeit";
 
   static constexpr const wchar_t *OSD_Copied = L"Kopiert!";
   static constexpr const wchar_t *OSD_CoordinatesCopied =
@@ -3480,8 +3487,8 @@ struct DE {
       L"Zoom mit Rechtsziehen";
   static constexpr const wchar_t *Settings_Label_WheelZoomSpeed = L"Mausrad-Zoomgeschwindigkeit";
   static constexpr const wchar_t *Settings_Label_RightDragZoomSpeed = L"Rechtszieh-Zoomgeschwindigkeit";
-  static constexpr const wchar_t *OSD_WheelZoomSpeed = L"Zoomgeschwindigkeit: ";
-  static constexpr const wchar_t *Help_Action_AdjustZoomSpeed = L"Zoomgeschwindigkeit anpassen";
+  static constexpr const wchar_t *OSD_WheelZoomSpeed = L"Zoomgeschwindigkeit (temp): ";
+  static constexpr const wchar_t *Help_Action_AdjustZoomSpeed = L"Zoomgeschwindigkeit temporär anpassen";
   static constexpr const wchar_t *Help_Action_LockWindowZoom = L"Fensterzoom vorübergehend sperren";
   static constexpr const wchar_t *Settings_Label_InvertButtons =
       L"Seitentasten invertieren";
@@ -3786,7 +3793,7 @@ struct ES {
       L"Girar derecha (R)";
   static constexpr const wchar_t *Toolbar_Tooltip_FlipH =
       L"Voltear horizontal (H)";
-  static constexpr const wchar_t *Toolbar_Tooltip_Lock = L"Bloquear ventana";
+  static constexpr const wchar_t *Toolbar_Tooltip_Lock = L"Bloquear ventana (temporal)";
   static constexpr const wchar_t *Toolbar_Tooltip_Unlock =
       L"Desbloquear ventana";
   static constexpr const wchar_t *Toolbar_Tooltip_Gallery = L"Galería (T)";
@@ -3835,6 +3842,7 @@ struct ES {
   static constexpr const wchar_t *Toolbar_Tooltip_AnimNext = L"Marco siguiente";
   static constexpr const wchar_t *Toolbar_Tooltip_AnimDirtyOn = L"Depuración de Dirty Rect: ACTIVADO";
   static constexpr const wchar_t *Toolbar_Tooltip_AnimDirtyOff = L"Depuración de Dirty Rect: DESACTIVADO";
+  static constexpr const wchar_t *Toolbar_Tooltip_AnimSpeed = L"Velocidad de animación";
 
   static constexpr const wchar_t *OSD_Copied = L"¡Copiado!";
   static constexpr const wchar_t *OSD_CoordinatesCopied =
@@ -4042,8 +4050,8 @@ struct ES {
       L"Zoom con arrastre derecho";
   static constexpr const wchar_t *Settings_Label_WheelZoomSpeed = L"Velocidad de zoom con rueda";
   static constexpr const wchar_t *Settings_Label_RightDragZoomSpeed = L"Velocidad de zoom con arrastre derecho";
-  static constexpr const wchar_t *OSD_WheelZoomSpeed = L"Velocidad de zoom: ";
-  static constexpr const wchar_t *Help_Action_AdjustZoomSpeed = L"Ajustar velocidad de zoom";
+  static constexpr const wchar_t *OSD_WheelZoomSpeed = L"Velocidad de zoom (temporal): ";
+  static constexpr const wchar_t *Help_Action_AdjustZoomSpeed = L"Ajustar velocidad de zoom temporalmente";
   static constexpr const wchar_t *Help_Action_LockWindowZoom = L"Bloquear temporalmente el zoom de la ventana";
   static constexpr const wchar_t *Settings_Label_InvertButtons =
       L"Invertir botones laterales";
@@ -4411,6 +4419,7 @@ template <typename T> void ApplyT() {
   Toolbar_Tooltip_AnimNext = T::Toolbar_Tooltip_AnimNext;
   Toolbar_Tooltip_AnimDirtyOn = T::Toolbar_Tooltip_AnimDirtyOn;
   Toolbar_Tooltip_AnimDirtyOff = T::Toolbar_Tooltip_AnimDirtyOff;
+  Toolbar_Tooltip_AnimSpeed = T::Toolbar_Tooltip_AnimSpeed;
 
   Settings_Header_Professional = T::Settings_Header_Professional;
   Settings_Label_ShowDirtyRect = T::Settings_Label_ShowDirtyRect;
