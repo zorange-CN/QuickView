@@ -4772,6 +4772,7 @@ void LoadConfig() {
     
     // Redundant Alphas Removed (Unified to Geek Glass)
     g_config.NavIndicator = GetPrivateProfileIntW(L"View", L"NavIndicator", 0, iniPath.c_str());
+    if (g_config.NavIndicator > 1) g_config.NavIndicator = 1;
     g_config.EnableCrossMonitor = GetPrivateProfileIntW(L"View", L"EnableCrossMonitor", 0, iniPath.c_str()) != 0;
     g_config.RoundedCorners = GetPrivateProfileIntW(L"View", L"RoundedCorners", 1, iniPath.c_str()) != 0;
     g_config.EnableSmoothScaling = GetPrivateProfileIntW(L"View", L"EnableSmoothScaling", 0, iniPath.c_str()) != 0;
@@ -6320,26 +6321,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
             SetCursor(LoadCursor(nullptr, IDC_WAIT));
             return TRUE;
         }
-        // Edge Nav Cursor: Only for Cursor mode (NavIndicator == 1)
-        if (g_config.EdgeNavClick && g_config.NavIndicator == 1) {
-            if (!g_gallery.IsVisible() && !g_settingsOverlay.IsVisible() && !g_helpOverlay.IsVisible() && !g_dialog.IsVisible) {
-                bool hoverEdge = false;
-                if (IsCompareModeActive()) {
-                    hoverEdge = (g_viewState.EdgeHoverLeft != 0) || (g_viewState.EdgeHoverRight != 0);
-                } else {
-                    hoverEdge = (g_viewState.EdgeHoverState != 0);
-                }
-                if (hoverEdge) {
-                    SetCursor(LoadCursor(nullptr, IDC_HAND));
-                    return TRUE;
-                }
-            }
-        }
-        
-        if (g_viewState.IsDragging) {
-          SetCursor(LoadCursor(nullptr, IDC_SIZEALL));
-          return TRUE;
-        }
 
         // Default Client Cursor - Coordinate with WM_MOUSEMOVE to prevent Win10 flicker
         if (LOWORD(lParam) == HTCLIENT) {
@@ -6926,6 +6907,37 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
      // Mouse Interaction
      case WM_MOUSEMOVE: {
           g_currentCursor = LoadCursor(nullptr, IDC_ARROW);
+          if (g_viewState.IsDragging) {
+              g_currentCursor = LoadCursor(nullptr, IDC_SIZEALL);
+          } else if (g_config.EdgeNavClick && !g_gallery.IsVisible() && !g_settingsOverlay.IsVisible() && !g_helpOverlay.IsVisible() && !g_dialog.IsVisible) {
+              POINT pt = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
+              bool hoverEdge = false;
+              if (g_config.NavIndicator == 0) {
+                  RECT rcv; GetClientRect(hwnd, &rcv);
+                  int w = rcv.right - rcv.left;
+                  int h = rcv.bottom - rcv.top;
+                  if (IsCompareModeActive() && !g_config.DisableEdgeNavInCompare) {
+                      float splitX = (g_compare.mode == ViewMode::CompareWipe)
+                          ? ClampCompareRatio(g_compare.splitRatio) * (float)w
+                          : 0.5f * (float)w;
+                      D2D1_RECT_F leftRect = D2D1::RectF(0.0f, 0.0f, splitX, (float)h);
+                      D2D1_RECT_F rightRect = D2D1::RectF(splitX, 0.0f, (float)w, (float)h);
+                      ComparePane pane = HitTestComparePane(hwnd, pt);
+                      const D2D1_RECT_F paneRect = (pane == ComparePane::Left) ? leftRect : rightRect;
+                      hoverEdge = (HitTestNavButtonInPane(pt, paneRect) != 0);
+                  } else if (!IsCompareModeActive()) {
+                      D2D1_RECT_F fullRect = D2D1::RectF(0.0f, 0.0f, (float)w, (float)h);
+                      hoverEdge = (HitTestNavButtonInPane(pt, fullRect) != 0);
+                  }
+              } else {
+                  if (IsCompareModeActive()) {
+                      hoverEdge = (g_viewState.EdgeHoverLeft != 0) || (g_viewState.EdgeHoverRight != 0);
+                  } else {
+                      hoverEdge = (g_viewState.EdgeHoverState != 0);
+                  }
+              }
+              if (hoverEdge) g_currentCursor = LoadCursor(nullptr, IDC_HAND);
+          }
 
           if (!isTracking) {
              TRACKMOUSEEVENT tme = { sizeof(TRACKMOUSEEVENT), TME_LEAVE, hwnd, 0 };
