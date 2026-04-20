@@ -1597,6 +1597,7 @@ void SettingsOverlay::BuildMenu() {
     tabControl.items.push_back({ AppStrings::Settings_Header_Mouse, OptionType::Header });
     tabControl.items.push_back({ AppStrings::Settings_Label_InvertWheel, OptionType::Toggle, &g_config.InvertWheel });
     tabControl.items.push_back({ AppStrings::Help_Mouse_Wheel, OptionType::Segment, nullptr, nullptr, &g_config.WheelActionMode, nullptr, 0, 0, {AppStrings::Help_Action_Zoom, AppStrings::Help_Action_NextPrev} });
+    tabControl.items.push_back({ AppStrings::Settings_Label_ThumbWheel, OptionType::Segment, nullptr, nullptr, &g_config.ThumbWheelMode, nullptr, 0, 0, {AppStrings::Help_Action_NextPrev, AppStrings::Help_Action_Zoom} });
     tabControl.items.push_back({ AppStrings::Settings_Label_ZoomSnapDamping, OptionType::Toggle, &g_config.EnableZoomSnapDamping });
     tabControl.items.push_back({ AppStrings::Settings_Label_MouseAnchorZoom, OptionType::Toggle, &g_config.MouseAnchoredWindowZoom });
     tabControl.items.push_back({ AppStrings::Settings_Label_RightButtonDragZoom, OptionType::Toggle, &g_config.RightButtonDragZoom });

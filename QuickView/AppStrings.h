@@ -267,6 +267,7 @@ namespace AppStrings {
     extern const wchar_t* Settings_Label_MouseAnchorZoom;
     extern const wchar_t* Settings_Label_RightButtonDragZoom;
     extern const wchar_t* Settings_Label_WheelZoomSpeed;
+    extern const wchar_t* Settings_Label_ThumbWheel;
     extern const wchar_t* Settings_Label_RightDragZoomSpeed;
     extern const wchar_t* OSD_WheelZoomSpeed;
     extern const wchar_t* Help_Action_AdjustZoomSpeed;

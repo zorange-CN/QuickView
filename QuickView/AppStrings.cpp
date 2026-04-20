@@ -230,6 +230,7 @@ const wchar_t *Settings_Label_ZoomSnapDamping = nullptr; // New
 const wchar_t *Settings_Label_MouseAnchorZoom = nullptr;
 const wchar_t *Settings_Label_RightButtonDragZoom = nullptr;
 const wchar_t *Settings_Label_WheelZoomSpeed = nullptr;
+const wchar_t *Settings_Label_ThumbWheel = nullptr;
 const wchar_t *Settings_Label_RightDragZoomSpeed = nullptr;
 const wchar_t *OSD_WheelZoomSpeed = nullptr;
 const wchar_t *Help_Action_AdjustZoomSpeed = nullptr;
@@ -799,6 +800,7 @@ struct EN {
   static constexpr const wchar_t *Settings_Label_RightButtonDragZoom =
       L"Right Button Drag Zoom";
   static constexpr const wchar_t *Settings_Label_WheelZoomSpeed = L"Wheel Zoom Speed";
+  static constexpr const wchar_t *Settings_Label_ThumbWheel = L"Thumb Wheel";
   static constexpr const wchar_t *Settings_Label_RightDragZoomSpeed = L"Right Drag Zoom Speed";
   static constexpr const wchar_t *OSD_WheelZoomSpeed = L"Zoom Speed (Temp): ";
   static constexpr const wchar_t *Help_Action_AdjustZoomSpeed = L"Temporarily Adjust Zoom Speed";
@@ -1194,6 +1196,7 @@ struct CN {
   static constexpr const wchar_t *Settings_Label_RightButtonDragZoom =
       L"右键拖动缩放";
   static constexpr const wchar_t *Settings_Label_WheelZoomSpeed = L"滚轮缩放速度";
+  static constexpr const wchar_t *Settings_Label_ThumbWheel = L"拇指滚轮";
   static constexpr const wchar_t *Settings_Label_RightDragZoomSpeed = L"右键拖拽缩放速度";
   static constexpr const wchar_t *OSD_WheelZoomSpeed = L"缩放速度(临时): ";
   static constexpr const wchar_t *Help_Action_AdjustZoomSpeed = L"临时调节缩放速度";
@@ -1790,6 +1793,7 @@ struct TW {
   static constexpr const wchar_t *Settings_Label_RightButtonDragZoom =
       L"右鍵拖曳縮放";
   static constexpr const wchar_t *Settings_Label_WheelZoomSpeed = L"滾輪縮放速度";
+  static constexpr const wchar_t *Settings_Label_ThumbWheel = L"拇指滾輪";
   static constexpr const wchar_t *Settings_Label_RightDragZoomSpeed = L"右鍵拖曳縮放速度";
   static constexpr const wchar_t *OSD_WheelZoomSpeed = L"縮放速度(臨時): ";
   static constexpr const wchar_t *Help_Action_AdjustZoomSpeed = L"臨時調節縮放速度";
@@ -2316,6 +2320,7 @@ struct JA {
   static constexpr const wchar_t *Settings_Label_RightButtonDragZoom =
       L"右ドラッグでズーム";
   static constexpr const wchar_t *Settings_Label_WheelZoomSpeed = L"ホイールズーム速度";
+  static constexpr const wchar_t *Settings_Label_ThumbWheel = L"サムホイール";
   static constexpr const wchar_t *Settings_Label_RightDragZoomSpeed = L"右ドラッグズーム速度";
   static constexpr const wchar_t *OSD_WheelZoomSpeed = L"ズーム速度(一時的): ";
   static constexpr const wchar_t *Help_Action_AdjustZoomSpeed = L"一時的にズーム速度を調整";
@@ -2933,6 +2938,7 @@ struct RU {
   static constexpr const wchar_t *Settings_Label_RightButtonDragZoom =
       L"Масштаб правой кнопкой мыши";
   static constexpr const wchar_t *Settings_Label_WheelZoomSpeed = L"Скорость зума колесиком";
+  static constexpr const wchar_t *Settings_Label_ThumbWheel = L"Боковое колесико";
   static constexpr const wchar_t *Settings_Label_RightDragZoomSpeed = L"Скорость зума правой кнопкой";
   static constexpr const wchar_t *OSD_WheelZoomSpeed = L"Скорость зума (временно): ";
   static constexpr const wchar_t *Help_Action_AdjustZoomSpeed = L"Временно настроить скорость зума";
@@ -3486,6 +3492,7 @@ struct DE {
   static constexpr const wchar_t *Settings_Label_RightButtonDragZoom =
       L"Zoom mit Rechtsziehen";
   static constexpr const wchar_t *Settings_Label_WheelZoomSpeed = L"Mausrad-Zoomgeschwindigkeit";
+  static constexpr const wchar_t *Settings_Label_ThumbWheel = L"Daumenrad";
   static constexpr const wchar_t *Settings_Label_RightDragZoomSpeed = L"Rechtszieh-Zoomgeschwindigkeit";
   static constexpr const wchar_t *OSD_WheelZoomSpeed = L"Zoomgeschwindigkeit (temp): ";
   static constexpr const wchar_t *Help_Action_AdjustZoomSpeed = L"Zoomgeschwindigkeit temporär anpassen";
@@ -4049,6 +4056,7 @@ struct ES {
   static constexpr const wchar_t *Settings_Label_RightButtonDragZoom =
       L"Zoom con arrastre derecho";
   static constexpr const wchar_t *Settings_Label_WheelZoomSpeed = L"Velocidad de zoom con rueda";
+  static constexpr const wchar_t *Settings_Label_ThumbWheel = L"Rueda del pulgar";
   static constexpr const wchar_t *Settings_Label_RightDragZoomSpeed = L"Velocidad de zoom con arrastre derecho";
   static constexpr const wchar_t *OSD_WheelZoomSpeed = L"Velocidad de zoom (temporal): ";
   static constexpr const wchar_t *Help_Action_AdjustZoomSpeed = L"Ajustar velocidad de zoom temporalmente";
@@ -4546,6 +4554,7 @@ template <typename T> void ApplyT() {
   Settings_Label_MouseAnchorZoom = T::Settings_Label_MouseAnchorZoom;
   Settings_Label_RightButtonDragZoom = T::Settings_Label_RightButtonDragZoom;
   Settings_Label_WheelZoomSpeed = T::Settings_Label_WheelZoomSpeed;
+  Settings_Label_ThumbWheel = T::Settings_Label_ThumbWheel;
   Settings_Label_RightDragZoomSpeed = T::Settings_Label_RightDragZoomSpeed;
   OSD_WheelZoomSpeed = T::OSD_WheelZoomSpeed;
   Help_Action_AdjustZoomSpeed = T::Help_Action_AdjustZoomSpeed;
