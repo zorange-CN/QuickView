@@ -286,19 +286,23 @@ bool DisplayColorInfo::QueryForMonitor(HMONITOR monitor, DisplayColorState* stat
             
             // Log the multi-tier detection results via ETW
             QV_LOG("HardwareLuminancePipeline",
-                TraceLoggingFloat32(iccPeakNits, "Level1_ICC"),
-                TraceLoggingFloat32(winrtMaxNits, "Level2_WinRT"),
-                TraceLoggingFloat32(dxgiPeak, "Level3_DXGI")
+                TraceLoggingFloat32(winrtMaxNits, "Level1_WinRT"),
+                TraceLoggingFloat32(dxgiPeak, "Level2_DXGI"),
+                TraceLoggingFloat32(iccPeakNits, "Level3_ICC")
             );
 
-            if (iccPeakNits > 0.0f) {
-                stateOut->maxLuminanceNits = iccPeakNits;
-            }
-            // Tier 2: OS Advanced Color Info
-            else if (hasWinRT && winrtMaxNits > 0.0f) {
+            // Tier 1: OS Advanced Color Info (Highest precision for HDR)
+            if (hasWinRT && winrtMaxNits > 0.0f) {
                 stateOut->maxLuminanceNits = winrtMaxNits;
             }
-            // Tier 3: DXGI desc1.MaxLuminance (already set)
+            // Tier 2: DXGI desc1.MaxLuminance (Fallback for HDR)
+            else if (dxgiPeak > 0.0f) {
+                stateOut->maxLuminanceNits = dxgiPeak;
+            }
+            // Tier 3: ICC Profile (Fallback for SDR)
+            else if (iccPeakNits > 0.0f) {
+                stateOut->maxLuminanceNits = iccPeakNits;
+            }
 
             if (hasWinRT && winrtSdrWhite > 0.0f) {
                 stateOut->sdrWhiteLevelNits = winrtSdrWhite;
