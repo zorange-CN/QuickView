@@ -61,8 +61,8 @@ const wchar_t *Settings_Status_NoWritePerm = nullptr;
 const wchar_t *Settings_Status_Enabled = nullptr;
 
 const wchar_t *Settings_Header_PoweredBy = nullptr;
-const wchar_t *Settings_Text_Copyright = nullptr;
-const wchar_t *Settings_Text_License = nullptr;
+const wchar_t *Settings_Text_Copyright = L"Copyright \u00A9 2025-%s Vivor Loong (Github@justnullname)";
+const wchar_t *Settings_Text_License = L"Licensed under GNU GPL v3.0";
 
 // Context Menu
 const wchar_t *Context_Open = nullptr;
@@ -519,10 +519,8 @@ struct EN {
   static constexpr const wchar_t *Settings_Status_Enabled = L"Enabled";
 
   static constexpr const wchar_t *Settings_Header_PoweredBy = L"Powered by";
-  static constexpr const wchar_t *Settings_Text_Copyright =
-      L"Copyright (c) 2025 justnullname";
-  static constexpr const wchar_t *Settings_Text_License =
-      L"Licensed under the GNU GPL v3.0";
+
+
 
   // Messages
   static constexpr const wchar_t *Message_SaveErrorTitle = L"Error";
@@ -1084,10 +1082,8 @@ struct CN {
   static constexpr const wchar_t *Settings_Status_Enabled = L"已启用";
 
   static constexpr const wchar_t *Settings_Header_PoweredBy = L"驱动技术";
-  static constexpr const wchar_t *Settings_Text_Copyright =
-      L"Copyright (c) 2025 justnullname";
-  static constexpr const wchar_t *Settings_Text_License =
-      L"基于 GNU GPL v3.0 协议";
+
+
 
   static constexpr const wchar_t *Settings_Tab_Visuals = L"界面";
   static constexpr const wchar_t *Settings_Tab_Controls = L"操作";
@@ -1601,10 +1597,8 @@ struct TW {
   static constexpr const wchar_t *Settings_Status_NoWritePerm = L"無寫入權限!";
   static constexpr const wchar_t *Settings_Status_Enabled = L"已啟用";
   static constexpr const wchar_t *Settings_Header_PoweredBy = L"驅動技術";
-  static constexpr const wchar_t *Settings_Text_Copyright =
-      L"Copyright (c) 2025 justnullname";
-  static constexpr const wchar_t *Settings_Text_License =
-      L"基於 GNU GPL v3.0 協議";
+
+
   static constexpr const wchar_t *Message_SaveErrorTitle = L"錯誤";
   static constexpr const wchar_t *Message_SaveErrorContent =
       L"儲存檔案失敗。檔案是否被佔用?";
@@ -2112,9 +2106,8 @@ struct JA {
       L"書き込み権限なし!";
   static constexpr const wchar_t *Settings_Status_Enabled = L"有効";
   static constexpr const wchar_t *Settings_Header_PoweredBy = L"Powered by";
-  static constexpr const wchar_t *Settings_Text_Copyright =
-      L"Copyright (c) 2025 justnullname\nGNU GPL v3.0ライセンス";
-  static constexpr const wchar_t *Settings_Text_License = L"GNU GPL v3.0ライセンス";
+
+
   static constexpr const wchar_t *Message_SaveErrorTitle = L"エラー";
   static constexpr const wchar_t *Message_SaveErrorContent =
       L"ファイルの保存に失敗しました。ファイルがロックされていませんか?";
@@ -2657,10 +2650,8 @@ struct RU {
   static constexpr const wchar_t *Settings_Status_Enabled = L"Включено";
   
   static constexpr const wchar_t *Settings_Header_PoweredBy = L"Работает на";
-  static constexpr const wchar_t *Settings_Text_Copyright =
-      L"Copyright (c) 2026 justnullname";
-  static constexpr const wchar_t *Settings_Text_License =
-      L"Лицензировано под GNU GPL v3.0";
+
+
 
   // Messages
   static constexpr const wchar_t *Message_SaveErrorTitle = L"Ошибка";
@@ -3225,10 +3216,8 @@ struct DE {
       L"Keine Schreibrechte!";
   static constexpr const wchar_t *Settings_Status_Enabled = L"Aktiviert";
   static constexpr const wchar_t *Settings_Header_PoweredBy = L"Powered by";
-  static constexpr const wchar_t *Settings_Text_Copyright =
-      L"Copyright (c) 2025 justnullname";
-  static constexpr const wchar_t *Settings_Text_License =
-      L"Lizenziert unter GNU GPL v3.0";
+
+
   static constexpr const wchar_t *Message_SaveErrorTitle = L"Fehler";
   static constexpr const wchar_t *Message_SaveErrorContent =
       L"Datei konnte nicht gespeichert werden. Datei gesperrt?";
@@ -3784,10 +3773,8 @@ struct ES {
   static constexpr const wchar_t *Settings_Status_Enabled = L"Habilitado";
   static constexpr const wchar_t *Settings_Header_PoweredBy =
       L"Desarrollado con";
-  static constexpr const wchar_t *Settings_Text_Copyright =
-      L"Copyright (c) 2025 justnullname";
-  static constexpr const wchar_t *Settings_Text_License =
-      L"Licenciado bajo GNU GPL v3.0";
+
+
   static constexpr const wchar_t *Message_SaveErrorTitle = L"Error";
   static constexpr const wchar_t *Message_SaveErrorContent =
       L"No se pudo guardar el archivo. ¿Está bloqueado?";
@@ -4342,8 +4329,8 @@ template <typename T> void ApplyT() {
   Settings_Status_Enabled = T::Settings_Status_Enabled;
 
   Settings_Header_PoweredBy = T::Settings_Header_PoweredBy;
-  Settings_Text_Copyright = T::Settings_Text_Copyright;
-  Settings_Text_License = T::Settings_Text_License;
+
+
 
   Context_Open = T::Context_Open;
   Context_OpenWith = T::Context_OpenWith;

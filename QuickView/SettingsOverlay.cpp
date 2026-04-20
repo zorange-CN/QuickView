@@ -915,11 +915,11 @@ void SettingsOverlay::CreateResources(ID2D1DeviceContext* pRT) {
 // Calculate Rects for Link Buttons (GitHub, Run Report, Hotkeys)
 struct LinkRects { D2D1_RECT_F github; D2D1_RECT_F issues; D2D1_RECT_F keys; };
 
-static LinkRects GetLinkButtonRects(const D2D1_RECT_F& itemRect) {
+static LinkRects GetLinkButtonRects(const D2D1_RECT_F& itemRect, float s = 1.0f) {
     LinkRects r;
     // 3 Equal Columns with gaps
-    float totalW = itemRect.right - itemRect.left - 2.0f; // Small buffer for clipping
-    float gap = 8.0f;
+    float totalW = itemRect.right - itemRect.left - 2.0f * s; // Small buffer for clipping
+    float gap = 8.0f * s;
     float btnW = (totalW - 2 * gap) / 3.0f;
     
     float x = itemRect.left;
@@ -2342,9 +2342,10 @@ void SettingsOverlay::Render(ID2D1DeviceContext* pRT, float winW, float winH) {
                 // This means the visual center axis should be the center of (Icon + "QuickView").
                 // Version text hangs to the right.
                 
-                float iconSize = 64.0f; 
-                float paddingX = 16.0f;
-                float titleW = 120.0f; // Approx width for "QuickView"
+                const float s = m_uiScale;
+                float iconSize = 64.0f * s; 
+                float paddingX = 16.0f * s;
+                float titleW = 120.0f * s; // Approx width for "QuickView"
                 float centerBaseW = iconSize + paddingX + titleW;
                 
                 // Calculate Start X so that (Icon + Title) is centered
@@ -2367,24 +2368,24 @@ void SettingsOverlay::Render(ID2D1DeviceContext* pRT, float winW, float winH) {
                 // Title "QuickView"
                 // Fix C2065: Use explicit width or re-declare. 
                 // Since we align left of textX, we can give it ample width.
-                float maxTextW = 300.0f; 
+                float maxTextW = contentW - (textX - contentX) - paddingX; 
                 
-                D2D1_RECT_F titleRect = D2D1::RectF(textX, contentY + 5, textX + maxTextW, contentY + 40);
+                D2D1_RECT_F titleRect = D2D1::RectF(textX, contentY + 10 * s, textX + maxTextW, contentY + 42 * s);
                 m_textFormatHeader->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
                 m_textFormatHeader->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
                 pRT->DrawText(item.label.c_str(), item.label.length(), m_textFormatHeader.Get(), titleRect, m_brushText.Get());
                 
                 // Version (Gray)
-                D2D1_RECT_F verRect = D2D1::RectF(textX, contentY + 40, textX + maxTextW, contentY + 70);
+                D2D1_RECT_F verRect = D2D1::RectF(textX, contentY + 36 * s, textX + maxTextW, contentY + 62 * s);
                 pRT->DrawText(item.disabledText.c_str(), item.disabledText.length(), m_textFormatItem.Get(), verRect, m_brushTextDim.Get());
 
-                contentY += iconSize + 30.0f; // Padding below header
+                contentY += iconSize + 12.0f * s; // Padding below header (Even more compact)
                 continue;
             }
             else if (item.type == OptionType::AboutVersionCard) {
                 // Now acting as "Check for Updates" Button (Full Width)
-                D2D1_RECT_F btnRect = D2D1::RectF(contentX, contentY, contentX + contentW, contentY + 50); // Tall button
-                D2D1_ROUNDED_RECT roundedBtn = D2D1::RoundedRect(btnRect, 6.0f, 6.0f);
+                D2D1_RECT_F btnRect = D2D1::RectF(contentX, contentY, contentX + contentW, contentY + 40 * s); // Slimmer button
+                D2D1_ROUNDED_RECT roundedBtn = D2D1::RoundedRect(btnRect, 6.0f * s, 6.0f * s);
                 
                 // Fill Blue (Accent)
                 pRT->FillRoundedRectangle(roundedBtn, m_brushAccent.Get());
@@ -2409,16 +2410,16 @@ void SettingsOverlay::Render(ID2D1DeviceContext* pRT, float winW, float winH) {
                 m_textFormatItem->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING); // Reset
                 m_textFormatItem->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
 
-                contentY += 70.0f; // Button + Padding
+                contentY += 56.0f * s; // Button + Padding (Tightened)
                 continue;
             }
             else if (item.type == OptionType::AboutLinks) {
                 // 3 Columns: GitHub, Issues, Hotkeys
-                LinkRects r = GetLinkButtonRects(D2D1::RectF(contentX, contentY, contentX + contentW, contentY + 40));
+                LinkRects r = GetLinkButtonRects(D2D1::RectF(contentX, contentY, contentX + contentW, contentY + 32 * s), s);
 
                 // GitHub
                 {
-                     D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(r.github, 4.0f, 4.0f);
+                     D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(r.github, 4.0f * s, 4.0f * s);
                      if (m_hoverLinkIndex == 0) pRT->FillRoundedRectangle(rr, m_brushControlBg.Get());
                      pRT->DrawRoundedRectangle(rr, m_brushAccent.Get(), 1.0f); 
                      
@@ -2449,7 +2450,7 @@ void SettingsOverlay::Render(ID2D1DeviceContext* pRT, float winW, float winH) {
 
                 // Issues
                 {
-                     D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(r.issues, 4.0f, 4.0f);
+                     D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(r.issues, 4.0f * s, 4.0f * s);
                      if (m_hoverLinkIndex == 1) pRT->FillRoundedRectangle(rr, m_brushControlBg.Get());
                      pRT->DrawRoundedRectangle(rr, m_brushAccent.Get(), 1.0f); 
                      
@@ -2480,7 +2481,7 @@ void SettingsOverlay::Render(ID2D1DeviceContext* pRT, float winW, float winH) {
 
                 // Hotkeys
                 {
-                     D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(r.keys, 4.0f, 4.0f);
+                     D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(r.keys, 4.0f * s, 4.0f * s);
                      if (m_hoverLinkIndex == 2) pRT->FillRoundedRectangle(rr, m_brushControlBg.Get());
                      pRT->DrawRoundedRectangle(rr, m_brushAccent.Get(), 1.0f); 
                      
@@ -3315,7 +3316,7 @@ SettingsAction SettingsOverlay::OnMouseMove(float x, float y) {
 
                     // Sub-item Hit Testing
                     if (item.type == OptionType::AboutLinks) {
-                        LinkRects r = GetLinkButtonRects(item.rect);
+                        LinkRects r = GetLinkButtonRects(item.rect, m_uiScale);
                         if (x >= r.github.left && x <= r.github.right && y >= r.github.top && y <= r.github.bottom) m_hoverLinkIndex = 0;
                         else if (x >= r.issues.left && x <= r.issues.right && y >= r.issues.top && y <= r.issues.bottom) m_hoverLinkIndex = 1;
                         else if (x >= r.keys.left && x <= r.keys.right && y >= r.keys.top && y <= r.keys.bottom) m_hoverLinkIndex = 2;
@@ -3546,7 +3547,7 @@ SettingsAction SettingsOverlay::OnLButtonDown(float x, float y) {
         }
         // About: Links Row
         if (m_pHoverItem->type == OptionType::AboutLinks) {
-             LinkRects r = GetLinkButtonRects(m_pHoverItem->rect);
+             LinkRects r = GetLinkButtonRects(m_pHoverItem->rect, m_uiScale);
              if (x >= r.github.left && x <= r.github.right && y >= r.github.top && y <= r.github.bottom) {
                  ShellExecuteW(NULL, L"open", L"https://github.com/justnullname/QuickView", NULL, NULL, SW_SHOWNORMAL);
              }
