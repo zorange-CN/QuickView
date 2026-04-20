@@ -7371,45 +7371,33 @@ SKIP_EDGE_NAV:;
             int winWidth = rcWin.right - rcWin.left;
             int winHeight = rcWin.bottom - rcWin.top;
 
-            bool isWindowMaximizedOrFull = (winWidth >= maxW - 2 || winHeight >= maxH - 2) || IsZoomed(hwnd) || g_isFullScreen;
-            
-            float originalW = g_currentMetadata.Width > 0 ? (float)g_currentMetadata.Width : GetVisualImageSize().width;
-            float originalH = g_currentMetadata.Height > 0 ? (float)g_currentMetadata.Height : GetVisualImageSize().height;
-            if (g_currentMetadata.Width > 0 && g_currentMetadata.Height > 0) {
-                bool manualSwap = (g_editState.TotalRotation % 180 != 0);
-                if (manualSwap) std::swap(originalW, originalH);
-            }
-            bool isLargeImage = (originalW >= maxW - 100 || originalH >= maxH - 100);
+            bool isMaximizedOrFullscreen = IsZoomed(hwnd) || g_isFullScreen;
+            bool isFitWindow = (winWidth >= maxW - 2 || winHeight >= maxH - 2) || isMaximizedOrFullscreen;
 
-            if (isLargeImage) {
+            if (isMaximizedOrFullscreen) {
+                // In fullscreen/maximized, ONLY toggle between 100% and Fit. No restoring window size.
                 if (is100Percent) {
-                    if (isWindowMaximizedOrFull) {
-                        PerformZoomFit(hwnd);
-                    } else if (s_restoredWindowRect.right > s_restoredWindowRect.left) {
-                        PerformRestoreWindow(hwnd);
-                    } else {
-                        PerformZoomFit(hwnd, 0.85f);
-                    }
-                } else if (isWindowMaximizedOrFull) {
-                    PerformZoom100(hwnd);
+                    PerformZoomFit(hwnd);
                 } else {
-                    if (s_restoredWindowRect.right == 0) GetWindowRect(hwnd, &s_restoredWindowRect);
-                    PerformZoomFit(hwnd, 1.0f); 
+                    PerformZoom100(hwnd);
                 }
             } else {
+                // Windowed mode 3-state toggle: Initial Size (Restore) -> Fit -> 100% -> Initial Size...
                 if (is100Percent) {
-                    if (isWindowMaximizedOrFull && s_restoredWindowRect.right > s_restoredWindowRect.left) {
-                        PerformRestoreWindow(hwnd);
-                    } else {
-                        if (s_restoredWindowRect.right == 0) GetWindowRect(hwnd, &s_restoredWindowRect);
-                        PerformZoomFit(hwnd, 1.0f);
-                    }
-                } else {
+                    // Current is 100%. Next should be Restore (or Fit if no restore point).
                     if (s_restoredWindowRect.right > s_restoredWindowRect.left) {
                         PerformRestoreWindow(hwnd);
                     } else {
-                        PerformZoom100(hwnd);
+                        GetWindowRect(hwnd, &s_restoredWindowRect);
+                        PerformZoomFit(hwnd, 1.0f);
                     }
+                } else if (isFitWindow) {
+                    // Current is Fit. Next should be 100%.
+                    PerformZoom100(hwnd);
+                } else {
+                    // Current is Initial Size. Next should be Fit.
+                    if (s_restoredWindowRect.right == 0) GetWindowRect(hwnd, &s_restoredWindowRect);
+                    PerformZoomFit(hwnd, 1.0f);
                 }
             }
         }
@@ -8680,10 +8668,12 @@ SKIP_EDGE_NAV:;
             } else if (g_imageResource) {
                 float currentRealScale = GetCurrentRealScale(hwnd);
                 bool is100Percent = (fabsf(currentRealScale - 1.0f) < 0.05f);
-                if (is100Percent && s_restoredWindowRect.right > s_restoredWindowRect.left) {
+                bool isMaximizedOrFullscreen = IsZoomed(hwnd) || g_isFullScreen;
+
+                if (is100Percent && !isMaximizedOrFullscreen && s_restoredWindowRect.right > s_restoredWindowRect.left) {
                     PerformRestoreWindow(hwnd);
                 } else {
-                    if (s_restoredWindowRect.right == 0) GetWindowRect(hwnd, &s_restoredWindowRect);
+                    if (!isMaximizedOrFullscreen && s_restoredWindowRect.right == 0) GetWindowRect(hwnd, &s_restoredWindowRect);
                     PerformZoom100(hwnd);
                 }
             }
@@ -8701,12 +8691,14 @@ SKIP_EDGE_NAV:;
                 RECT rcWin; GetWindowRect(hwnd, &rcWin);
                 int winWidth = rcWin.right - rcWin.left;
                 int winHeight = rcWin.bottom - rcWin.top;
-                bool isWindowMaximizedOrFull = (winWidth >= maxW - 2 || winHeight >= maxH - 2) || IsZoomed(hwnd) || g_isFullScreen;
 
-                if (isWindowMaximizedOrFull && s_restoredWindowRect.right > s_restoredWindowRect.left) {
+                bool isMaximizedOrFullscreen = IsZoomed(hwnd) || g_isFullScreen;
+                bool isFitWindow = (winWidth >= maxW - 2 || winHeight >= maxH - 2) || isMaximizedOrFullscreen;
+
+                if (isFitWindow && !isMaximizedOrFullscreen && s_restoredWindowRect.right > s_restoredWindowRect.left) {
                     PerformRestoreWindow(hwnd);
                 } else {
-                    if (s_restoredWindowRect.right == 0) GetWindowRect(hwnd, &s_restoredWindowRect);
+                    if (!isMaximizedOrFullscreen && s_restoredWindowRect.right == 0) GetWindowRect(hwnd, &s_restoredWindowRect);
                     PerformZoomFit(hwnd);
                 }
             }
