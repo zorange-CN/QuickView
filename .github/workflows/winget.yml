@@ -1,0 +1,16 @@
+name: WinGet Submission
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  winget:
+    name: Submit to WinGet
+    runs-on: ubuntu-latest
+    steps:
+      - name: Submit to WinGet
+        uses: vedantat/winget-releaser@v2
+        with:
+          identifier: justnullname.QuickView
+          token: ${{ secrets.WINGET_TOKEN }}
