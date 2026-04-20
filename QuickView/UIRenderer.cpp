@@ -846,6 +846,7 @@ void UIRenderer::DrawOSD(ID2D1DeviceContext* dc, HWND hwnd) {
                 config.tintAlpha = g_config.GlassTintAlpha;
                 config.specularOpacity = g_config.GlassSpecularOpacity;
                 config.blurStandardDeviation = g_config.GlassBlurSigma * s;
+                config.shadowOpacity = g_config.GlassShadowOpacity;
                 float concentration = (g_config.GlassOsdOpacity / 100.0f);
                 config.opacity = m_osdOpacity;
                 if (g_config.EnableGeekGlass) {
@@ -937,6 +938,7 @@ void UIRenderer::DrawOSD(ID2D1DeviceContext* dc, HWND hwnd) {
         config.tintAlpha = g_config.GlassTintAlpha;
         config.specularOpacity = g_config.GlassSpecularOpacity;
         config.blurStandardDeviation = g_config.GlassBlurSigma * s;
+        config.shadowOpacity = g_config.GlassShadowOpacity;
         float concentration = (g_config.GlassOsdOpacity / 100.0f);
         config.opacity = m_osdOpacity;
         if (g_config.EnableGeekGlass) {
