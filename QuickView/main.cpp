@@ -8318,27 +8318,18 @@ SKIP_EDGE_NAV:;
             GetCursorPos(&pt);
             ScreenToClient(hwnd, &pt);
 
-            float oldZoom = g_viewState.Zoom;
-            if (delta > 0) {
-                g_viewState.Zoom *= 1.0f + (g_config.WheelZoomSpeed / 100.0f);
+            // [Shared Logic] Sync with WM_MOUSEWHEEL behavior
+            float newTotalScale = CalculateTargetZoom(hwnd, delta, false);
+            
+            if (IsCompareModeActive()) {
+                ComparePane pane = HitTestComparePane(hwnd, pt);
+                g_compare.activePane = pane;
+                ApplyCompareZoomWithMultiplier(hwnd, pane, ComputeZoomStep(delta), &pt, g_compare.syncZoom);
             } else {
-                g_viewState.Zoom /= 1.0f + (g_config.WheelZoomSpeed / 100.0f);
+                PerformSmartZoom(hwnd, newTotalScale, &pt, false, true);
             }
 
-            // Limit zoom
-            if (g_viewState.Zoom < 0.05f) g_viewState.Zoom = 0.05f;
-            if (g_viewState.Zoom > 500.0f) g_viewState.Zoom = 500.0f;
-
-            if (g_viewState.Zoom != oldZoom) {
-                if (!IsCompareModeActive()) {
-                    ApplySmartZoom(hwnd, &pt, oldZoom);
-                } else {
-                    RequestRepaint(PaintLayer::Image);
-                }
-
-                g_uiAnimState.ZoomIndicatorTime = 1.0f;
-                g_uiAnimState.ZoomIndicatorScale = g_viewState.Zoom;
-            }
+            ShowZoomOsd(hwnd, newTotalScale);
         }
         return 0;
     }
