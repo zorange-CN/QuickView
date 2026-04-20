@@ -4564,6 +4564,7 @@ void SaveConfig() {
     WritePrivateProfileStringW(L"Controls", L"ZoomModeOut", std::to_wstring(g_config.ZoomModeOut).c_str(), iniPath.c_str());
     WritePrivateProfileStringW(L"Controls", L"InvertWheel", g_config.InvertWheel ? L"1" : L"0", iniPath.c_str());
     WritePrivateProfileStringW(L"Controls", L"WheelActionMode", std::to_wstring(g_config.WheelActionMode).c_str(), iniPath.c_str());
+    WritePrivateProfileStringW(L"Controls", L"ThumbWheelMode", std::to_wstring(g_config.ThumbWheelMode).c_str(), iniPath.c_str());
     WritePrivateProfileStringW(L"Controls", L"InvertXButton", g_config.InvertXButton ? L"1" : L"0", iniPath.c_str());
     WritePrivateProfileStringW(L"Controls", L"EnableZoomSnapDamping", g_config.EnableZoomSnapDamping ? L"1" : L"0", iniPath.c_str());
     WritePrivateProfileStringW(L"Controls", L"MouseAnchoredWindowZoom", g_config.MouseAnchoredWindowZoom ? L"1" : L"0", iniPath.c_str());
@@ -4786,6 +4787,8 @@ void LoadConfig() {
     if (g_config.ZoomModeOut < 0 || g_config.ZoomModeOut > 3) g_config.ZoomModeOut = 0;
     g_config.InvertWheel = GetPrivateProfileIntW(L"Controls", L"InvertWheel", 0, iniPath.c_str()) != 0;
     g_config.WheelActionMode = GetPrivateProfileIntW(L"Controls", L"WheelActionMode", 0, iniPath.c_str());
+    g_config.ThumbWheelMode = GetPrivateProfileIntW(L"Controls", L"ThumbWheelMode", 0, iniPath.c_str());
+    if (g_config.ThumbWheelMode < 0 || g_config.ThumbWheelMode > 1) g_config.ThumbWheelMode = 0;
     if (g_config.WheelActionMode < 0 || g_config.WheelActionMode > 1) g_config.WheelActionMode = 0;
     g_config.InvertXButton = GetPrivateProfileIntW(L"Controls", L"InvertXButton", 0, iniPath.c_str()) != 0;
     g_config.EnableZoomSnapDamping = GetPrivateProfileIntW(L"Controls", L"EnableZoomSnapDamping", 1, iniPath.c_str()) != 0;
@@ -8333,6 +8336,42 @@ SKIP_EDGE_NAV:;
         }
         
         RequestRepaint(PaintLayer::Image | PaintLayer::Dynamic);
+        return 0;
+    }
+
+    case WM_MOUSEHWHEEL: {
+        float wheelDelta = (float)GET_WHEEL_DELTA_WPARAM(wParam) / (float)WHEEL_DELTA;
+
+        if (g_helpOverlay.IsVisible() || g_settingsOverlay.IsVisible() || g_gallery.IsVisible()) {
+            return 0; // Ignore thumb wheel on overlays for now, or route them if needed later
+        }
+
+        float delta = GET_WHEEL_DELTA_WPARAM(wParam) / 120.0f;
+        if (g_config.InvertWheel) delta = -delta; // Apply invert setting to thumb wheel too? We can just use the regular invert setting
+
+        if (g_config.ThumbWheelMode == 0) { // Navigate
+            int direction = (delta > 0.0f) ? 1 : -1; // Positive is usually right, negative is left
+            if (delta != 0.0f && CheckUnsavedChanges(hwnd)) {
+                Navigate(hwnd, direction);
+            }
+        } else if (g_config.ThumbWheelMode == 1) { // Zoom
+            POINT pt;
+            GetCursorPos(&pt);
+            ScreenToClient(hwnd, &pt);
+
+            // [Shared Logic] Sync with WM_MOUSEWHEEL behavior
+            float newTotalScale = CalculateTargetZoom(hwnd, delta, false);
+            
+            if (IsCompareModeActive()) {
+                ComparePane pane = HitTestComparePane(hwnd, pt);
+                g_compare.activePane = pane;
+                ApplyCompareZoomWithMultiplier(hwnd, pane, ComputeZoomStep(delta), &pt, g_compare.syncZoom);
+            } else {
+                PerformSmartZoom(hwnd, newTotalScale, &pt, false, true);
+            }
+
+            ShowZoomOsd(hwnd, newTotalScale);
+        }
         return 0;
     }
 
