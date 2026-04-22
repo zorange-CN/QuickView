@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "GeekContextMenu.h"
 #include "EditState.h"
+#include "SystemInfo.h"
 #include <d2d1_1.h>
 #include <cmath>
 
@@ -355,42 +356,35 @@ void GeekContextMenu::CreateResources() {
     // Initialize Glass Engine
     m_glassEngine.InitializeResources(m_rt.Get());
 
+    const bool isWin11 = SystemInfo::IsWindows11OrGreater();
+
     // Text formats
-    m_dwFactory->CreateTextFormat(L"Segoe UI Variable Small", nullptr,
+    // Win11: Segoe UI Variable Small (Modern, Variable spacing)
+    // Win10: Segoe UI (Classic standard)
+    const wchar_t* mainFontFamily = isWin11 ? L"Segoe UI Variable Small" : L"Segoe UI";
+
+    m_dwFactory->CreateTextFormat(mainFontFamily, nullptr,
         DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
         DWRITE_FONT_STRETCH_NORMAL, 13.0f, L"", &m_itemFont);
-    m_dwFactory->CreateTextFormat(L"Segoe UI Variable Small", nullptr,
+    m_dwFactory->CreateTextFormat(mainFontFamily, nullptr,
         DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
         DWRITE_FONT_STRETCH_NORMAL, 11.5f, L"", &m_shortcutFont);
-    m_dwFactory->CreateTextFormat(L"Segoe UI Variable Small", nullptr,
+    m_dwFactory->CreateTextFormat(mainFontFamily, nullptr,
         DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
         DWRITE_FONT_STRETCH_NORMAL, 10.5f, L"", &m_actionFont);
 
     // Icon Fonts
-    const wchar_t* iconFontName = L"Segoe Fluent Icons";
-    // Check if Segoe Fluent Icons exists by attempting to create it, 
-    // though usually we just rely on DWrite fallback if we specify multiple or handle it.
-    // For simplicity, we define a helper or just try creating it.
-    
+    // Win11: Segoe Fluent Icons (Rounded)
+    // Win10: Segoe MDL2 Assets (Squared)
+    const wchar_t* iconFontName = isWin11 ? L"Segoe Fluent Icons" : L"Segoe MDL2 Assets";
+
     m_dwFactory->CreateTextFormat(iconFontName, nullptr,
         DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
         DWRITE_FONT_STRETCH_NORMAL, 16.0f, L"", &m_iconFont);
-    
-    if (!m_iconFont) {
-        m_dwFactory->CreateTextFormat(L"Segoe MDL2 Assets", nullptr,
-            DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL, 16.0f, L"", &m_iconFont);
-    }
 
     m_dwFactory->CreateTextFormat(iconFontName, nullptr,
         DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
         DWRITE_FONT_STRETCH_NORMAL, 22.0f, L"", &m_actionIconFont);
-
-    if (!m_actionIconFont) {
-        m_dwFactory->CreateTextFormat(L"Segoe MDL2 Assets", nullptr,
-            DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL, 22.0f, L"", &m_actionIconFont);
-    }
 
     if (m_iconFont) {
         m_iconFont->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);

@@ -126,6 +126,29 @@ struct SystemInfo {
         return info;
     }
 
+    static bool IsWindows11OrGreater() {
+#ifdef _WIN32
+        static bool isWin11 = []() {
+            HMODULE hMod = GetModuleHandleW(L"ntdll.dll");
+            if (hMod) {
+                typedef LONG(WINAPI* RtlGetVersionPtr)(PRTL_OSVERSIONINFOW);
+                RtlGetVersionPtr fx = (RtlGetVersionPtr)GetProcAddress(hMod, "RtlGetVersion");
+                if (fx) {
+                    RTL_OSVERSIONINFOW rovi = { 0 };
+                    rovi.dwOSVersionInfoSize = sizeof(rovi);
+                    if (fx(&rovi) == 0) {
+                        return rovi.dwMajorVersion > 10 || (rovi.dwMajorVersion == 10 && rovi.dwBuildNumber >= 22000);
+                    }
+                }
+            }
+            return false;
+        }();
+        return isWin11;
+#else
+        return false;
+#endif
+    }
+
     static const SystemInfo& Cached() {
         static const SystemInfo s_cached = Detect();
         return s_cached;
