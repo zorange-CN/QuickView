@@ -135,7 +135,6 @@ void GeekContextMenu::ShowMenu(HWND parent, int sx, int sy,
     if (!menu->m_hwnd) return;
     SetWindowLongPtrW(menu->m_hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(menu.get()));
 
-    // Note: RenderAndUI will handle UpdateLayeredWindow with initial alpha
     menu->m_hasAcrylic = menu->ApplyAcrylic();
     bool shadowsEnabled = (QuickView::UI::GeekGlass::GetGlobalThemeConfig().shadowOpacity > 0.005f);
     if (shadowsEnabled) {
@@ -197,7 +196,6 @@ void GeekContextMenu::ShowSubmenuPopup(HWND parent, int sx, int sy,
     if (!sub->m_hwnd) return;
     SetWindowLongPtrW(sub->m_hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(sub.get()));
 
-    // sub window setup
     sub->m_hasAcrylic = sub->ApplyAcrylic();
     bool shadowsEnabled = (QuickView::UI::GeekGlass::GetGlobalThemeConfig().shadowOpacity > 0.005f);
     if (shadowsEnabled) {
@@ -228,25 +226,15 @@ void GeekContextMenu::DismissAll(UINT cmdId) {
 #endif
 
 // ============================================================
-// Window Region (rounded corners via DWM or OS-level clipping)
+// Window Region (rounded corners via DWM)
 // ============================================================
 void GeekContextMenu::ApplyWindowRegion() {
     if (!m_hwnd) return;
 
-    // Windows 11 native rounded corners correctly clip the acrylic backdrop
-    // and format the drop shadow as a rounded rect instead of a sharp rect.
+    // Win11: DWM natively rounds corners and clips the acrylic backdrop.
+    // Win10: API not available — straight corners (no fallback needed).
     DWORD preference = DWMWCP_ROUND;
-    HRESULT hr = DwmSetWindowAttribute(m_hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &preference, sizeof(preference));
-    if (SUCCEEDED(hr)) {
-        // Native apply works. Bypass SetWindowRgn to prevent straight-angle shadow glitch.
-        return;
-    }
-
-    // Fallback for Windows 10
-    RECT rc; GetClientRect(m_hwnd, &rc);
-    int r = (int)std::ceil(CORNER_R * m_scale);
-    HRGN rgn = CreateRoundRectRgn(0, 0, rc.right + 1, rc.bottom + 1, r * 2, r * 2);
-    SetWindowRgn(m_hwnd, rgn, TRUE); // OS takes ownership of rgn
+    DwmSetWindowAttribute(m_hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &preference, sizeof(preference));
 }
 
 // ============================================================
@@ -482,10 +470,6 @@ void GeekContextMenu::CreateResources() {
             coll.Get(), &m_diagBrush);
     }
 
-    // Layer clipping geometry (rounded rect covering entire window area)
-    D2D1_ROUNDED_RECT clipRR = D2D1::RoundedRect(D2D1::RectF(0, 0, sz.width, sz.height), CORNER_R, CORNER_R);
-    m_factory->CreateRoundedRectangleGeometry(clipRR, &m_clipGeometry);
-    m_rt->CreateLayer(&m_clipLayer);
 }
 
 void GeekContextMenu::DiscardResources() {
@@ -498,7 +482,6 @@ void GeekContextMenu::DiscardResources() {
     m_accentBrush.Reset(); m_sepBrush.Reset();
     m_bevelLightBrush.Reset(); m_bevelDarkBrush.Reset();
     m_capsuleBrush.Reset(); m_capsuleBorderBrush.Reset();
-    m_clipGeometry.Reset(); m_clipLayer.Reset();
     m_glassEngine.ReleaseResources();
 }
 
@@ -927,6 +910,7 @@ void GeekContextMenu::RenderAndUI() {
   m_rt->BeginDraw();
   m_rt->Clear(D2D1::ColorF(0, 0, 0, 0.0f));
 
+
   // 3. Render Geek Glass Panel (Track B: DWM-based blur)
   auto config = QuickView::UI::GeekGlass::GetGlobalThemeConfig();
   
@@ -963,6 +947,7 @@ void GeekContextMenu::RenderAndUI() {
     RenderActionRow();
     RenderItems();
     RenderBevel();
+
 
   m_rt->EndDraw();
 

@@ -194,10 +194,6 @@ private:
     ComPtr<ID2D1SolidColorBrush> m_capsuleBorderBrush;
     ComPtr<ID2D1SolidColorBrush> m_dangerTextBrush;
 
-    // Layer clipping (rounded corner masking)
-    ComPtr<ID2D1RoundedRectangleGeometry> m_clipGeometry;
-    ComPtr<ID2D1Layer> m_clipLayer;
-
     // State
     int m_hoverAction = -1;
     int m_hoverItem = -1;
