@@ -11016,14 +11016,17 @@ void StartNavigation(HWND hwnd, std::wstring path, bool showOSD, QuickView::Brow
         
         // [Fix] Window Lock Persistence: Reset Lock state to User Preference on navigation.
         // This ensures that an "Auto-Lock" (from small image zoom) doesn't trap subsequent large images.
-        if (!g_config.KeepWindowSizeOnNav || !g_runtime.LockWindowSize) {
+        // [v10.5 Fix] Only reset if it was an auto-lock or if KeepWindowSizeOnNav is false and we aren't manually locked.
+        // Also ensure toolbar UI is synced with g_runtime.LockWindowSize to prevent state mismatch.
+        if (g_isAutoLocked || (!g_config.KeepWindowSizeOnNav && !g_runtime.LockWindowSize)) {
             g_runtime.LockWindowSize = g_config.LockWindowSize;
             g_isAutoLocked = false;
-        } else {
-            // If KeepWindowSizeOnNav is true AND currently locked, we force it to stay locked
-            g_runtime.LockWindowSize = true;
-            g_isAutoLocked = false;
+        } else if (g_config.KeepWindowSizeOnNav) {
+            // If KeepWindowSizeOnNav is true, we keep the current runtime lock state
+            g_isAutoLocked = false; 
         }
+
+        g_toolbar.SetLockState(g_runtime.LockWindowSize);
 
         // Reset Temporary Pixel Art Mode override for new images
         g_runtime.PixelArtModeOverride = 0;
