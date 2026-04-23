@@ -326,7 +326,6 @@ private:
     ComPtr<ID2D1SolidColorBrush> m_accentBrush;
     ComPtr<IDWriteTextFormat> m_osdFormat;
     ComPtr<IDWriteTextFormat> m_debugFormat;
-    ComPtr<IDWriteTextFormat> m_iconFormat;
     ComPtr<IDWriteTextFormat> m_panelFormat;  // For Info Panel text
 
     ComPtr<ID2D1CommandList> m_bgCommandList;

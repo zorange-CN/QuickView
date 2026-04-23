@@ -16,6 +16,7 @@
 #pragma comment(lib, "psapi.lib")
 
 #include "ImageEngine.h" // [v3.1] Access for HasEmbeddedThumb
+#include "GeekIconRenderer.h"
 
 // External globals (retained - these are global state needed by overlays)
 extern Toolbar g_toolbar;
@@ -110,7 +111,6 @@ void UIRenderer::SetUIScale(float scale) {
     m_uiScale = scale;
     m_osdFormat.Reset();
     m_debugFormat.Reset();
-    m_iconFormat.Reset();
     m_panelFormat.Reset();
     MarkStaticDirty();
     MarkDynamicDirty();
@@ -471,37 +471,6 @@ void UIRenderer::EnsureTextFormats() {
         );
         if (m_debugFormat) {
             m_debugFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-        }
-    }
-    
-    if (!m_iconFormat) {
-        const wchar_t* fontCandidates[] = { 
-            L"Segoe Fluent Icons", 
-            L"Segoe MDL2 Assets", 
-            L"Segoe UI Symbol" 
-        };
-        const wchar_t* selectedFont = L"Segoe UI Symbol";
-
-        ComPtr<IDWriteFontCollection> sysFonts;
-        if (SUCCEEDED(m_dwriteFactory->GetSystemFontCollection(&sysFonts, FALSE))) {
-            for (const auto& name : fontCandidates) {
-                UINT32 index;
-                BOOL exists;
-                if (SUCCEEDED(sysFonts->FindFamilyName(name, &index, &exists)) && exists) {
-                    selectedFont = name;
-                    break;
-                }
-            }
-        }
-
-        m_dwriteFactory->CreateTextFormat(
-            selectedFont, nullptr,
-            DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
-            12.0f * s, L"en-us", &m_iconFormat
-        );
-        if (m_iconFormat) {
-            m_iconFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-            m_iconFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
         }
     }
     
@@ -1243,24 +1212,44 @@ void UIRenderer::DrawWindowControls(ID2D1DeviceContext* dc, HWND hwnd) {
         else if (m_winCtrlHover == 3) dc->FillRectangle(pinRect, grayBrush.Get());
     }
 
-    if (!m_iconFormat) return;
-
     ComPtr<ID2D1SolidColorBrush> foregroundBrush, shadowBrush, accentBrush;
     dc->CreateSolidColorBrush(palette.foreground, &foregroundBrush);
     dc->CreateSolidColorBrush(palette.shadow, &shadowBrush);
     dc->CreateSolidColorBrush(palette.accent, &accentBrush);
     
-    auto DrawIcon = [&](wchar_t icon, D2D1_RECT_F rect, ID2D1Brush* brush) {
-        DrawTextWithFourWayShadow(dc, &icon, 1, m_iconFormat.Get(), rect, brush, shadowBrush.Get(), 1.2f * s);
+    auto DrawIcon = [&](Icons::IconGlyph icon, D2D1_RECT_F rect, ID2D1Brush* brush, float iconScale) {
+        if (!icon) return;
+
+        const float w = rect.right - rect.left;
+        const float h = rect.bottom - rect.top;
+        const float side = (std::min)(w, h) * iconScale;
+        const float cx = (rect.left + rect.right) * 0.5f;
+        const float cy = (rect.top + rect.bottom) * 0.5f;
+        D2D1_RECT_F iconRect = D2D1::RectF(cx - side * 0.5f, cy - side * 0.5f, cx + side * 0.5f, cy + side * 0.5f);
+        
+        // 4-way shadow
+        float offset = 0.55f * s;
+        D2D1_RECT_F r1 = iconRect; r1.left -= offset; r1.right -= offset; r1.top -= offset; r1.bottom -= offset;
+        D2D1_RECT_F r2 = iconRect; r2.left += offset; r2.right += offset; r2.top -= offset; r2.bottom -= offset;
+        D2D1_RECT_F r3 = iconRect; r3.left -= offset; r3.right -= offset; r3.top += offset; r3.bottom += offset;
+        D2D1_RECT_F r4 = iconRect; r4.left += offset; r4.right += offset; r4.top += offset; r4.bottom += offset;
+        
+        QuickView::UI::GeekIconRenderer::DrawVectorIcon(dc, *icon, r1, shadowBrush.Get());
+        QuickView::UI::GeekIconRenderer::DrawVectorIcon(dc, *icon, r2, shadowBrush.Get());
+        QuickView::UI::GeekIconRenderer::DrawVectorIcon(dc, *icon, r3, shadowBrush.Get());
+        QuickView::UI::GeekIconRenderer::DrawVectorIcon(dc, *icon, r4, shadowBrush.Get());
+        
+        // Foreground
+        QuickView::UI::GeekIconRenderer::DrawVectorIcon(dc, *icon, iconRect, brush);
     };
     
-    wchar_t pinIcon = m_pinActive ? L'\uE77A' : L'\uE718';
+    Icons::IconGlyph pinIcon = m_pinActive ? Icons::Unpin : Icons::Pin;
     ID2D1Brush* pinBrush = m_pinActive ? accentBrush.Get() : foregroundBrush.Get();
-    DrawIcon(pinIcon, pinRect, pinBrush);
+    DrawIcon(pinIcon, pinRect, pinBrush, 0.44f);
     
-    DrawIcon(L'\uE921', minRect, foregroundBrush.Get());
-    DrawIcon((IsZoomed(hwnd) || m_isFullscreen) ? L'\uE923' : L'\uE922', maxRect, foregroundBrush.Get());
-    DrawIcon(L'\uE8BB', closeRect, foregroundBrush.Get());
+    DrawIcon(Icons::Minimize, minRect, foregroundBrush.Get(), 0.43f);
+    DrawIcon((IsZoomed(hwnd) || m_isFullscreen) ? Icons::Restore : Icons::Maximize, maxRect, foregroundBrush.Get(), 0.43f);
+    DrawIcon(Icons::ExitToolbar, closeRect, foregroundBrush.Get(), 0.43f);
 }
 
 void UIRenderer::DrawBorderIndicators(ID2D1DeviceContext* dc) {
@@ -3822,19 +3811,32 @@ void UIRenderer::DrawCompareInfoHUD(ID2D1DeviceContext* dc) {
     m_hudToggleLiteRect = D2D1::RectF(liteIconX - 4 * s, iconAreaY, liteIconX + iconSize + 4 * s, iconAreaY + bottomBarH);
     m_hudToggleExpandRect = D2D1::RectF(expandIconX - 4 * s, iconAreaY, expandIconX + iconSize + 4 * s, iconAreaY + bottomBarH);
     m_panelCloseRect = D2D1::RectF(closeIconX - 4 * s, iconAreaY, closeIconX + iconSize + 4 * s, iconAreaY + bottomBarH);
+    auto FitHudIconRect = [](const D2D1_RECT_F& r, float scale) {
+        const float w = r.right - r.left;
+        const float h = r.bottom - r.top;
+        const float side = (std::min)(w, h) * scale;
+        const float cx = (r.left + r.right) * 0.5f;
+        const float cy = (r.top + r.bottom) * 0.5f;
+        return D2D1::RectF(cx - side * 0.5f, cy - side * 0.5f, cx + side * 0.5f, cy + side * 0.5f);
+    };
 
-    // Lite Mode Icon (e.g. Line list or Collapse)
-    const wchar_t* liteIcon = (hudMode == 0) ? L"\uE738" : L"\uE8A0"; // \uE738 (List) or \uE8A0 (Remove)
+    // Lite Mode Icon: keep it simple and stable (horizontal minus)
     ID2D1SolidColorBrush* liteBrush = (hudMode == 0) ? brushGood.Get() : brushLabel.Get();
-    dc->DrawText(liteIcon, 1, m_iconFormat.Get(), m_hudToggleLiteRect, liteBrush);
+    D2D1_RECT_F liteRect = FitHudIconRect(m_hudToggleLiteRect, 0.44f);
+    const float liteY = (liteRect.top + liteRect.bottom) * 0.5f;
+    dc->DrawLine(
+        D2D1::Point2F(liteRect.left, liteY),
+        D2D1::Point2F(liteRect.right, liteY),
+        liteBrush,
+        1.8f * s);
 
     // Expand Mode Icon
-    const wchar_t* expandIcon = (hudMode == 2) ? L"\uE73F" : L"\uE740"; // \uE73F (ChevronUp) or \uE740 (ChevronDown)
+    Icons::IconGlyph expandIcon = (hudMode == 2) ? Icons::ChevronUp : Icons::ChevronDown;
     ID2D1SolidColorBrush* expandBrush = (hudMode == 2) ? brushGood.Get() : brushLabel.Get();
-    dc->DrawText(expandIcon, 1, m_iconFormat.Get(), m_hudToggleExpandRect, expandBrush);
+    QuickView::UI::GeekIconRenderer::DrawVectorIcon(dc, *expandIcon, FitHudIconRect(m_hudToggleExpandRect, 0.42f), expandBrush);
 
     // Close Icon
-    dc->DrawText(L"\uE711", 1, m_iconFormat.Get(), m_panelCloseRect, brushLabel.Get());
+    QuickView::UI::GeekIconRenderer::DrawVectorIcon(dc, *Icons::Close, FitHudIconRect(m_panelCloseRect, 0.44f), brushLabel.Get());
 
     // Reset hover if outside HUD
     if (!PointInRect((float)m_lastMousePos.x, (float)m_lastMousePos.y, m_lastHUDRect)) {

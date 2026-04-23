@@ -5,6 +5,7 @@
 #include <functional>
 #include <map>
 #include "GeekGlass.h"
+#include "GeekIconLibrary.h"
 
 // [Fix] Resolve Windows macro interference
 #undef LoadIcon
@@ -80,7 +81,7 @@ struct SettingsItem {
 
 struct SettingsTab {
     std::wstring name;
-    std::wstring icon; 
+    Icons::IconGlyph icon = nullptr;
     std::vector<SettingsItem> items;
 };
 
@@ -176,12 +177,10 @@ private:
     ComPtr<IDWriteFactory> m_dwriteFactory;
     ComPtr<IDWriteTextFormat> m_textFormatHeader;
     ComPtr<IDWriteTextFormat> m_textFormatItem;
-    ComPtr<IDWriteTextFormat> m_textFormatIcon;
 
     std::wstring m_debugInfo;
 
     HWND m_hwnd = nullptr; 
-    ComPtr<IDWriteTextFormat> m_textFormatSymbol; 
     
     int m_hoverLinkIndex = -1; 
     bool m_isHoveringCopyright = false;

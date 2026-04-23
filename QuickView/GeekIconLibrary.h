@@ -74,13 +74,20 @@ namespace GeekIcons {
     extern const VectorIcon WarningVector;
     extern const VectorIcon CompareToggleVector;
     extern const VectorIcon ExitToolbarVector;
+    extern const VectorIcon MinimizeVector;        // 0xE921
+    extern const VectorIcon MaximizeVector;        // 0xE922
+    extern const VectorIcon RestoreVector;         // 0xE923
+    extern const VectorIcon ContactVector;         // 0xE706
 
     // --- Batch 1: UI Overlays & Settings ---
     extern const VectorIcon CloseVector;          // 0xE711
+    extern const VectorIcon CancelVector;         // 0xE711
     extern const VectorIcon ListVector;           // 0xE738
     extern const VectorIcon RemoveVector;         // 0xE8A0
     extern const VectorIcon ChevronUpVector;      // 0xE73F
     extern const VectorIcon ChevronDownVector;    // 0xE740
+    extern const VectorIcon ComboUpVector;        // 0xE70E
+    extern const VectorIcon ComboDownVector;      // 0xE70D
     extern const VectorIcon HelpCloseVector;      // 0xE8BB
     extern const VectorIcon BackVector;           // 0xE72B
     extern const VectorIcon WorldVector;          // 0xE774
@@ -116,7 +123,7 @@ namespace GeekIcons {
     inline IconGlyph Sort        = &SortVector;
     inline IconGlyph Navigation  = &NavigationVector;
     inline IconGlyph Settings    = &SettingsVector;
-    inline IconGlyph About       = &AboutVector;
+    inline IconGlyph About       = &InfoVector;
     inline IconGlyph Exit        = &ExitToolbarVector;
     inline IconGlyph Chevron     = &ChevronVector;
     inline IconGlyph Check       = &CheckVector;
@@ -141,15 +148,21 @@ namespace GeekIcons {
     inline IconGlyph Warning          = &WarningVector;
     inline IconGlyph CompareToggle    = &CompareToggleVector;
     inline IconGlyph ExitToolbar      = &ExitToolbarVector;
+    inline IconGlyph Minimize         = &MinimizeVector;
+    inline IconGlyph Maximize         = &MaximizeVector;
+    inline IconGlyph Restore          = &RestoreVector;
+    inline IconGlyph Contact          = &ContactVector;
 
     // --- Aliases & Batch 1 Mapping ---
-    inline IconGlyph Close            = &ExitToolbarVector; 
-    inline IconGlyph HelpClose        = &ExitToolbarVector;
-    inline IconGlyph PanelClose       = &ExitToolbarVector;
+    inline IconGlyph Close            = &CancelVector;
+    inline IconGlyph HelpClose        = &HelpCloseVector;
+    inline IconGlyph PanelClose       = &CancelVector;
     inline IconGlyph List             = &ListVector;
     inline IconGlyph Remove           = &RemoveVector;
     inline IconGlyph ChevronUp        = &ChevronUpVector;
     inline IconGlyph ChevronDown      = &ChevronDownVector;
+    inline IconGlyph ComboUp          = &ComboUpVector;
+    inline IconGlyph ComboDown        = &ComboDownVector;
     inline IconGlyph Back             = &BackVector;
     inline IconGlyph World            = &WorldVector;
     inline IconGlyph Feedback         = &FeedbackVector;

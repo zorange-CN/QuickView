@@ -2,6 +2,7 @@
 #include "HelpOverlay.h"
 #include "AppStrings.h"
 #include "EditState.h"
+#include "GeekIconRenderer.h"
 
 extern AppConfig g_config;
 
@@ -28,7 +29,6 @@ void HelpOverlay::SetUIScale(float scale) {
     m_fmtKey.Reset();
     m_fmtDesc.Reset();
     m_fmtTip.Reset();
-    m_fmtIcon.Reset();
 }
 
 
@@ -76,12 +76,11 @@ void HelpOverlay::CreateResources(ID2D1RenderTarget* pRT) {
     }
 
     if (!m_dwriteFactory) return;
-    if (!m_fmtHeader || !m_fmtKey || !m_fmtDesc || !m_fmtTip || !m_fmtIcon) {
+    if (!m_fmtHeader || !m_fmtKey || !m_fmtDesc || !m_fmtTip) {
         m_dwriteFactory->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 16.0f * m_uiScale, L"", &m_fmtHeader);
         m_dwriteFactory->CreateTextFormat(L"Consolas", nullptr, DWRITE_FONT_WEIGHT_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 12.0f * m_uiScale, L"", &m_fmtKey);
         m_dwriteFactory->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 13.0f * m_uiScale, L"", &m_fmtDesc);
         m_dwriteFactory->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 12.0f * m_uiScale, L"", &m_fmtTip);
-        m_dwriteFactory->CreateTextFormat(L"Segoe MDL2 Assets", nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 12.0f * m_uiScale, L"", &m_fmtIcon);
     }
 }
 
@@ -264,17 +263,17 @@ void HelpOverlay::Render(ID2D1RenderTarget* pRT, float winW, float winH) {
     // Close Button [ X ]
     m_closeRect = D2D1::RectF(x + panelW - 40.0f * s, y + 12.0f * s, x + panelW - 12.0f * s, y + 40.0f * s);
     
-    // Icon font for X
-    m_fmtIcon->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-    m_fmtIcon->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-    
     // Check hover
     if (m_hoverClose) {
         pRT->FillRoundedRectangle(D2D1::RoundedRect(m_closeRect, 4.0f * s, 4.0f * s), m_brushCloseBg.Get());
     }
-    
-    // \xE8BB is Cancel/Clear in MDL2 Assets
-    pRT->DrawText(L"\xE8BB", 1, m_fmtIcon.Get(), m_closeRect, m_brushText.Get());
+    const float cw = m_closeRect.right - m_closeRect.left;
+    const float ch = m_closeRect.bottom - m_closeRect.top;
+    const float cside = (std::min)(cw, ch) * 0.43f;
+    const float ccx = (m_closeRect.left + m_closeRect.right) * 0.5f;
+    const float ccy = (m_closeRect.top + m_closeRect.bottom) * 0.5f;
+    D2D1_RECT_F closeIconRect = D2D1::RectF(ccx - cside * 0.5f, ccy - cside * 0.5f, ccx + cside * 0.5f, ccy + cside * 0.5f);
+    QuickView::UI::GeekIconRenderer::DrawVectorIcon(pRT, *Icons::HelpClose, closeIconRect, m_brushText.Get());
     
     // Reset Header fmt (if we used it, but we used fmtIcon)
     m_fmtHeader->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);

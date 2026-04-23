@@ -610,8 +610,14 @@ void GeekContextMenu::RenderItem(const GeekMenuItem& item, int index) {
 
     // Icon
     if (item.iconGlyph && !(item.type == MenuItemType::CheckBox && item.isChecked)) {
-        D2D1_RECT_F iconR = D2D1::RectF(r.left + ICON_LEFT, r.top + (rh - ICON_SIZE) / 2,
-                                          r.left + ICON_LEFT + ICON_SIZE, r.top + (rh + ICON_SIZE) / 2);
+        float iconScale = 1.0f;
+        if (item.iconGlyph == GeekIcons::Exit) {
+            iconScale = 0.84f; // Exit glyph is visually heavier; keep it optically aligned with peers.
+        }
+        const float iconW = ICON_SIZE * iconScale;
+        const float iconX = r.left + ICON_LEFT + (ICON_SIZE - iconW) * 0.5f;
+        D2D1_RECT_F iconR = D2D1::RectF(iconX, r.top + (rh - iconW) / 2,
+                                          iconX + iconW, r.top + (rh + iconW) / 2);
         GeekIconRenderer::DrawVectorIcon(m_rt.Get(), *item.iconGlyph, iconR, tb);
     }
 

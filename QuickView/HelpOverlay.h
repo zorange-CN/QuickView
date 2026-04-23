@@ -66,7 +66,6 @@ private:
     ComPtr<IDWriteTextFormat> m_fmtKey;
     ComPtr<IDWriteTextFormat> m_fmtDesc;
     ComPtr<IDWriteTextFormat> m_fmtTip;
-    ComPtr<IDWriteTextFormat> m_fmtIcon;
 
 
     // Layout

@@ -16,6 +16,7 @@
 #include "CoroutineTypes.h"
 #include "ImageLoaderSimd.h"
 #include "GeekGlass.h"
+#include "GeekIconRenderer.h"
 
 // Windows headers
 #pragma comment(lib, "version.lib")
@@ -705,10 +706,8 @@ void SettingsOverlay::RenderUpdateToast(ID2D1DeviceContext* pRT, float hudX, flo
             iconR.right = r.left + 32.0f; 
             D2D1_RECT_F textR = r;
             textR.left = iconR.right;
-            
-            m_textFormatIcon->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-            m_textFormatIcon->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-            pRT->DrawText(L"\xEB51", 1, m_textFormatIcon.Get(), iconR, m_brushText.Get());
+
+            QuickView::UI::GeekIconRenderer::DrawVectorIcon(pRT, *Icons::Star, iconR, m_brushText.Get());
             
             m_textFormatItem->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
             m_textFormatItem->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
@@ -754,8 +753,6 @@ void SettingsOverlay::SetUIScale(float scale) {
     m_uiScale = scale;
     m_textFormatHeader.Reset();
     m_textFormatItem.Reset();
-    m_textFormatIcon.Reset();
-    m_textFormatSymbol.Reset();
 }
 
 void SettingsOverlay::CreateResources(ID2D1DeviceContext* pRT) {
@@ -803,39 +800,11 @@ void SettingsOverlay::CreateResources(ID2D1DeviceContext* pRT) {
         DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(m_dwriteFactory.GetAddressOf()));
     }
 
-    if (!m_textFormatHeader || !m_textFormatItem || !m_textFormatIcon || !m_textFormatSymbol) {
+    if (!m_textFormatHeader || !m_textFormatItem) {
         float scaledHeader = fontSizeHeader * m_uiScale;
         float scaledItem = fontSizeItem * m_uiScale;
         m_dwriteFactory->CreateTextFormat(fontFace, nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, scaledHeader, L"en-us", &m_textFormatHeader);
         m_dwriteFactory->CreateTextFormat(fontFace, nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, scaledItem, L"en-us", &m_textFormatItem);
-    }
-    
-    // [v9.98] Font Fallback Logic (Unified)
-    const wchar_t* fontCandidates[] = { 
-        L"Segoe Fluent Icons", 
-        L"Segoe MDL2 Assets", 
-        L"Segoe UI Symbol" 
-    };
-    const wchar_t* selectedFont = L"Segoe UI Symbol";
-
-    ComPtr<IDWriteFontCollection> sysFonts;
-    if (SUCCEEDED(m_dwriteFactory->GetSystemFontCollection(&sysFonts, FALSE))) {
-        for (const auto& name : fontCandidates) {
-             UINT32 index;
-             BOOL exists;
-             if (SUCCEEDED(sysFonts->FindFamilyName(name, &index, &exists)) && exists) {
-                 selectedFont = name;
-                 break;
-             }
-        }
-    }
-
-    // Icon font
-    if (!m_textFormatIcon) {
-        m_dwriteFactory->CreateTextFormat(selectedFont, nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 14.0f * m_uiScale, L"en-us", &m_textFormatIcon);
-    }
-    if (!m_textFormatSymbol) {
-        m_dwriteFactory->CreateTextFormat(selectedFont, nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 16.0f * m_uiScale, L"en-us", &m_textFormatSymbol); // For small button icons
     }
 
     if (m_textFormatItem) {
@@ -964,7 +933,7 @@ void SettingsOverlay::BuildMenu() {
     // --- 1. General (常规) ---
     SettingsTab tabGeneral;
     tabGeneral.name = AppStrings::Settings_Tab_General;
-    tabGeneral.icon = L"\xE713"; 
+    tabGeneral.icon = Icons::Settings;
     
     tabGeneral.items.push_back({ AppStrings::Settings_Group_Foundation, OptionType::Header });
     
@@ -1126,7 +1095,7 @@ void SettingsOverlay::BuildMenu() {
     // --- 2. Theme & Geek Glass (主题) ---
     SettingsTab tabTheme;
     tabTheme.name = AppStrings::Settings_Tab_Theme;
-    tabTheme.icon = L"\xE771"; // Personalize icon
+    tabTheme.icon = Icons::Personalize;
 
     // Base Theme Modes
     SettingsItem itemThemeMode = {
@@ -1415,7 +1384,7 @@ void SettingsOverlay::BuildMenu() {
     // --- 3. Interface (Visuals) ---
     SettingsTab tabVisuals;
     tabVisuals.name = AppStrings::Settings_Tab_Visuals;
-    tabVisuals.icon = L"\xE790"; 
+    tabVisuals.icon = Icons::Visuals;
     
     // Backdrop
     tabVisuals.items.push_back({ AppStrings::Settings_Header_Backdrop, OptionType::Header });
@@ -1598,7 +1567,7 @@ void SettingsOverlay::BuildMenu() {
     // --- 3. Control (操作) ---
     SettingsTab tabControl;
     tabControl.name = AppStrings::Settings_Tab_Controls;
-    tabControl.icon = L"\xE967"; 
+    tabControl.icon = Icons::Control;
     
     tabControl.items.push_back({ AppStrings::Settings_Header_Mouse, OptionType::Header });
     tabControl.items.push_back({ AppStrings::Settings_Label_InvertWheel, OptionType::Toggle, &g_config.InvertWheel });
@@ -1665,7 +1634,7 @@ void SettingsOverlay::BuildMenu() {
     // --- 4. Image & Edit (图像与编辑) ---
     SettingsTab tabImage;
     tabImage.name = AppStrings::Settings_Tab_Image; 
-    tabImage.icon = L"\xE91B";
+    tabImage.icon = Icons::Image;
     
     tabImage.items.push_back({ AppStrings::Settings_Header_Render, OptionType::Header });
 
@@ -1844,7 +1813,7 @@ void SettingsOverlay::BuildMenu() {
     // --- 5. Advanced (高级) ---
     SettingsTab tabAdvanced;
     tabAdvanced.name = AppStrings::Settings_Tab_Advanced;
-    tabAdvanced.icon = L"\xE71C"; // Equalizer/Settings icon
+    tabAdvanced.icon = Icons::Advanced;
     
     // Debug
     tabAdvanced.items.push_back({ AppStrings::Settings_Header_Features, OptionType::Header });
@@ -1943,7 +1912,7 @@ void SettingsOverlay::BuildMenu() {
     // --- 6. About (关于) ---
     SettingsTab tabAbout;
     tabAbout.name = AppStrings::Settings_Tab_About;
-    tabAbout.icon = L"\xE946"; 
+    tabAbout.icon = Icons::Info;
     
     // 1. Header (Logo + Name + Version)
     // We pass Version string in disabledText to keep it accessible
@@ -2244,13 +2213,18 @@ void SettingsOverlay::Render(ID2D1DeviceContext* pRT, float winW, float winH) {
         pRT->DrawLine(D2D1::Point2F(sidebarRect.right, hudY), D2D1::Point2F(sidebarRect.right, hudY + hudH), sepBrush.Get(), 1.0f);
 
         // --- Sidebar Content ---
+        auto FitSquareIcon = [](const D2D1_RECT_F& r, float scale) {
+            const float w = r.right - r.left;
+            const float h = r.bottom - r.top;
+            const float side = (std::min)(w, h) * scale;
+            const float cx = (r.left + r.right) * 0.5f;
+            const float cy = (r.top + r.bottom) * 0.5f;
+            return D2D1::RectF(cx - side * 0.5f, cy - side * 0.5f, cx + side * 0.5f, cy + side * 0.5f);
+        };
         
         // Back Button (Top of Sidebar)
-        m_textFormatIcon->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-        m_textFormatIcon->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-        
         D2D1_RECT_F backIconRect = D2D1::RectF(hudX + 15.0f * s, hudY, hudX + 45.0f * s, hudY + 50.0f * s);
-        pRT->DrawText(L"\xE72B", 1, m_textFormatIcon.Get(), backIconRect, m_brushText.Get(), D2D1_DRAW_TEXT_OPTIONS_NONE, DWRITE_MEASURING_MODE_NATURAL);
+        QuickView::UI::GeekIconRenderer::DrawVectorIcon(pRT, *Icons::Back, FitSquareIcon(backIconRect, 0.47f), m_brushText.Get());
         
         m_textFormatItem->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
         m_textFormatItem->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
@@ -2274,9 +2248,10 @@ void SettingsOverlay::Render(ID2D1DeviceContext* pRT, float winW, float winH) {
 
             // Icon
             D2D1_RECT_F iconRect = D2D1::RectF(hudX + 15.0f * s, tabY, hudX + 15.0f * s + 40.0f * s, tabY + 40.0f * s);
-            m_textFormatIcon->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-            m_textFormatIcon->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-            pRT->DrawText(tab.icon.c_str(), 1, m_textFormatIcon.Get(), iconRect, isActive ? m_brushAccent.Get() : m_brushText.Get(), D2D1_DRAW_TEXT_OPTIONS_NONE, DWRITE_MEASURING_MODE_NATURAL);
+            if (tab.icon) {
+                QuickView::UI::GeekIconRenderer::DrawVectorIcon(
+                    pRT, *tab.icon, FitSquareIcon(iconRect, 0.36f), isActive ? m_brushAccent.Get() : m_brushText.Get());
+            }
 
             // Text
             D2D1_RECT_F textRect = D2D1::RectF(hudX + 65.0f * s, tabY, hudX + sidebarW - 10.0f * s, tabY + 40.0f * s);
@@ -2362,8 +2337,7 @@ void SettingsOverlay::Render(ID2D1DeviceContext* pRT, float winW, float winH) {
                  if (m_bitmapIcon) {
                      pRT->DrawBitmap(m_bitmapIcon.Get(), iconRect);
                 } else {
-                     m_textFormatIcon->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-                     pRT->DrawText(L"\xE706", 1, m_textFormatIcon.Get(), iconRect, m_brushAccent.Get());
+                     QuickView::UI::GeekIconRenderer::DrawVectorIcon(pRT, *Icons::Contact, FitSquareIcon(iconRect, 0.52f), m_brushAccent.Get());
                 }
 
                 // Text Stack
@@ -2443,12 +2417,13 @@ void SettingsOverlay::Render(ID2D1DeviceContext* pRT, float winW, float winH) {
                      float totalW = iconW + gapW + textW;
                      float startX = r.github.left + (w - totalW) / 2.0f;
                      
-                     D2D1_RECT_F iconR = D2D1::RectF(startX, r.github.top, startX + iconW, r.github.bottom); 
-                     m_textFormatSymbol->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER); 
-                     m_textFormatSymbol->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-                     pRT->DrawText(L"\xE774", 1, m_textFormatSymbol.Get(), iconR, m_brushText.Get());
+                     D2D1_RECT_F iconR = D2D1::RectF(startX, r.github.top, startX + iconW, r.github.bottom);
+                     m_textFormatItem->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+                     m_textFormatItem->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+                     pRT->DrawText(L"\xD83C\xDF10", 2, m_textFormatItem.Get(), iconR, m_brushText.Get()); // 🌐
                      
                      D2D1_RECT_F textR = D2D1::RectF(startX + iconW + gapW, r.github.top, r.github.right, r.github.bottom);
+                     m_textFormatItem->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
                      m_textFormatItem->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
                      pRT->DrawText(AppStrings::Settings_Link_GitHub, (UINT32)wcslen(AppStrings::Settings_Link_GitHub), m_textFormatItem.Get(), textR, m_brushText.Get());
                 }
@@ -2474,12 +2449,13 @@ void SettingsOverlay::Render(ID2D1DeviceContext* pRT, float winW, float winH) {
                      float totalW = iconW + gapW + textW;
                      float startX = r.issues.left + (w - totalW) / 2.0f;
                      
-                     D2D1_RECT_F iconR = D2D1::RectF(startX, r.issues.top, startX + iconW, r.issues.bottom); 
-                     m_textFormatSymbol->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER); 
-                     m_textFormatSymbol->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-                     pRT->DrawText(L"\xE90A", 1, m_textFormatSymbol.Get(), iconR, m_brushText.Get());
+                     D2D1_RECT_F iconR = D2D1::RectF(startX, r.issues.top, startX + iconW, r.issues.bottom);
+                     m_textFormatItem->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+                     m_textFormatItem->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+                     pRT->DrawText(L"\x2757", 1, m_textFormatItem.Get(), iconR, m_brushText.Get()); // ❗
                      
                      D2D1_RECT_F textR = D2D1::RectF(startX + iconW + gapW, r.issues.top, r.issues.right, r.issues.bottom);
+                     m_textFormatItem->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
                      m_textFormatItem->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
                      pRT->DrawText(AppStrings::Settings_Link_ReportIssue, (UINT32)wcslen(AppStrings::Settings_Link_ReportIssue), m_textFormatItem.Get(), textR, m_brushText.Get());
                 }
@@ -2506,12 +2482,13 @@ void SettingsOverlay::Render(ID2D1DeviceContext* pRT, float winW, float winH) {
                      float totalW = iconW + gapW + textW;
                      float startX = r.keys.left + (w - totalW) / 2.0f;
                      
-                     D2D1_RECT_F iconR = D2D1::RectF(startX, r.keys.top, startX + iconW, r.keys.bottom); 
-                     m_textFormatSymbol->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER); 
-                     m_textFormatSymbol->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-                     pRT->DrawText(L"\xE897", 1, m_textFormatSymbol.Get(), iconR, m_brushText.Get());
+                     D2D1_RECT_F iconR = D2D1::RectF(startX, r.keys.top, startX + iconW, r.keys.bottom);
+                     m_textFormatItem->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+                     m_textFormatItem->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+                     pRT->DrawText(L"\x2328", 1, m_textFormatItem.Get(), iconR, m_brushText.Get()); // ⌨
                      
                      D2D1_RECT_F textR = D2D1::RectF(startX + iconW + gapW, r.keys.top, r.keys.right, r.keys.bottom);
+                     m_textFormatItem->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
                      m_textFormatItem->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
                      pRT->DrawText(label.c_str(), (UINT32)label.length(), m_textFormatItem.Get(), textR, m_brushText.Get());
                 }
@@ -2666,16 +2643,16 @@ void SettingsOverlay::Render(ID2D1DeviceContext* pRT, float winW, float winH) {
                 float iconY = contentY + (rowHeight - iconSize) / 2.0f;
                 item.tooltipIconRect = D2D1::RectF(iconX, iconY, iconX + iconSize, iconY + iconSize);
 
-                m_textFormatSymbol->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-                m_textFormatSymbol->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-
                 bool isHover = (&item == m_pHoverTooltipItem);
                 ComPtr<ID2D1SolidColorBrush> iconBrush = isHover ? m_brushText : m_brushTextDim;
-
-                pRT->DrawText(L"\xE946", 1, m_textFormatSymbol.Get(), item.tooltipIconRect, iconBrush.Get());
-
-                m_textFormatSymbol->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
-                m_textFormatSymbol->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+                D2D1_RECT_F infoIconRect = item.tooltipIconRect;
+                const float iw = infoIconRect.right - infoIconRect.left;
+                const float ih = infoIconRect.bottom - infoIconRect.top;
+                const float iside = (std::min)(iw, ih) * 0.66f;
+                const float icx = (infoIconRect.left + infoIconRect.right) * 0.5f;
+                const float icy = (infoIconRect.top + infoIconRect.bottom) * 0.5f;
+                infoIconRect = D2D1::RectF(icx - iside * 0.5f, icy - iside * 0.5f, icx + iside * 0.5f, icy + iside * 0.5f);
+                QuickView::UI::GeekIconRenderer::DrawVectorIcon(pRT, *Icons::Info, infoIconRect, iconBrush.Get());
             } else {
                 item.tooltipIconRect = {0};
             }
@@ -3666,14 +3643,14 @@ void SettingsOverlay::DrawComboBox(ID2D1DeviceContext* pRT, const D2D1_RECT_F& r
     
     // Arrow
     D2D1_RECT_F arrowRect = D2D1::RectF(boxRect.right - 30, boxRect.top, boxRect.right, boxRect.bottom);
-    m_textFormatIcon->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-    m_textFormatIcon->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-    
-    const wchar_t* arrow = isOpen ? L"\xE70E" : L"\xE70D"; // Up/Down
-    pRT->DrawText(arrow, 1, m_textFormatIcon.Get(), arrowRect, m_brushTextDim.Get());
-    
-    // Restore
-    m_textFormatIcon->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+    const float aw = arrowRect.right - arrowRect.left;
+    const float ah = arrowRect.bottom - arrowRect.top;
+    const float aside = (std::min)(aw, ah) * 0.46f;
+    const float acx = (arrowRect.left + arrowRect.right) * 0.5f;
+    const float acy = (arrowRect.top + arrowRect.bottom) * 0.5f;
+    D2D1_RECT_F arrowIconRect = D2D1::RectF(acx - aside * 0.5f, acy - aside * 0.5f, acx + aside * 0.5f, acy + aside * 0.5f);
+    QuickView::UI::GeekIconRenderer::DrawVectorIcon(
+        pRT, *(isOpen ? Icons::ComboUp : Icons::ComboDown), arrowIconRect, m_brushTextDim.Get());
 }
 
 void SettingsOverlay::DrawComboDropdown(ID2D1DeviceContext* pRT) {
