@@ -574,6 +574,7 @@ ID2D1DeviceContext* CompositionEngine::BeginPendingUpdate(UINT width, UINT heigh
     
     // Safe reset
     layer.visual->RemoveAllVisuals(); 
+    layer.visual->SetContent(nullptr);
     layer.surface.Reset();
     layer.baseVisual.Reset();
     layer.baseSurface.Reset();
