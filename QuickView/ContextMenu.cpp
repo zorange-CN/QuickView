@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "ContextMenu.h"
 #include "GeekContextMenu.h"
 #include "AppStrings.h"
@@ -23,10 +23,10 @@ void ShowContextMenu(HWND hwnd, POINT pt, bool hasImage, bool needsExtensionFix,
     // Top Action Row (4 buttons)
     // ========================================================
     std::vector<AB> actions = {
-        { IDM_OPEN, AppStrings::Context_Open, Icons::Open, true, false },
-        { IDM_RENAME, AppStrings::Context_Rename, Icons::Rename, hasImage, false },
-        { IDM_EDIT, AppStrings::Context_Edit, Icons::Edit, hasImage, false },
-        { IDM_DELETE, AppStrings::Context_Delete, Icons::Delete, hasImage, true /*isDanger*/ },
+        { IDM_OPEN, AppStrings::Context_Open, GeekIcons::Open, true, false },
+        { IDM_RENAME, AppStrings::Context_Rename, GeekIcons::Rename, hasImage, false },
+        { IDM_EDIT, AppStrings::Context_Edit, GeekIcons::Edit, hasImage, false },
+        { IDM_DELETE, AppStrings::Context_Delete, GeekIcons::Delete, hasImage, true /*isDanger*/ },
     };
 
     // ========================================================
@@ -35,16 +35,16 @@ void ShowContextMenu(HWND hwnd, POINT pt, bool hasImage, bool needsExtensionFix,
     std::vector<MI> items;
 
     // --- Open & Copy Group ---
-    items.push_back(MI::Normal(IDM_OPENWITH_DEFAULT, AppStrings::Context_OpenWith, Icons::OpenWith).Enabled(hasImage));
-    items.push_back(MI::Normal(IDM_COPY_IMAGE, AppStrings::Context_CopyImage, Icons::Copy, L"Ctrl+C"));
-    items.push_back(MI::Normal(IDM_SHOW_IN_EXPLORER, AppStrings::Context_ShowInExplorer, Icons::Explorer));
-    items.push_back(MI::Normal(IDM_OPEN_FOLDER, AppStrings::Context_OpenFolder, Icons::Folder).Enabled(hasImage));
-    items.push_back(MI::Normal(IDM_COPY_PATH, AppStrings::Context_CopyPath, Icons::Link, L"Ctrl+Shift+C"));
-    items.push_back(MI::Normal(IDM_PRINT, AppStrings::Context_Print, Icons::Print, L"Ctrl+P"));
+    items.push_back(MI::Normal(IDM_OPENWITH_DEFAULT, AppStrings::Context_OpenWith, GeekIcons::OpenWith).Enabled(hasImage));
+    items.push_back(MI::Normal(IDM_COPY_IMAGE, AppStrings::Context_CopyImage, GeekIcons::Copy, L"Ctrl+C"));
+    items.push_back(MI::Normal(IDM_SHOW_IN_EXPLORER, AppStrings::Context_ShowInExplorer, GeekIcons::Explorer));
+    items.push_back(MI::Normal(IDM_OPEN_FOLDER, AppStrings::Context_OpenFolder, GeekIcons::Folder).Enabled(hasImage));
+    items.push_back(MI::Normal(IDM_COPY_PATH, AppStrings::Context_CopyPath, GeekIcons::Link, L"Ctrl+Shift+C"));
+    items.push_back(MI::Normal(IDM_PRINT, AppStrings::Context_Print, GeekIcons::Print, L"Ctrl+P"));
     items.push_back(MI::Sep());
 
     // --- Transform Submenu ---
-    items.push_back(MI::Sub(AppStrings::Context_Transform, Icons::Transform, {
+    items.push_back(MI::Sub(AppStrings::Context_Transform, GeekIcons::Transform, {
         MI::Normal(IDM_ROTATE_CW, AppStrings::Context_RotateCW),
         MI::Normal(IDM_ROTATE_CCW, AppStrings::Context_RotateCCW),
         MI::Normal(IDM_FLIP_H, AppStrings::Context_FlipH),
@@ -54,7 +54,7 @@ void ShowContextMenu(HWND hwnd, POINT pt, bool hasImage, bool needsExtensionFix,
     // --- View Submenu ---
     {
         std::vector<MI> viewItems;
-        viewItems.push_back(MI::Check(IDM_COMPARE_MODE, AppStrings::Context_CompareMode, isCompareMode, Icons::Compare));
+        viewItems.push_back(MI::Check(IDM_COMPARE_MODE, AppStrings::Context_CompareMode, isCompareMode, GeekIcons::Compare));
         viewItems.push_back(MI::Sep());
         viewItems.push_back(MI::Normal(IDM_ZOOM_100, AppStrings::Context_ActualSize));
         viewItems.push_back(MI::Normal(IDM_ZOOM_FIT, AppStrings::Context_FitToScreen));
@@ -76,7 +76,7 @@ void ShowContextMenu(HWND hwnd, POINT pt, bool hasImage, bool needsExtensionFix,
         viewItems.push_back(MI::Check(IDM_FULLSCREEN, AppStrings::Context_Fullscreen, isFullscreen));
         viewItems.push_back(MI::Check(IDM_TOGGLE_SPAN, AppStrings::Context_SpanDisplays, isCrossMonitor));
 
-        items.push_back(MI::Sub(AppStrings::Context_View, Icons::Eye, std::move(viewItems)));
+        items.push_back(MI::Sub(AppStrings::Context_View, GeekIcons::Eye, std::move(viewItems)));
     }
 
     // --- Color Space Submenu ---
@@ -103,7 +103,7 @@ void ShowContextMenu(HWND hwnd, POINT pt, bool hasImage, bool needsExtensionFix,
             case 5: cmsLabel += AppStrings::Settings_Option_CmsGray; break;
             case 6: cmsLabel += AppStrings::Settings_Option_CmsProPhoto; break;
         }
-        items.push_back(MI::Sub(cmsLabel.c_str(), Icons::Color, std::move(cmsItems)));
+        items.push_back(MI::Sub(cmsLabel.c_str(), GeekIcons::Color, std::move(cmsItems)));
     }
 
     // --- Soft Proofing Submenu ---
@@ -130,11 +130,11 @@ void ShowContextMenu(HWND hwnd, POINT pt, bool hasImage, bool needsExtensionFix,
             bool sel = (g_runtime.SoftProofProfilePath == profiles[i]);
             proofItems.push_back(MI::Check(IDM_SOFT_PROOF_BASE + i, fn.c_str(), sel));
         }
-        items.push_back(MI::Sub(AppStrings::Context_SoftProofProfile, Icons::SoftProof, std::move(proofItems)));
+        items.push_back(MI::Sub(AppStrings::Context_SoftProofProfile, GeekIcons::SoftProof, std::move(proofItems)));
     }
 
     // --- Wallpaper Submenu ---
-    items.push_back(MI::Sub(AppStrings::Context_SetAsWallpaper, Icons::Wallpaper, {
+    items.push_back(MI::Sub(AppStrings::Context_SetAsWallpaper, GeekIcons::Wallpaper, {
         MI::Normal(IDM_WALLPAPER_FILL, AppStrings::Context_WallpaperFill),
         MI::Normal(IDM_WALLPAPER_FIT, AppStrings::Context_WallpaperFit),
         MI::Normal(IDM_WALLPAPER_TILE, AppStrings::Context_WallpaperTile),
@@ -144,12 +144,12 @@ void ShowContextMenu(HWND hwnd, POINT pt, bool hasImage, bool needsExtensionFix,
 
     // --- File Operations ---
     if (hasImage && needsExtensionFix)
-        items.push_back(MI::Normal(IDM_FIX_EXTENSION, AppStrings::Context_FixExtension, Icons::FixExt));
+        items.push_back(MI::Normal(IDM_FIX_EXTENSION, AppStrings::Context_FixExtension, GeekIcons::FixExt));
 
     items.push_back(MI::Sep());
 
     // --- Sort Submenu ---
-    items.push_back(MI::Sub(AppStrings::Context_SortBy, Icons::Sort, {
+    items.push_back(MI::Sub(AppStrings::Context_SortBy, GeekIcons::Sort, {
         MI::Check(IDM_SORT_AUTO, AppStrings::Settings_Option_SortAuto, g_runtime.SortOrder == 0),
         MI::Check(IDM_SORT_NAME, AppStrings::Settings_Option_SortName, g_runtime.SortOrder == 1),
         MI::Check(IDM_SORT_MODIFIED, AppStrings::Settings_Option_SortModified, g_runtime.SortOrder == 2),
@@ -162,7 +162,7 @@ void ShowContextMenu(HWND hwnd, POINT pt, bool hasImage, bool needsExtensionFix,
     }));
 
     // --- Navigation Submenu ---
-    items.push_back(MI::Sub(AppStrings::Context_NavOrder, Icons::Navigation, {
+    items.push_back(MI::Sub(AppStrings::Context_NavOrder, GeekIcons::Navigation, {
         MI::Check(IDM_NAV_LOOP, AppStrings::Settings_Option_NavLoop, g_runtime.NavLoop),
         MI::Check(IDM_NAV_THROUGH, AppStrings::Settings_Option_NavThrough, g_runtime.NavTraverse),
     }));
@@ -170,8 +170,8 @@ void ShowContextMenu(HWND hwnd, POINT pt, bool hasImage, bool needsExtensionFix,
     items.push_back(MI::Sep());
 
     // --- Settings Group ---
-    items.push_back(MI::Normal(IDM_SETTINGS, AppStrings::Context_Settings, Icons::Settings));
-    items.push_back(MI::Normal(IDM_EXIT, AppStrings::Context_Exit, Icons::Exit, L"MButton"));
+    items.push_back(MI::Normal(IDM_SETTINGS, AppStrings::Context_Settings, GeekIcons::Settings));
+    items.push_back(MI::Normal(IDM_EXIT, AppStrings::Context_Exit, GeekIcons::Exit, L"MButton"));
 
     // ========================================================
     // Show the Geek Glass menu
@@ -184,8 +184,8 @@ void ShowContextMenu(HWND hwnd, POINT pt, bool hasImage, bool needsExtensionFix,
 // ============================================================
 void ShowGalleryContextMenu(HWND hwnd, POINT pt) {
     std::vector<MI> items;
-    items.push_back(MI::Normal(IDM_GALLERY_OPEN_COMPARE, AppStrings::Context_GalleryOpenCompare, Icons::Compare));
-    items.push_back(MI::Normal(IDM_GALLERY_OPEN_NEW_WINDOW, AppStrings::Context_GalleryOpenNewWindow, Icons::Open));
+    items.push_back(MI::Normal(IDM_GALLERY_OPEN_COMPARE, AppStrings::Context_GalleryOpenCompare, GeekIcons::Compare));
+    items.push_back(MI::Normal(IDM_GALLERY_OPEN_NEW_WINDOW, AppStrings::Context_GalleryOpenNewWindow, GeekIcons::Open));
 
     GeekContextMenu::ShowMenu(hwnd, pt.x, pt.y, {}, std::move(items));
 }

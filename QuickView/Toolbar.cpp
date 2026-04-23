@@ -2,89 +2,51 @@
 #include "Toolbar.h"
 #include "AppStrings.h"
 #include "EditState.h"
+#include "GeekIconRenderer.h"
+
+using QuickView::UI::GeekIconRenderer;
 
 extern AppConfig g_config;
 
-namespace {
-}
-
-// Icon Codes (Segoe Fluent Icons)
-#define ICON_PREV L"\uE76B"
-#define ICON_NEXT L"\uE76C"
-#define ICON_ROTATE_L L"\uE7AD"
-#define ICON_ROTATE_R L"\uE7AD"
-#define ICON_FLIP L"\uE8AB"   // Mirror
-#define ICON_LOCK L"\uE72E"   // Standard MDL2 Lock
-#define ICON_UNLOCK L"\uE785" // Standard MDL2 Unlock
-#define ICON_GALLERY L"\uF0E2"
-#define ICON_INFO L"\uE946"
-#define ICON_RAW L"\uE722" // RAW icon (same for both states, color changes)
-#define ICON_WARNING L"\uE7BA"
-#define ICON_PIN L"\uE718"
-#define ICON_UNPIN L"\uE77A"
-#define ICON_COMPARE L"\uF57C"
-#define ICON_SWAP L"\uE8EE"
-#define ICON_LAYOUT L"\uECA5"
-#define ICON_OPEN L"\uE8E5"
-#define ICON_ZOOM_IN L"\uECC8"
-#define ICON_ZOOM_OUT L"\uECC9"
-#define ICON_DELETE L"\uE74D"
-#define ICON_LINK L"\uE71B"
-#define ICON_PAN L"\uE759"
-#define ICON_EXIT L"\uE8BB"
-#define ICON_PLAY L"\uE768"
-#define ICON_PAUSE L"\uE769"
-#define ICON_SKIP_BACK L"\uE892"
-#define ICON_SKIP_FWD L"\uE893"
-#define ICON_DIAGNOSTIC L"\uE7B3"
+namespace Icons = GeekIcons;
 
 Toolbar::Toolbar() {
-  // Define Buttons
+  // Define Buttons — each uses a pointer to vector icon data
   m_buttons = {
-      {ToolbarButtonID::Prev, ICON_PREV[0], {}, true},
-      {ToolbarButtonID::Next, ICON_NEXT[0], {}, true},
-      // Spacer? Just gap.
-      {ToolbarButtonID::RotateL, ICON_ROTATE_L[0], {}, true},
-      {ToolbarButtonID::RotateR, ICON_ROTATE_R[0], {}, true},
-      {ToolbarButtonID::FlipH, ICON_FLIP[0], {}, true},
+      {ToolbarButtonID::Prev, Icons::ChevronLeft, {}, true},
+      {ToolbarButtonID::Next, Icons::Chevron, {}, true},
+      {ToolbarButtonID::RotateL, Icons::Transform, {}, true},
+      {ToolbarButtonID::RotateR, Icons::Transform, {}, true},
+      {ToolbarButtonID::FlipH, Icons::Flip, {}, true},
 
-      {ToolbarButtonID::LockSize, ICON_LOCK[0], {}, true, false},
-      {ToolbarButtonID::Gallery, ICON_GALLERY[0], {}, true},
+      {ToolbarButtonID::LockSize, Icons::Lock, {}, true, false},
+      {ToolbarButtonID::Gallery, Icons::Gallery, {}, true},
 
-      {ToolbarButtonID::Exif, ICON_INFO[0], {}, true, false},
-      {ToolbarButtonID::RawToggle,
-       ICON_RAW[0],
-       {},
-       false,
-       false}, // Hidden/Disabled if not RAW
-      {ToolbarButtonID::FixExtension,
-       ICON_WARNING[0],
-       {},
-       false,
-       false,
-       false}, // Hidden if no mismatch
+      {ToolbarButtonID::Exif, Icons::Info, {}, true, false},
+      {ToolbarButtonID::RawToggle, Icons::Raw, {}, false, false},
+      {ToolbarButtonID::FixExtension, Icons::Warning, {}, false, false, false},
 
-      {ToolbarButtonID::CompareToggle, ICON_COMPARE[0], {}, true, false},
+      {ToolbarButtonID::CompareToggle, Icons::CompareToggle, {}, true, false},
 
       // Compare mode buttons (hidden in normal mode)
-      {ToolbarButtonID::CompareOpen, ICON_OPEN[0], {}, true, false},
-      {ToolbarButtonID::CompareSwap, ICON_SWAP[0], {}, true, false},
-      {ToolbarButtonID::CompareLayout, ICON_LAYOUT[0], {}, true, false},
-      {ToolbarButtonID::CompareInfo, ICON_INFO[0], {}, true, false},
-      {ToolbarButtonID::CompareRawToggle, ICON_RAW[0], {}, false, false}, // RAW toggle in compare mode (hidden if not RAW)
-      {ToolbarButtonID::CompareDelete, ICON_DELETE[0], {}, true, false},
-      {ToolbarButtonID::CompareZoomIn, ICON_ZOOM_IN[0], {}, true, false},
-      {ToolbarButtonID::CompareZoomOut, ICON_ZOOM_OUT[0], {}, true, false},
-      {ToolbarButtonID::CompareSyncZoom, ICON_LINK[0], {}, true, true},
-      {ToolbarButtonID::CompareSyncPan, ICON_PAN[0], {}, true, true},
-      {ToolbarButtonID::CompareExit, ICON_EXIT[0], {}, true, false},
+      {ToolbarButtonID::CompareOpen, Icons::Open, {}, true, false},
+      {ToolbarButtonID::CompareSwap, Icons::Swap, {}, true, false},
+      {ToolbarButtonID::CompareLayout, Icons::Layout, {}, true, false},
+      {ToolbarButtonID::CompareInfo, Icons::Info, {}, true, false},
+      {ToolbarButtonID::CompareRawToggle, Icons::Raw, {}, false, false},
+      {ToolbarButtonID::CompareDelete, Icons::Delete, {}, true, false},
+      {ToolbarButtonID::CompareZoomIn, Icons::ZoomIn, {}, true, false},
+      {ToolbarButtonID::CompareZoomOut, Icons::ZoomOut, {}, true, false},
+      {ToolbarButtonID::CompareSyncZoom, Icons::Link, {}, true, true},
+      {ToolbarButtonID::CompareSyncPan, Icons::Pan, {}, true, true},
+      {ToolbarButtonID::CompareExit, Icons::ExitToolbar, {}, true, false},
       // Animation mode buttons (hidden in normal mode)
-      {ToolbarButtonID::AnimPrevFrame, ICON_SKIP_BACK[0], {}, true, false},
-      {ToolbarButtonID::AnimPlayPause, ICON_PLAY[0], {}, true, false},
-      {ToolbarButtonID::AnimNextFrame, ICON_SKIP_FWD[0], {}, true, false},
-      {ToolbarButtonID::AnimDirtyRect, ICON_DIAGNOSTIC[0], {}, true, false},
+      {ToolbarButtonID::AnimPrevFrame, Icons::SkipBack, {}, true, false},
+      {ToolbarButtonID::AnimPlayPause, Icons::Play, {}, true, false},
+      {ToolbarButtonID::AnimNextFrame, Icons::SkipFwd, {}, true, false},
+      {ToolbarButtonID::AnimDirtyRect, Icons::Diagnostic, {}, true, false},
       // Pin at the very end
-      {ToolbarButtonID::Pin, ICON_PIN[0], {}, true, false},
+      {ToolbarButtonID::Pin, Icons::Pin, {}, true, false},
   };
 }
 
@@ -98,8 +60,6 @@ void Toolbar::SetUIScale(float scale) {
   if (fabsf(m_uiScale - scale) < 0.001f)
     return;
   m_uiScale = scale;
-  m_textFormatIcon.Reset();
-  m_textFormatIconSmall.Reset();
   m_textFormatUI.Reset();
 }
 
@@ -126,51 +86,9 @@ void Toolbar::CreateResources(ID2D1RenderTarget *pRT) {
 
   if (!m_dwriteFactory)
     return;
-  if (m_textFormatIcon && m_textFormatIconSmall && m_textFormatUI &&
-      fabsf(m_iconFontScale - m_uiScale) < 0.001f &&
-      fabsf(m_iconFontScaleSmall - m_uiScale) < 0.001f &&
+  if (m_textFormatUI &&
       fabsf(m_uiFontScale - m_uiScale) < 0.001f)
     return;
-
-  const wchar_t *fontCandidates[] = {L"Segoe Fluent Icons",
-                                     L"Segoe MDL2 Assets", L"Segoe UI Symbol"};
-  const wchar_t *selectedFont = L"Segoe UI Symbol";
-
-  ComPtr<IDWriteFontCollection> sysFonts;
-  if (SUCCEEDED(m_dwriteFactory->GetSystemFontCollection(&sysFonts, FALSE))) {
-    for (const auto &name : fontCandidates) {
-      UINT32 index;
-      BOOL exists;
-      if (SUCCEEDED(sysFonts->FindFamilyName(name, &index, &exists)) &&
-          exists) {
-        selectedFont = name;
-        break;
-      }
-    }
-  }
-
-  m_textFormatIcon.Reset();
-  m_dwriteFactory->CreateTextFormat(
-      selectedFont, NULL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-      DWRITE_FONT_STRETCH_NORMAL, 16.0f * m_uiScale, L"en-us",
-      &m_textFormatIcon);
-  if (m_textFormatIcon) {
-    m_textFormatIcon->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-    m_textFormatIcon->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-    m_iconFontScale = m_uiScale;
-  }
-
-  m_textFormatIconSmall.Reset();
-  m_dwriteFactory->CreateTextFormat(
-      selectedFont, NULL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-      DWRITE_FONT_STRETCH_NORMAL, 14.0f * m_uiScale, L"en-us",
-      &m_textFormatIconSmall);
-  if (m_textFormatIconSmall) {
-    m_textFormatIconSmall->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-    m_textFormatIconSmall->SetParagraphAlignment(
-        DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-    m_iconFontScaleSmall = m_uiScale;
-  }
 
   m_textFormatUI.Reset();
   m_dwriteFactory->CreateTextFormat(
@@ -324,7 +242,7 @@ void Toolbar::UpdateLayout(float winW, float winH) {
     // Sync Pin State
     if (btn.id == ToolbarButtonID::Pin) {
       btn.isToggled = m_isPinned;
-      btn.iconChar = m_isPinned ? ICON_UNPIN[0] : ICON_PIN[0];
+      btn.iconGlyph = m_isPinned ? Icons::Unpin : Icons::Pin;
     }
 
     if (visible) {
@@ -637,26 +555,29 @@ void Toolbar::Render(ID2D1RenderTarget *pRT) {
       if (btn.id == ToolbarButtonID::AnimDirtyRect && m_animDirtyRect)
         pBrush = m_brushIconActive.Get();
 
-      wchar_t icon = btn.iconChar;
-      IDWriteTextFormat *iconFormat =
-          (btn.id == ToolbarButtonID::CompareExit && m_textFormatIconSmall)
-              ? m_textFormatIconSmall.Get()
-              : m_textFormatIcon.Get();
+      // Scale down the vector icon to match original font sizes
+      float targetSize = (btn.id == ToolbarButtonID::CompareExit) ? 14.0f * m_uiScale : 16.0f * m_uiScale;
+      float padX = ((btn.rect.right - btn.rect.left) - targetSize) * 0.5f;
+      float padY = ((btn.rect.bottom - btn.rect.top) - targetSize) * 0.5f;
+      D2D1_RECT_F iconRect = D2D1::RectF(
+          btn.rect.left + padX, btn.rect.top + padY,
+          btn.rect.right - padX, btn.rect.bottom - padY);
 
+      // RotateL: mirror the shared Transform icon horizontally
       if (btn.id == ToolbarButtonID::RotateL) {
         D2D1::Matrix3x2F originalTransform;
         pRT->GetTransform(&originalTransform);
-        float cx = (btn.rect.left + btn.rect.right) / 2;
-        float cy = (btn.rect.top + btn.rect.bottom) / 2;
+        float cx = (btn.rect.left + btn.rect.right) * 0.5f;
+        float cy = (btn.rect.top + btn.rect.bottom) * 0.5f;
         pRT->SetTransform(
             D2D1::Matrix3x2F::Scale(-1.0f, 1.0f, D2D1::Point2F(cx, cy)) *
             originalTransform);
-        pRT->DrawText(&icon, 1, iconFormat, btn.rect, pBrush);
+        GeekIconRenderer::DrawVectorIcon(pRT, *btn.iconGlyph, iconRect, pBrush);
         pRT->SetTransform(originalTransform);
         continue;
       }
 
-      pRT->DrawText(&icon, 1, iconFormat, btn.rect, pBrush);
+      GeekIconRenderer::DrawVectorIcon(pRT, *btn.iconGlyph, iconRect, pBrush);
     }
 
     if (m_compareMode && m_compareStepRect.right > m_compareStepRect.left) {
@@ -685,7 +606,7 @@ void Toolbar::Render(ID2D1RenderTarget *pRT) {
       D2D1_RECT_F textRect = D2D1::RectF(
           m_compareStepRect.left + 2.0f * m_uiScale, m_compareStepRect.top,
           m_compareStepRect.right - stepBtnW, m_compareStepRect.bottom);
-      IDWriteTextFormat *stepFormat = m_textFormatUI ? m_textFormatUI.Get() : m_textFormatIconSmall.Get();
+      IDWriteTextFormat *stepFormat = m_textFormatUI.Get();
       
       // Use standard DrawText which handles standard fonts correctly
       pRT->DrawText(buf, (UINT32)wcslen(buf), stepFormat, textRect, m_brushIcon.Get());
@@ -746,7 +667,7 @@ void Toolbar::Render(ID2D1RenderTarget *pRT) {
       D2D1_RECT_F textRect = D2D1::RectF(
           m_animSpeedRect.left + 2.0f * m_uiScale, m_animSpeedRect.top,
           m_animSpeedRect.right - sBtnW, m_animSpeedRect.bottom);
-      IDWriteTextFormat *sFmt = m_textFormatUI ? m_textFormatUI.Get() : m_textFormatIconSmall.Get();
+      IDWriteTextFormat *sFmt = m_textFormatUI.Get();
       pRT->DrawText(buf, (UINT32)wcslen(buf), sFmt, textRect, m_brushIcon.Get());
 
       ComPtr<ID2D1Factory> factory;
@@ -989,7 +910,7 @@ bool Toolbar::UpdateAnimation() {
 }
 
 void Toolbar::SetLockState(bool locked) {
-  for (auto &btn : m_buttons) { if (btn.id == ToolbarButtonID::LockSize) { btn.isToggled = locked; btn.iconChar = locked ? ICON_LOCK[0] : ICON_UNLOCK[0]; } }
+  for (auto &btn : m_buttons) { if (btn.id == ToolbarButtonID::LockSize) { btn.isToggled = locked; btn.iconGlyph = locked ? Icons::Lock : Icons::Unlock; } }
 }
 
 void Toolbar::SetExifState(bool open) {
@@ -1043,7 +964,7 @@ void Toolbar::SetAnimationMode(bool enabled, bool playing, bool dirtyRect, bool 
   m_animDirtyRect = dirtyRect;
   for (auto &btn : m_buttons) {
     if (btn.id == ToolbarButtonID::AnimPlayPause) {
-      btn.iconChar = playing ? ICON_PAUSE[0] : ICON_PLAY[0];
+      btn.iconGlyph = playing ? Icons::Pause : Icons::Play;
       btn.isToggled = playing;
     }
     if (btn.id == ToolbarButtonID::AnimPrevFrame || btn.id == ToolbarButtonID::AnimNextFrame) {

@@ -3,6 +3,7 @@
 #include <vector>
 #include <string>
 #include "GeekGlass.h"
+#include "GeekIconLibrary.h"
 
 // IDs for button actions
 enum class ToolbarButtonID {
@@ -36,7 +37,7 @@ enum class ToolbarButtonID {
 
 struct ToolbarButton {
     ToolbarButtonID id;
-    wchar_t iconChar;       // Unicode point for Segoe Fluent Icon
+    GeekIcons::IconGlyph iconGlyph;  // Pointer to vector icon data
     D2D1_RECT_F rect;       // Runtime layout rect
     bool isEnabled = true;
     bool isToggled = false; // For Lock/Exif/Raw
@@ -116,8 +117,6 @@ private:
     // Animation
     float m_opacity = 0.0f;
     float m_uiScale = 1.0f;
-    float m_iconFontScale = 0.0f;
-    float m_iconFontScaleSmall = 0.0f;
     float m_uiFontScale = 0.0f;
 
     bool m_targetVisible = false;
@@ -165,8 +164,6 @@ private:
     ComPtr<ID2D1SolidColorBrush> m_brushWarning;
     ComPtr<ID2D1SolidColorBrush> m_brushHover;
     
-    ComPtr<IDWriteTextFormat> m_textFormatIcon;
-    ComPtr<IDWriteTextFormat> m_textFormatIconSmall;
     ComPtr<IDWriteTextFormat> m_textFormatUI;
     ComPtr<IDWriteFactory> m_dwriteFactory; // Need factory to create format
     

@@ -221,6 +221,8 @@
     <ClInclude Include="GeekGlass.h" />
     <ClInclude Include="GeekContextMenu.h" />
     <ClInclude Include="GeekIconLibrary.h" />
+    <ClInclude Include="GeekIconRenderer.h" />
+
     <ClInclude Include="exif.h" />
     <ClInclude Include="RenderEngine.h" />
     <ClInclude Include="ImageLoader.h" />
@@ -267,6 +269,8 @@
     <ClCompile Include="GeekGlass.cpp" />
     <ClCompile Include="GeekContextMenu.cpp" />
     <ClCompile Include="GeekIconLibrary.cpp" />
+    <ClCompile Include="GeekIconRenderer.cpp" />
+    <ClCompile Include="GeekIconData.cpp" />
     <ClCompile Include="exif.cpp" />
     <ClCompile Include="RenderEngine.cpp" />
     <ClCompile Include="ImageLoader.cpp" />

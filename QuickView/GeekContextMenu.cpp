@@ -2,6 +2,7 @@
 #include "GeekContextMenu.h"
 #include "EditState.h"
 #include "SystemInfo.h"
+#include "GeekIconRenderer.h"
 #include <d2d1_1.h>
 #include <cmath>
 
@@ -373,28 +374,6 @@ void GeekContextMenu::CreateResources() {
         DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
         DWRITE_FONT_STRETCH_NORMAL, 10.5f, L"", &m_actionFont);
 
-    // Icon Fonts
-    // Win11: Segoe Fluent Icons (Rounded)
-    // Win10: Segoe MDL2 Assets (Squared)
-    const wchar_t* iconFontName = isWin11 ? L"Segoe Fluent Icons" : L"Segoe MDL2 Assets";
-
-    m_dwFactory->CreateTextFormat(iconFontName, nullptr,
-        DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-        DWRITE_FONT_STRETCH_NORMAL, 16.0f, L"", &m_iconFont);
-
-    m_dwFactory->CreateTextFormat(iconFontName, nullptr,
-        DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-        DWRITE_FONT_STRETCH_NORMAL, 22.0f, L"", &m_actionIconFont);
-
-    if (m_iconFont) {
-        m_iconFont->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-        m_iconFont->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-    }
-    if (m_actionIconFont) {
-        m_actionIconFont->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-        m_actionIconFont->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-    }
-
     if (m_itemFont)     m_itemFont->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
     if (m_shortcutFont) m_shortcutFont->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
     if (m_actionFont) {
@@ -469,7 +448,6 @@ void GeekContextMenu::CreateResources() {
 void GeekContextMenu::DiscardResources() {
     m_rt.Reset(); m_factory.Reset(); m_dwFactory.Reset();
     m_itemFont.Reset(); m_shortcutFont.Reset(); m_actionFont.Reset();
-    m_iconFont.Reset(); m_actionIconFont.Reset();
     m_diagBrush.Reset();
     m_textBrush.Reset(); m_dimBrush.Reset(); m_disabledBrush.Reset();
     m_hoverBrush.Reset(); m_dangerBrush.Reset(); m_dangerTextBrush.Reset();
@@ -579,8 +557,8 @@ void GeekContextMenu::RenderActionRow() {
         ID2D1Brush* iconBrush = btn.isEnabled ? m_accentBrush.Get() : m_disabledBrush.Get();
         if (btn.isDanger && btn.isEnabled) iconBrush = m_dangerTextBrush.Get();
         
-        if (btn.iconGlyph && m_actionIconFont) {
-            m_rt->DrawText(btn.iconGlyph, 1, m_actionIconFont.Get(), iconR, iconBrush);
+        if (btn.iconGlyph) {
+            GeekIconRenderer::DrawVectorIcon(m_rt.Get(), *btn.iconGlyph, iconR, iconBrush);
         }
 
         // Label
@@ -624,18 +602,17 @@ void GeekContextMenu::RenderItem(const GeekMenuItem& item, int index) {
     if (item.isDanger && item.isEnabled) tb = m_dangerTextBrush.Get();
 
     // Checkmark
-    
-    if (item.type == MenuItemType::CheckBox && item.isChecked && m_iconFont) {
+    if (item.type == MenuItemType::CheckBox && item.isChecked) {
         D2D1_RECT_F checkR = D2D1::RectF(r.left + ICON_LEFT - 2, r.top + (rh - ICON_SIZE) / 2,
                                            r.left + ICON_LEFT + ICON_SIZE - 2, r.top + (rh + ICON_SIZE) / 2);
-        m_rt->DrawText(Icons::Check, 1, m_iconFont.Get(), checkR, m_accentBrush.Get());
+        GeekIconRenderer::DrawVectorIcon(m_rt.Get(), GeekIcons::CheckVector, checkR, m_accentBrush.Get());
     }
 
     // Icon
-    if (item.iconGlyph && m_iconFont && !(item.type == MenuItemType::CheckBox && item.isChecked)) {
+    if (item.iconGlyph && !(item.type == MenuItemType::CheckBox && item.isChecked)) {
         D2D1_RECT_F iconR = D2D1::RectF(r.left + ICON_LEFT, r.top + (rh - ICON_SIZE) / 2,
                                           r.left + ICON_LEFT + ICON_SIZE, r.top + (rh + ICON_SIZE) / 2);
-        m_rt->DrawText(item.iconGlyph, 1, m_iconFont.Get(), iconR, tb);
+        GeekIconRenderer::DrawVectorIcon(m_rt.Get(), *item.iconGlyph, iconR, tb);
     }
 
     // Text
@@ -653,10 +630,10 @@ void GeekContextMenu::RenderItem(const GeekMenuItem& item, int index) {
     }
 
     // Submenu chevron
-    if (item.type == MenuItemType::Submenu && m_iconFont) {
+    if (item.type == MenuItemType::Submenu) {
         D2D1_RECT_F chevR = D2D1::RectF(r.right - TEXT_RIGHT - 2, r.top + (rh - 8) / 2,
                                           r.right - TEXT_RIGHT + 6, r.top + (rh + 8) / 2);
-        m_rt->DrawText(Icons::Chevron, 1, m_iconFont.Get(), chevR, m_dimBrush.Get());
+        GeekIconRenderer::DrawVectorIcon(m_rt.Get(), GeekIcons::ChevronVector, chevR, m_dimBrush.Get());
     }
 }
 
