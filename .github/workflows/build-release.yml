@@ -143,5 +143,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: final-dist/*
+          draft: true  # Create as draft for manual review
+          generate_release_notes: true  # Automatically summarize commits
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
