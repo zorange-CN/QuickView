@@ -74,8 +74,16 @@ jobs:
           $exePath = "QuickView\bin\${{ matrix.platform }}\Release\QuickView.exe"
           if (-not (Test-Path $exePath)) { Write-Error "EXE not found"; exit 1 }
           $rawVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exePath).ProductVersion
+          
           # Format version (ensure it starts with 'v')
           $tag = if ($rawVersion -like "v*") { $rawVersion } else { "v$rawVersion" }
+          
+          # [Optimization] Trim trailing .0 for 4-digit versions (e.g., 5.3.0.0 -> v5.3.0) 
+          # to match semantic versioning and ensure update mechanism compatibility.
+          if ($tag -match '^v\d+\.\d+\.\d+\.0$') {
+              $tag = $tag.Substring(0, $tag.LastIndexOf('.'))
+          }
+          
           echo "DETECTED_TAG=$tag" >> $env:GITHUB_ENV
           echo "Detected version from EXE: $tag"
 
