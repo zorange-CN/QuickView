@@ -22,12 +22,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive # Recursively fetch submodules like vcpkg
+          fetch-depth: 0        # Fetch full history to support vcpkg versioning
 
-      - name: Install Visual Studio 2026 (v145)
+      - name: Install Minimal Visual Studio 2026 (v145)
         shell: pwsh
         run: |
-          # Install VS 2026 Build Tools with C++ Desktop workload
-          choco install visualstudio2026-workload-nativedesktop --package-parameters "--includeRecommended --includeOptional --passive --locale en-US"
+          # Install only required components to save time: VCTools (Compiler/MSBuild), Windows SDK, and ATL
+          choco install visualstudio2026buildtools --package-parameters "--add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.VC.ATL --includeRecommended --passive --norestart --locale en-US"
 
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
