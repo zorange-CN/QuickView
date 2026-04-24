@@ -37,11 +37,26 @@ jobs:
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
 
+      # [Optimization] Restore vcpkg installed artifacts to skip compilation
+      - name: Restore vcpkg Cache
+        id: vcpkg-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            QuickView/vcpkg_installed
+            ${{ github.workspace }}/third_party/vcpkg/installed
+            ${{ env.LOCALAPPDATA }}/vcpkg/archives
+          key: vcpkg-${{ matrix.platform }}-${{ hashFiles('QuickView/vcpkg.json') }}
+          restore-keys: |
+            vcpkg-${{ matrix.platform }}-
+
       - name: Bootstrap vcpkg
         shell: pwsh
         run: |
           cd third_party/vcpkg
-          ./bootstrap-vcpkg.bat
+          if (-not (Test-Path "vcpkg.exe")) {
+            ./bootstrap-vcpkg.bat
+          }
 
       - name: Build Project
         shell: pwsh
