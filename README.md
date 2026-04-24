@@ -227,12 +227,20 @@ We are constantly evolving. Here is what's currently in development:
 
 ## 📥 Installation
 
-**QuickView is 100% Portable.**
+QuickView is primarily designed as a **Green & Portable** application.
 
-1.  Go to [**Releases**](https://github.com/justnullname/QuickView/releases).
-2.  Download `QuickView.zip`.
-3.  Unzip anywhere and run `QuickView.exe`.
-4.  *(Optional)* Use the in-app Settings to register as default viewer.
+### 🍃 Recommended: Portable Mode
+1. Download the `QuickView_*.zip` package from [**Releases**](https://github.com/justnullname/QuickView/releases).
+2. Unzip anywhere and run `QuickView.exe`.
+3. Use in-app **Settings > Portable Mode** to manage configuration storage.
+
+### 📦 Installer & WinGet
+If you prefer a standard Windows installation (includes a deep uninstallation tool):
+*   **Manual**: Download the `QuickView_Installer_*.exe` from [**Releases**](https://github.com/justnullname/QuickView/releases).
+*   **Command Line**:
+    ```powershell
+    winget install QuickView
+    ```
 
 ---
 

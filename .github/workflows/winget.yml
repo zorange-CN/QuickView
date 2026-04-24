@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Submit to WinGet
-        uses: vedantat/winget-releaser@v2
+        uses: vedantmgoyal9/winget-releaser@v2
         with:
           identifier: justnullname.QuickView
           token: ${{ secrets.WINGET_TOKEN }}

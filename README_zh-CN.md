@@ -202,12 +202,20 @@ QuickView 5.0 引入了工业级色彩工具链。
 
 ## 📥 安装
 
-**QuickView 是 100% 绿色便携的。**
+QuickView 的核心设计理念是 **绿色与便携**。
 
-1.  前往 [**Releases**](https://github.com/justnullname/QuickView/releases).
-2.  下载 `QuickView.zip`.
-3.  解压到任意位置并运行 `QuickView.exe`.
-4.  *(可选)* 使用应用内设置将其注册为默认查看器。
+### 🍃 推荐方案：绿色便携模式
+1. 从 [**Releases**](https://github.com/justnullname/QuickView/releases) 下载 `QuickView_*.zip` 压缩包。
+2. 解压到任意位置并运行 `QuickView.exe`。
+3. 在应用内 **设置 > 便携模式** 中管理配置文件存储位置。
+
+### 📦 安装版与 WinGet
+如果您需要标准的 Windows 安装程序（内置深度卸载工具）：
+*   **手动安装**：从 [**Releases**](https://github.com/justnullname/QuickView/releases) 下载 `QuickView_Installer_*.exe`。
+*   **命令行安装**：
+    ```powershell
+    winget install QuickView
+    ```
 
 ---
 
