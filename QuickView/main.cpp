@@ -50,6 +50,9 @@ using namespace Microsoft::WRL;
 #include <cstdlib>
 #include <limits>
 #include <cmath>
+#include <thread>
+#include <mutex>
+#include <atomic>
 #include <dwmapi.h>
 #include <ShellScalingApi.h>
 #include <winspool.h>
@@ -468,6 +471,39 @@ static std::atomic<uint64_t> g_titanDispatchSerial{0};
 D2D1_POINT_2F g_lastFitOffset = {}; // Center offset of image on screen
 float g_lastFitScale = 1.0f;        // Scale factor to fit image to screen
 
+struct GamutWarningSample {
+    int width = 0;
+    int height = 0;
+    int cols = 0;
+    int rows = 0;
+    QuickView::ColorPrimaries srcPrimaries = QuickView::ColorPrimaries::Unknown;
+    bool isHdrLike = false;
+    std::vector<float> linearRgb; // RGBRGB...
+    bool IsValid() const { return cols > 0 && rows > 0 && linearRgb.size() == static_cast<size_t>(cols * rows * 3); }
+};
+
+struct GamutWarningOverlayState {
+    int width = 0;
+    int height = 0;
+    int cols = 0;
+    int rows = 0;
+    std::vector<uint8_t> mask;
+    bool hasOverflow = false;
+};
+
+GamutWarningOverlayState g_gamutWarningOverlay;
+float g_gamutWarningFlashOpacity = 1.0f;
+
+static std::mutex g_gamutWarningMutex;
+static GamutWarningSample g_gamutWarningSample;
+static std::atomic<uint32_t> g_gamutWarningJobId = 0;
+static bool g_gamutWarningFlashActive = false;
+static DWORD g_gamutWarningFlashStartTick = 0;
+static DWORD g_gamutWarningFlashDurationMs = 0;
+
+constexpr UINT WM_GAMUT_WARNING_READY = WM_APP + 21;
+constexpr UINT_PTR IDT_GAMUT_WARNING_FLASH = 1002;
+
 static constexpr UINT g_fallbackSvgSurfaceSize = 8192;  // Safe fallback if GPU caps are unavailable
 static constexpr UINT g_maxBitmapSurfaceSize = 8192; // Max dimension for bitmap surface upgrades
 
@@ -768,6 +804,303 @@ static bool IsEffectivelyPixelArtMode(float totalScale, float origW, float origH
     }
 
     return false;
+}
+
+namespace {
+struct ColorMatrix3 {
+    float m[3][3];
+};
+
+static ColorMatrix3 GetRgbToXyzMatrix(QuickView::ColorPrimaries primaries) {
+    switch (primaries) {
+    case QuickView::ColorPrimaries::DisplayP3:
+        return {{{0.486571f, 0.265668f, 0.198217f},
+                 {0.228975f, 0.691739f, 0.079287f},
+                 {0.000000f, 0.045113f, 1.043944f}}};
+    case QuickView::ColorPrimaries::Rec2020:
+        return {{{0.636958f, 0.144617f, 0.168881f},
+                 {0.262700f, 0.677998f, 0.059302f},
+                 {0.000000f, 0.028073f, 1.060985f}}};
+    case QuickView::ColorPrimaries::AdobeRGB:
+        return {{{0.576670f, 0.185558f, 0.188229f},
+                 {0.297345f, 0.627364f, 0.075291f},
+                 {0.027031f, 0.070689f, 0.991338f}}};
+    case QuickView::ColorPrimaries::ProPhotoRGB:
+        return {{{0.797760f, 0.135185f, 0.031349f},
+                 {0.288071f, 0.711844f, 0.000085f},
+                 {0.000000f, 0.000000f, 0.825210f}}};
+    case QuickView::ColorPrimaries::SRGB:
+    case QuickView::ColorPrimaries::Unknown:
+    default:
+        return {{{0.412456f, 0.357576f, 0.180438f},
+                 {0.212673f, 0.715152f, 0.072175f},
+                 {0.019334f, 0.119192f, 0.950304f}}};
+    }
+}
+
+static ColorMatrix3 GetXyzToRgbMatrix(QuickView::ColorPrimaries primaries) {
+    switch (primaries) {
+    case QuickView::ColorPrimaries::DisplayP3:
+        return {{{2.493497f, -0.931384f, -0.402711f},
+                 {-0.829489f, 1.762664f, 0.023625f},
+                 {0.035846f, -0.076172f, 0.956885f}}};
+    case QuickView::ColorPrimaries::Rec2020:
+        return {{{1.716651f, -0.355671f, -0.253366f},
+                 {-0.666684f, 1.616481f, 0.015769f},
+                 {0.017640f, -0.042771f, 0.942103f}}};
+    case QuickView::ColorPrimaries::AdobeRGB:
+        return {{{2.041587f, -0.565007f, -0.344731f},
+                 {-0.969244f, 1.875968f, 0.041555f},
+                 {0.013444f, -0.118362f, 1.015175f}}};
+    case QuickView::ColorPrimaries::ProPhotoRGB:
+        return {{{1.345943f, -0.255608f, -0.051111f},
+                 {-0.544599f, 1.508168f, 0.020536f},
+                 {0.000000f, 0.000000f, 1.211812f}}};
+    case QuickView::ColorPrimaries::SRGB:
+    case QuickView::ColorPrimaries::Unknown:
+    default:
+        return {{{3.240454f, -1.537138f, -0.498531f},
+                 {-0.969266f, 1.876011f, 0.041556f},
+                 {0.055643f, -0.204026f, 1.057225f}}};
+    }
+}
+
+static QuickView::ColorPrimaries NormalizePrimaries(QuickView::ColorPrimaries primaries) {
+    return primaries == QuickView::ColorPrimaries::Unknown ? QuickView::ColorPrimaries::SRGB : primaries;
+}
+
+static QuickView::ColorPrimaries ResolveDisplayPrimaries(const QuickView::DisplayColorState& state) {
+    switch (state.colorSpace) {
+    case DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020:
+    case DXGI_COLOR_SPACE_RGB_STUDIO_G2084_NONE_P2020:
+    case DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P2020:
+        return QuickView::ColorPrimaries::Rec2020;
+    default:
+        return QuickView::ColorPrimaries::SRGB;
+    }
+}
+
+static std::wstring ToLowerCopy(std::wstring value) {
+    std::transform(value.begin(), value.end(), value.begin(), towlower);
+    return value;
+}
+
+static QuickView::ColorPrimaries GuessPrimariesFromPath(const std::wstring& path) {
+    const std::wstring lower = ToLowerCopy(path);
+    if (lower.find(L"prophoto") != std::wstring::npos) return QuickView::ColorPrimaries::ProPhotoRGB;
+    if (lower.find(L"adobe") != std::wstring::npos) return QuickView::ColorPrimaries::AdobeRGB;
+    if (lower.find(L"displayp3") != std::wstring::npos || lower.find(L"p3") != std::wstring::npos) return QuickView::ColorPrimaries::DisplayP3;
+    if (lower.find(L"2020") != std::wstring::npos || lower.find(L"rec2020") != std::wstring::npos) return QuickView::ColorPrimaries::Rec2020;
+    if (lower.find(L"srgb") != std::wstring::npos) return QuickView::ColorPrimaries::SRGB;
+    return QuickView::ColorPrimaries::Unknown;
+}
+
+static QuickView::ColorPrimaries ResolveFramePrimaries(const QuickView::RawImageFrame& frame) {
+    QuickView::ColorPrimaries primaries = frame.colorInfo.primaries;
+    if (primaries == QuickView::ColorPrimaries::Unknown) primaries = frame.hdrMetadata.primaries;
+    if (primaries == QuickView::ColorPrimaries::Unknown) {
+        switch (g_config.CmsDefaultFallback) {
+        case 1: primaries = QuickView::ColorPrimaries::DisplayP3; break;
+        case 2: primaries = QuickView::ColorPrimaries::AdobeRGB; break;
+        case 3: primaries = QuickView::ColorPrimaries::ProPhotoRGB; break;
+        default: primaries = QuickView::ColorPrimaries::SRGB; break;
+        }
+    }
+    return NormalizePrimaries(primaries);
+}
+
+static float SrgbToLinear(float v) {
+    if (v <= 0.04045f) return v / 12.92f;
+    return powf((v + 0.055f) / 1.055f, 2.4f);
+}
+
+static void DecodeSampleLinearRgb(const QuickView::RawImageFrame& frame, int x, int y, float& r, float& g, float& b) {
+    x = std::clamp(x, 0, frame.width - 1);
+    y = std::clamp(y, 0, frame.height - 1);
+    const uint8_t* row = frame.pixels + static_cast<size_t>(y) * frame.stride;
+    switch (frame.format) {
+    case QuickView::PixelFormat::R32G32B32A32_FLOAT: {
+        const float* px = reinterpret_cast<const float*>(row + static_cast<size_t>(x) * 16);
+        r = (std::max)(0.0f, px[0]);
+        g = (std::max)(0.0f, px[1]);
+        b = (std::max)(0.0f, px[2]);
+        break;
+    }
+    case QuickView::PixelFormat::BGRA8888:
+    case QuickView::PixelFormat::BGRX8888: {
+        const uint8_t* px = row + static_cast<size_t>(x) * 4;
+        b = SrgbToLinear(px[0] / 255.0f);
+        g = SrgbToLinear(px[1] / 255.0f);
+        r = SrgbToLinear(px[2] / 255.0f);
+        break;
+    }
+    case QuickView::PixelFormat::RGBA8888:
+    default: {
+        const uint8_t* px = row + static_cast<size_t>(x) * 4;
+        r = SrgbToLinear(px[0] / 255.0f);
+        g = SrgbToLinear(px[1] / 255.0f);
+        b = SrgbToLinear(px[2] / 255.0f);
+        break;
+    }
+    }
+}
+
+static GamutWarningSample BuildGamutWarningSample(const QuickView::RawImageFrame& frame) {
+    GamutWarningSample sample;
+    if (!frame.IsValid() || frame.width <= 0 || frame.height <= 0 || !frame.pixels) return sample;
+
+    sample.width = frame.width;
+    sample.height = frame.height;
+    sample.cols = std::clamp(frame.width / 24, 32, 160);
+    sample.rows = std::clamp(frame.height / 24, 32, 160);
+    sample.srcPrimaries = ResolveFramePrimaries(frame);
+    sample.isHdrLike = frame.format == QuickView::PixelFormat::R32G32B32A32_FLOAT || frame.colorInfo.dataSpace == QuickView::PixelDataSpace::EncodedHdr;
+    sample.linearRgb.resize(static_cast<size_t>(sample.cols * sample.rows * 3));
+
+    for (int row = 0; row < sample.rows; ++row) {
+        for (int col = 0; col < sample.cols; ++col) {
+            const float u = (static_cast<float>(col) + 0.5f) / static_cast<float>(sample.cols);
+            const float v = (static_cast<float>(row) + 0.5f) / static_cast<float>(sample.rows);
+            const int sx = static_cast<int>(u * static_cast<float>(frame.width - 1));
+            const int sy = static_cast<int>(v * static_cast<float>(frame.height - 1));
+
+            float r = 0.0f, g = 0.0f, b = 0.0f;
+            DecodeSampleLinearRgb(frame, sx, sy, r, g, b);
+            const size_t base = static_cast<size_t>((row * sample.cols + col) * 3);
+            sample.linearRgb[base + 0] = r;
+            sample.linearRgb[base + 1] = g;
+            sample.linearRgb[base + 2] = b;
+        }
+    }
+
+    return sample;
+}
+
+static QuickView::ColorPrimaries ResolveGamutWarningDestinationPrimaries() {
+    if (g_runtime.EnableSoftProofing && !g_runtime.SoftProofProfilePath.empty()) {
+        return GuessPrimariesFromPath(g_runtime.SoftProofProfilePath);
+    }
+    return ResolveDisplayPrimaries(g_renderEngine ? g_renderEngine->GetDisplayColorState() : QuickView::DisplayColorState{});
+}
+
+static GamutWarningOverlayState AnalyzeGamutWarning(const GamutWarningSample& sample) {
+    GamutWarningOverlayState result;
+    result.width = sample.width;
+    result.height = sample.height;
+    result.cols = sample.cols;
+    result.rows = sample.rows;
+
+    if (!sample.IsValid() || !g_config.GamutWarningEnabled) return result;
+    if (g_runtime.EnableSoftProofing && g_config.CmsRenderingIntent != 1) return result;
+
+    const QuickView::ColorPrimaries srcPrimaries = NormalizePrimaries(sample.srcPrimaries);
+    const QuickView::ColorPrimaries dstPrimaries = NormalizePrimaries(ResolveGamutWarningDestinationPrimaries());
+    if (dstPrimaries == QuickView::ColorPrimaries::Unknown) return result;
+
+    const ColorMatrix3 rgbToXyz = GetRgbToXyzMatrix(srcPrimaries);
+    const ColorMatrix3 xyzToDst = GetXyzToRgbMatrix(dstPrimaries);
+    constexpr float kThreshold = 0.005f;
+
+    result.mask.assign(static_cast<size_t>(sample.cols * sample.rows), 0);
+    for (int row = 0; row < sample.rows; ++row) {
+        for (int col = 0; col < sample.cols; ++col) {
+            const size_t base = static_cast<size_t>((row * sample.cols + col) * 3);
+            const float r = sample.linearRgb[base + 0];
+            const float g = sample.linearRgb[base + 1];
+            const float b = sample.linearRgb[base + 2];
+
+            const float X = rgbToXyz.m[0][0] * r + rgbToXyz.m[0][1] * g + rgbToXyz.m[0][2] * b;
+            const float Y = rgbToXyz.m[1][0] * r + rgbToXyz.m[1][1] * g + rgbToXyz.m[1][2] * b;
+            const float Z = rgbToXyz.m[2][0] * r + rgbToXyz.m[2][1] * g + rgbToXyz.m[2][2] * b;
+
+            const float dr = xyzToDst.m[0][0] * X + xyzToDst.m[0][1] * Y + xyzToDst.m[0][2] * Z;
+            const float dg = xyzToDst.m[1][0] * X + xyzToDst.m[1][1] * Y + xyzToDst.m[1][2] * Z;
+            const float db = xyzToDst.m[2][0] * X + xyzToDst.m[2][1] * Y + xyzToDst.m[2][2] * Z;
+
+            const bool overflow = (dr < -kThreshold || dg < -kThreshold || db < -kThreshold ||
+                                   dr > 1.0f + kThreshold || dg > 1.0f + kThreshold || db > 1.0f + kThreshold);
+            if (overflow) {
+                result.mask[static_cast<size_t>(row * sample.cols + col)] = 255;
+                result.hasOverflow = true;
+            }
+        }
+    }
+
+    if (result.hasOverflow) {
+        std::vector<uint8_t> dilated = result.mask;
+        for (int row = 0; row < sample.rows; ++row) {
+            for (int col = 0; col < sample.cols; ++col) {
+                if (!result.mask[static_cast<size_t>(row * sample.cols + col)]) continue;
+                for (int oy = -1; oy <= 1; ++oy) {
+                    for (int ox = -1; ox <= 1; ++ox) {
+                        const int nx = col + ox;
+                        const int ny = row + oy;
+                        if (nx >= 0 && nx < sample.cols && ny >= 0 && ny < sample.rows) {
+                            dilated[static_cast<size_t>(ny * sample.cols + nx)] = 255;
+                        }
+                    }
+                }
+            }
+        }
+        result.mask.swap(dilated);
+    }
+
+    return result;
+}
+
+static void StartGamutWarningFlash(HWND hwnd) {
+    g_gamutWarningFlashActive = true;
+    g_gamutWarningFlashStartTick = GetTickCount();
+    g_gamutWarningFlashDurationMs = 1200;
+    g_gamutWarningFlashOpacity = 1.0f;
+    SetTimer(hwnd, IDT_GAMUT_WARNING_FLASH, 16, nullptr);
+}
+
+static void ClearGamutWarningState(HWND hwnd) {
+    {
+        std::scoped_lock lock(g_gamutWarningMutex);
+        g_gamutWarningOverlay = {};
+    }
+    g_runtime.ShowGamutWarningOverlay = false;
+    g_gamutWarningFlashActive = false;
+    g_gamutWarningFlashOpacity = 1.0f;
+    KillTimer(hwnd, IDT_GAMUT_WARNING_FLASH);
+    g_toolbar.SetGamutWarningAvailable(false);
+    g_toolbar.SetGamutWarningActive(false);
+}
+
+static void ScheduleGamutWarningAnalysisImpl(HWND hwnd) {
+    if (!hwnd) return;
+    if (!g_config.GamutWarningEnabled) {
+        ClearGamutWarningState(hwnd);
+        return;
+    }
+
+    GamutWarningSample sampleCopy;
+    {
+        std::scoped_lock lock(g_gamutWarningMutex);
+        sampleCopy = g_gamutWarningSample;
+    }
+    if (!sampleCopy.IsValid()) {
+        ClearGamutWarningState(hwnd);
+        return;
+    }
+
+    const uint32_t jobId = ++g_gamutWarningJobId;
+    std::thread([hwnd, jobId, sample = std::move(sampleCopy)]() mutable {
+        GamutWarningOverlayState analyzed = AnalyzeGamutWarning(sample);
+        if (jobId != g_gamutWarningJobId.load()) return;
+        {
+            std::scoped_lock lock(g_gamutWarningMutex);
+            g_gamutWarningOverlay = std::move(analyzed);
+        }
+        PostMessageW(hwnd, WM_GAMUT_WARNING_READY, 0, 0);
+    }).detach();
+}
+} // namespace
+
+void ScheduleGamutWarningAnalysis(HWND hwnd) {
+    ScheduleGamutWarningAnalysisImpl(hwnd);
 }
 
 static D2D1_INTERPOLATION_MODE GetOptimalD2DInterpolationMode(float totalScale, float origW, float origH) {
@@ -4586,6 +4919,11 @@ void SaveConfig() {
     WritePrivateProfileStringW(L"Image", L"HdrToneMappingMode", std::to_wstring(g_config.HdrToneMappingMode).c_str(), iniPath.c_str());
     WritePrivateProfileStringW(L"Image", L"HdrPeakNitsOverride", std::to_wstring(g_config.HdrPeakNitsOverride).c_str(), iniPath.c_str());
     WritePrivateProfileStringW(L"Image", L"CustomSoftProofProfile", g_config.CustomSoftProofProfile.c_str(), iniPath.c_str());
+    WritePrivateProfileStringW(L"Image", L"GamutWarningEnabled", g_config.GamutWarningEnabled ? L"1" : L"0", iniPath.c_str());
+    WritePrivateProfileStringW(L"Image", L"GamutWarningAutoPrompt", g_config.GamutWarningAutoPrompt ? L"1" : L"0", iniPath.c_str());
+    WritePrivateProfileStringW(L"Image", L"GamutWarningColorR", std::to_wstring(g_config.GamutWarningColorR).c_str(), iniPath.c_str());
+    WritePrivateProfileStringW(L"Image", L"GamutWarningColorG", std::to_wstring(g_config.GamutWarningColorG).c_str(), iniPath.c_str());
+    WritePrivateProfileStringW(L"Image", L"GamutWarningColorB", std::to_wstring(g_config.GamutWarningColorB).c_str(), iniPath.c_str());
     WritePrivateProfileStringW(L"Image", L"CustomEditorPath", g_config.CustomEditorPath.c_str(), iniPath.c_str());
     WritePrivateProfileStringW(L"Image", L"ForceRawDecode", g_config.ForceRawDecode ? L"1" : L"0", iniPath.c_str());
     WritePrivateProfileStringW(L"Image", L"AlwaysSaveLossless", g_config.AlwaysSaveLossless ? L"1" : L"0", iniPath.c_str());
@@ -4824,6 +5162,14 @@ void LoadConfig() {
     wchar_t customProofPath[MAX_PATH];
     GetPrivateProfileStringW(L"Image", L"CustomSoftProofProfile", L"", customProofPath, MAX_PATH, iniPath.c_str());
     g_config.CustomSoftProofProfile = customProofPath;
+    g_config.GamutWarningEnabled = GetPrivateProfileIntW(L"Image", L"GamutWarningEnabled", 0, iniPath.c_str()) != 0;
+    g_config.GamutWarningAutoPrompt = GetPrivateProfileIntW(L"Image", L"GamutWarningAutoPrompt", 1, iniPath.c_str()) != 0;
+    GetPrivateProfileStringW(L"Image", L"GamutWarningColorR", L"1.0", tempFloat, 64, iniPath.c_str());
+    g_config.GamutWarningColorR = std::clamp(std::wcstof(tempFloat, nullptr), 0.0f, 1.0f);
+    GetPrivateProfileStringW(L"Image", L"GamutWarningColorG", L"0.12", tempFloat, 64, iniPath.c_str());
+    g_config.GamutWarningColorG = std::clamp(std::wcstof(tempFloat, nullptr), 0.0f, 1.0f);
+    GetPrivateProfileStringW(L"Image", L"GamutWarningColorB", L"0.12", tempFloat, 64, iniPath.c_str());
+    g_config.GamutWarningColorB = std::clamp(std::wcstof(tempFloat, nullptr), 0.0f, 1.0f);
 
     wchar_t customEditorPath[MAX_PATH];
     GetPrivateProfileStringW(L"Image", L"CustomEditorPath", L"", customEditorPath, MAX_PATH, iniPath.c_str());
@@ -6632,6 +6978,34 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
         ProcessEngineEvents(hwnd);
         return 0;
 
+    case WM_GAMUT_WARNING_READY: {
+        GamutWarningOverlayState overlay;
+        {
+            std::scoped_lock lock(g_gamutWarningMutex);
+            overlay = g_gamutWarningOverlay;
+        }
+
+        const bool available = g_config.GamutWarningEnabled && overlay.hasOverflow;
+        g_toolbar.SetGamutWarningAvailable(available);
+        if (!available) {
+            g_runtime.ShowGamutWarningOverlay = false;
+            g_toolbar.SetGamutWarningActive(false);
+        } else if (g_config.GamutWarningAutoPrompt) {
+            g_runtime.ShowGamutWarningOverlay = true;
+            g_toolbar.SetGamutWarningActive(true);
+            StartGamutWarningFlash(hwnd);
+            g_osd.Show(hwnd, L"Detected out-of-gamut colors", false, true,
+                       D2D1::ColorF(g_config.GamutWarningColorR, g_config.GamutWarningColorG, g_config.GamutWarningColorB, 1.0f));
+        } else {
+            g_toolbar.SetGamutWarningActive(g_runtime.ShowGamutWarningOverlay);
+        }
+
+        RECT rc{}; GetClientRect(hwnd, &rc);
+        g_toolbar.UpdateLayout((float)rc.right, (float)rc.bottom);
+        RequestRepaint(PaintLayer::Static | PaintLayer::Dynamic);
+        return 0;
+    }
+
     case WM_TIMER: {
         if (wParam == TIMER_ID_STARTUP_SHOW) {
             KillTimer(hwnd, TIMER_ID_STARTUP_SHOW);
@@ -6774,6 +7148,24 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
              if (!g_osd.IsVisible()) {
                  KillTimer(hwnd, OSD_TIMER_ID);
              }
+        }
+
+        if (wParam == IDT_GAMUT_WARNING_FLASH) {
+            if (!g_gamutWarningFlashActive) {
+                KillTimer(hwnd, IDT_GAMUT_WARNING_FLASH);
+                return 0;
+            }
+            const DWORD elapsed = GetTickCount() - g_gamutWarningFlashStartTick;
+            if (elapsed >= g_gamutWarningFlashDurationMs) {
+                g_gamutWarningFlashActive = false;
+                g_gamutWarningFlashOpacity = 1.0f;
+                KillTimer(hwnd, IDT_GAMUT_WARNING_FLASH);
+            } else {
+                const float t = static_cast<float>(elapsed) / static_cast<float>(g_gamutWarningFlashDurationMs);
+                g_gamutWarningFlashOpacity = 0.35f + 0.65f * fabsf(sinf(t * 3.0f * 6.2831853f));
+            }
+            RequestRepaint(PaintLayer::Dynamic);
+            return 0;
         }
         
         // Gallery Fade Timer (998)
@@ -8176,6 +8568,16 @@ SKIP_EDGE_NAV:;
                     // [Refactor] Use Centralized Command Handler (same as Menu)
                     // This ensures proper Config Update + Force Refresh logic is applied.
                     SendMessage(hwnd, WM_COMMAND, IDM_RENDER_RAW, 0); 
+                    break;
+                }
+                case ToolbarButtonID::GamutWarning: {
+                    g_runtime.ShowGamutWarningOverlay = !g_runtime.ShowGamutWarningOverlay;
+                    g_toolbar.SetGamutWarningActive(g_runtime.ShowGamutWarningOverlay);
+                    g_osd.Show(hwnd,
+                        g_runtime.ShowGamutWarningOverlay ? L"色彩溢出高亮: 开" : L"色彩溢出高亮: 关",
+                        false, false,
+                        D2D1::ColorF(g_config.GamutWarningColorR, g_config.GamutWarningColorG, g_config.GamutWarningColorB, 1.0f));
+                    RequestRepaint(PaintLayer::Static | PaintLayer::Dynamic);
                     break;
                 }
                 case ToolbarButtonID::FixExtension: SendMessage(hwnd, WM_COMMAND, IDM_FIX_EXTENSION, 0); break;
@@ -9780,6 +10182,7 @@ SKIP_EDGE_NAV:;
              
              // Apply immediately by forcing a GPU re-upload (isFastUpgrade=true, no window resize)
              RefreshImageDisplay(hwnd);
+             ScheduleGamutWarningAnalysis(hwnd);
 
              std::wstring msg = L"Color Space: ";
              switch (newMode) {
@@ -9806,6 +10209,7 @@ SKIP_EDGE_NAV:;
              }
              g_runtime.EnableSoftProofing = !g_runtime.EnableSoftProofing;
              RefreshImageDisplay(hwnd);
+             ScheduleGamutWarningAnalysis(hwnd);
              g_osd.Show(hwnd, g_runtime.EnableSoftProofing ? L"Soft Proofing: ON" : L"Soft Proofing: OFF", false);
              break;
         }
@@ -9813,6 +10217,7 @@ SKIP_EDGE_NAV:;
              g_runtime.SoftProofProfilePath = g_config.CustomSoftProofProfile;
              g_runtime.EnableSoftProofing = true;
              RefreshImageDisplay(hwnd);
+             ScheduleGamutWarningAnalysis(hwnd);
              g_osd.Show(hwnd, L"Soft Proofing Target Updated", false);
              break;
         }
@@ -10265,6 +10670,15 @@ void ProcessEngineEvents(HWND hwnd) {
                 // Metadata - Full Copy (Propagate EXIF/Histograms/LoaderName)
                 g_currentMetadata = finalMetadata;
                 g_runtime.ShowHdrDetailsExpanded = false;
+                if (evt.rawFrame && evt.rawFrame->IsValid()) {
+                    {
+                        std::scoped_lock lock(g_gamutWarningMutex);
+                        g_gamutWarningSample = BuildGamutWarningSample(*evt.rawFrame);
+                    }
+                    ScheduleGamutWarningAnalysis(hwnd);
+                } else {
+                    ClearGamutWarningState(hwnd);
+                }
 
                 // [Feature] Auto Fullscreen on Open
                 static ImageID lastFullscreenTriggeredId = ~(0ULL);
@@ -11154,6 +11568,7 @@ void StartNavigation(HWND hwnd, std::wstring path, bool showOSD, QuickView::Brow
         g_runtime.ShowHdrDetailsExpanded = false;
         g_currentMetadata.IsFullMetadataLoaded = false;
     }
+    ClearGamutWarningState(hwnd);
 
     // Phase 1: zero-latency placeholder chain
     // Cancel stale heavy work BEFORE Phase 1 to free CPU for placeholder rendering.

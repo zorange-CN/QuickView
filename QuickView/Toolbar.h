@@ -12,6 +12,7 @@ enum class ToolbarButtonID {
     RotateL, RotateR, FlipH, 
     LockSize, Gallery, 
     Exif, RawToggle, FixExtension,
+    GamutWarning,
     Pin,
     CompareToggle,
     CompareOpen,
@@ -78,6 +79,8 @@ public:
     void SetExifState(bool open);
     void SetRawState(bool isRaw, bool isFullDecode);
     void SetExtensionWarning(bool hasMismatch);
+    void SetGamutWarningAvailable(bool available);
+    void SetGamutWarningActive(bool active);
     void SetCompareMode(bool enabled);
     bool IsCompareMode() const { return m_compareMode; }
     void SetCompareSyncStates(bool syncZoom, bool syncPan);

@@ -1709,7 +1709,9 @@ void SettingsOverlay::BuildMenu() {
         SaveConfig();
         extern HWND g_mainHwnd;
         extern void RefreshImageDisplay(HWND hwnd);
+        extern void RequestRepaint(QuickView::PaintLayer layerMask);
         RefreshImageDisplay(g_mainHwnd);
+        RequestRepaint(QuickView::PaintLayer::Static | QuickView::PaintLayer::Dynamic);
     };
     tabImage.items.push_back(itemCmsToggle);
 
@@ -1723,6 +1725,49 @@ void SettingsOverlay::BuildMenu() {
         RefreshImageDisplay(g_mainHwnd);
     };
     tabImage.items.push_back(itemCmsIntent);
+
+    SettingsItem itemGamutWarning = { L"色彩溢出检测", OptionType::Toggle, &g_config.GamutWarningEnabled };
+    itemGamutWarning.tooltipText = L"开启后，在软打样裁剪或图片超出当前屏幕色域时分析并标出溢出区域。";
+    itemGamutWarning.onChange = []() {
+        SaveConfig();
+        extern HWND g_mainHwnd;
+        extern void ScheduleGamutWarningAnalysis(HWND hwnd);
+        extern void RequestRepaint(QuickView::PaintLayer layerMask);
+        ScheduleGamutWarningAnalysis(g_mainHwnd);
+        RequestRepaint(QuickView::PaintLayer::Static | QuickView::PaintLayer::Dynamic);
+    };
+    tabImage.items.push_back(itemGamutWarning);
+
+    SettingsItem itemGamutAutoPrompt = { L"自动提示色彩溢出", OptionType::Toggle, &g_config.GamutWarningAutoPrompt };
+    itemGamutAutoPrompt.tooltipText = L"检测到溢出后自动显示高亮、闪烁三次，并弹出 OSD 提示。";
+    itemGamutAutoPrompt.onChange = []() {
+        SaveConfig();
+    };
+    tabImage.items.push_back(itemGamutAutoPrompt);
+
+    SettingsItem itemGamutColor = { L"溢出高亮颜色", OptionType::CustomColorRow };
+    itemGamutColor.pFloatVal = &g_config.GamutWarningColorR;
+    itemGamutColor.onChange = []() {
+        extern HWND g_mainHwnd;
+        CHOOSECOLORW cc = { sizeof(CHOOSECOLORW) };
+        COLORREF customColors[16] = {};
+        cc.hwndOwner = g_mainHwnd;
+        cc.lpCustColors = customColors;
+        cc.rgbResult = RGB(
+            static_cast<int>(std::clamp(g_config.GamutWarningColorR, 0.0f, 1.0f) * 255.0f),
+            static_cast<int>(std::clamp(g_config.GamutWarningColorG, 0.0f, 1.0f) * 255.0f),
+            static_cast<int>(std::clamp(g_config.GamutWarningColorB, 0.0f, 1.0f) * 255.0f));
+        cc.Flags = CC_FULLOPEN | CC_RGBINIT;
+        if (ChooseColorW(&cc)) {
+            g_config.GamutWarningColorR = GetRValue(cc.rgbResult) / 255.0f;
+            g_config.GamutWarningColorG = GetGValue(cc.rgbResult) / 255.0f;
+            g_config.GamutWarningColorB = GetBValue(cc.rgbResult) / 255.0f;
+            SaveConfig();
+            extern void RequestRepaint(QuickView::PaintLayer layerMask);
+            RequestRepaint(QuickView::PaintLayer::Dynamic);
+        }
+    };
+    tabImage.items.push_back(itemGamutColor);
 
     SettingsItem itemAdvColor = { AppStrings::Settings_Label_AdvancedColor, OptionType::Segment, nullptr, nullptr, &g_config.AdvancedColorMode, nullptr, 0, 0, {AppStrings::Settings_Option_Off, AppStrings::Settings_Option_On, AppStrings::Settings_Option_Auto} };
     itemAdvColor.tooltipText = AppStrings::Settings_Tooltip_AdvancedColor;

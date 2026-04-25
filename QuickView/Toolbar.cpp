@@ -25,6 +25,7 @@ Toolbar::Toolbar() {
       {ToolbarButtonID::Exif, Icons::Info, {}, true, false},
       {ToolbarButtonID::RawToggle, Icons::Raw, {}, false, false},
       {ToolbarButtonID::FixExtension, Icons::Warning, {}, false, false, false},
+      {ToolbarButtonID::GamutWarning, Icons::Warning, {}, false, false},
 
       {ToolbarButtonID::CompareToggle, Icons::CompareToggle, {}, true, false},
 
@@ -173,6 +174,8 @@ void Toolbar::UpdateLayout(float winW, float winH) {
       return false;
     if (btn.id == ToolbarButtonID::FixExtension && !btn.isWarning)
       return false;
+    if (btn.id == ToolbarButtonID::GamutWarning && !btn.isEnabled)
+      return false;
     return true;
   };
 
@@ -320,6 +323,8 @@ const wchar_t *GetTooltipText(const ToolbarButton &btn) {
                          : AppStrings::Toolbar_Tooltip_RawPreview;
   case ToolbarButtonID::FixExtension:
     return AppStrings::Toolbar_Tooltip_FixExtension;
+  case ToolbarButtonID::GamutWarning:
+    return btn.isToggled ? L"Hide gamut warning overlay" : L"Show gamut warning overlay";
   case ToolbarButtonID::Pin:
     return btn.isToggled ? AppStrings::Toolbar_Tooltip_Unpin
                          : AppStrings::Toolbar_Tooltip_Pin;
@@ -923,6 +928,23 @@ void Toolbar::SetRawState(bool isRaw, bool isFullDecode) {
 
 void Toolbar::SetExtensionWarning(bool hasMismatch) {
   for (auto &btn : m_buttons) { if (btn.id == ToolbarButtonID::FixExtension) { btn.isWarning = hasMismatch; } }
+}
+
+void Toolbar::SetGamutWarningAvailable(bool available) {
+  for (auto &btn : m_buttons) {
+    if (btn.id == ToolbarButtonID::GamutWarning) {
+      btn.isEnabled = available;
+      if (!available) btn.isToggled = false;
+    }
+  }
+}
+
+void Toolbar::SetGamutWarningActive(bool active) {
+  for (auto &btn : m_buttons) {
+    if (btn.id == ToolbarButtonID::GamutWarning && btn.isEnabled) {
+      btn.isToggled = active;
+    }
+  }
 }
 
 void Toolbar::SetCompareMode(bool enabled) {

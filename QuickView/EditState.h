@@ -219,6 +219,11 @@ struct AppConfig {
     int AdvancedColorMode = 2;           // 0=Off, 1=On, 2=Auto (HDR / FP16 scRGB pipeline)
     int CmsDefaultFallback = 0;          // Fallback for untagged images: 0=sRGB, 1=P3, 2=AdobeRGB, 3=ProPhoto
     std::wstring CustomSoftProofProfile; // Path to user-selected ICC file for soft proofing
+    bool GamutWarningEnabled = false;    // Enable gamut clipping / out-of-display warning analysis
+    bool GamutWarningAutoPrompt = true;  // Auto show overlay + blink when overflow is detected
+    float GamutWarningColorR = 1.0f;
+    float GamutWarningColorG = 0.12f;
+    float GamutWarningColorB = 0.12f;
     std::wstring CustomEditorPath;       // Path to user-selected custom image editor executable
     bool EnableDebugFeatures = false; // Master switch for Debug HUD & Metrics (Zero Overhead when false)
     bool ShowDirtyRectButton = false; // [v3.5] Toggle visibility of the dirty rect debug button in animation mode
@@ -455,6 +460,7 @@ struct RuntimeConfig {
     // Soft Proofing (Temporary Session Flags)
     bool EnableSoftProofing = false;
     std::wstring SoftProofProfilePath; // Currently active proofing ICC path
+    bool ShowGamutWarningOverlay = false;
 
     // Verification Flags (Phase 5)
     bool EnableScout = true;
