@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "LosslessTransform.h"
 
-// Include libjpeg-turbo header
+#include <memory>
 // Include libjpeg-turbo header
 #include <turbojpeg.h>
 
@@ -12,7 +12,7 @@ static const unsigned char JPEG_MAGIC[] = { 0xFF, 0xD8, 0xFF };
 static const unsigned char PNG_MAGIC[] = { 0x89, 0x50, 0x4E, 0x47 };
 
 // Helper: Read file into memory
-static unsigned char* ReadFileToMemory(LPCWSTR filePath, unsigned int& lengthBytes) {
+static std::unique_ptr<unsigned char[]> ReadFileToMemory(LPCWSTR filePath, unsigned int& lengthBytes) {
     const unsigned int MAX_FILE_SIZE = 1024 * 1024 * 100; // 100 MB
     
     lengthBytes = 0;
@@ -28,16 +28,15 @@ static unsigned char* ReadFileToMemory(LPCWSTR filePath, unsigned int& lengthByt
         return nullptr;
     }
     
-    unsigned char* buffer = new(std::nothrow) unsigned char[static_cast<size_t>(fileSize.QuadPart)];
+    std::unique_ptr<unsigned char[]> buffer(new(std::nothrow) unsigned char[static_cast<size_t>(fileSize.QuadPart)]);
     if (!buffer) {
         ::CloseHandle(hFile);
         return nullptr;
     }
     
     DWORD bytesRead;
-    if (!::ReadFile(hFile, buffer, static_cast<DWORD>(fileSize.QuadPart), &bytesRead, NULL) ||
+    if (!::ReadFile(hFile, buffer.get(), static_cast<DWORD>(fileSize.QuadPart), &bytesRead, NULL) ||
         bytesRead != fileSize.QuadPart) {
-        delete[] buffer;
         ::CloseHandle(hFile);
         return nullptr;
     }
@@ -189,7 +188,7 @@ TransformResult CLosslessTransform::TransformJPEG(
     
     // Read input file
     unsigned int inputSize;
-    unsigned char* inputData = ReadFileToMemory(inputPath, inputSize);
+    auto inputData = ReadFileToMemory(inputPath, inputSize);
     if (!inputData) {
         return TransformResult::Error(L"Failed to read file");
     }
@@ -199,7 +198,6 @@ TransformResult CLosslessTransform::TransformJPEG(
         inputData[0] != JPEG_MAGIC[0] || 
         inputData[1] != JPEG_MAGIC[1] || 
         inputData[2] != JPEG_MAGIC[2]) {
-        delete[] inputData;
         
         // Check if it's a PNG masquerading as JPEG
         if (inputSize >= 4 && 
@@ -211,10 +209,10 @@ TransformResult CLosslessTransform::TransformJPEG(
         return TransformResult::Error(L"Not a valid JPEG file");
     }
     
-    // Initialize TurboJPEG transformer
-    tjhandle tjHandle = tj3Init(TJINIT_TRANSFORM);
+    // Initialize TurboJPEG transformer with RAII
+    auto tjDeleter = [](tjhandle h) { if (h) tj3Destroy(h); };
+    std::unique_ptr<void, decltype(tjDeleter)> tjHandle(tj3Init(TJINIT_TRANSFORM), tjDeleter);
     if (!tjHandle) {
-        delete[] inputData;
         return TransformResult::Error(L"Failed to initialize JPEG transformer");
     }
     
@@ -226,24 +224,30 @@ TransformResult CLosslessTransform::TransformJPEG(
     transform.options = TJXOPT_PERFECT; 
     
     // Perform transformation
-    unsigned char* outputData = nullptr;
+    unsigned char* outputDataRaw = nullptr;
     size_t outputSize = 0;
     
     EditQuality quality = EditQuality::Lossless;
     
-    int result = tj3Transform(tjHandle, inputData, inputSize, 1, 
-                               &outputData, &outputSize, &transform);
+    int result = tj3Transform(tjHandle.get(), inputData.get(), inputSize, 1, 
+                               &outputDataRaw, &outputSize, &transform);
+                               
+    auto memDeleter = [](unsigned char* p) { if (p) tj3Free(p); };
+    std::unique_ptr<unsigned char, decltype(memDeleter)> outputData(outputDataRaw, memDeleter);
     
     // If perfect transform failed due to MCU alignment, try TRIM
     if (result != 0) {
-        const char* errStr = tj3GetErrorStr(tjHandle);
+        const char* errStr = tj3GetErrorStr(tjHandle.get());
         // Check for "perfect" or "MCU" in error message
         // libjpeg-turbo usually says "Transform is not perfect"
         if (errStr && (strstr(errStr, "perfect") != nullptr || strstr(errStr, "MCU") != nullptr)) {
             // Retry with TRIM
             transform.options = TJXOPT_TRIM;
-            result = tj3Transform(tjHandle, inputData, inputSize, 1,
-                                   &outputData, &outputSize, &transform);
+            
+            outputData.reset(); // Release prior output, if any
+            result = tj3Transform(tjHandle.get(), inputData.get(), inputSize, 1,
+                                   &outputDataRaw, &outputSize, &transform);
+            outputData.reset(outputDataRaw);
             
             if (result == 0) {
                 quality = EditQuality::EdgeAdapted;
@@ -251,22 +255,22 @@ TransformResult CLosslessTransform::TransformJPEG(
         }
     }
     
-    delete[] inputData;
+    // explicitly clear input buffer, though it would automatically be destroyed on scope exit
+    inputData.reset(); 
     
     TransformResult transformResult;
     
     if (result == 0 && outputData) {
         // Write output file
         std::wstring writeError;
-        if (WriteMemoryToFile(outputPath, outputData, static_cast<unsigned int>(outputSize), writeError)) {
+        if (WriteMemoryToFile(outputPath, outputData.get(), static_cast<unsigned int>(outputSize), writeError)) {
             transformResult = TransformResult::OK(quality);
         } else {
             transformResult = TransformResult::Error(writeError);
         }
-        tj3Free(outputData);
     } else {
         std::wstring errMsg = L"JPEG transformation failed";
-        const char* errStr = tj3GetErrorStr(tjHandle);
+        const char* errStr = tj3GetErrorStr(tjHandle.get());
         if (errStr) {
             // Convert error string to wide
             int len = MultiByteToWideChar(CP_UTF8, 0, errStr, -1, NULL, 0);
@@ -279,7 +283,6 @@ TransformResult CLosslessTransform::TransformJPEG(
         transformResult = TransformResult::Error(errMsg);
     }
     
-    tj3Destroy(tjHandle);
     return transformResult;
 }
 
