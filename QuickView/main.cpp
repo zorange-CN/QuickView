@@ -482,6 +482,15 @@ struct GamutWarningSample {
     bool IsValid() const { return cols > 0 && rows > 0 && linearRgb.size() == static_cast<size_t>(cols * rows * 3); }
 };
 
+struct GamutWarningAnalysisRequest {
+    std::shared_ptr<QuickView::RawImageFrame> frame;
+    CRenderEngine::GamutWarningAnalysisOptions options;
+
+    bool IsValid() const {
+        return frame && frame->IsValid() && !frame->IsSvg();
+    }
+};
+
 struct GamutWarningOverlayState {
     int width = 0;
     int height = 0;
@@ -495,7 +504,7 @@ GamutWarningOverlayState g_gamutWarningOverlay;
 float g_gamutWarningFlashOpacity = 1.0f;
 
 static std::mutex g_gamutWarningMutex;
-static GamutWarningSample g_gamutWarningSample;
+static GamutWarningAnalysisRequest g_gamutWarningRequest;
 static std::atomic<uint32_t> g_gamutWarningJobId = 0;
 static bool g_gamutWarningFlashActive = false;
 static DWORD g_gamutWarningFlashStartTick = 0;
@@ -811,6 +820,99 @@ struct ColorMatrix3 {
     float m[3][3];
 };
 
+struct ChromaticityPoint {
+    float x = 0.0f;
+    float y = 0.0f;
+};
+
+static ColorMatrix3 MultiplyColorMatrices(const ColorMatrix3& a, const ColorMatrix3& b) {
+    ColorMatrix3 out = {};
+    for (int row = 0; row < 3; ++row) {
+        for (int col = 0; col < 3; ++col) {
+            out.m[row][col] =
+                a.m[row][0] * b.m[0][col] +
+                a.m[row][1] * b.m[1][col] +
+                a.m[row][2] * b.m[2][col];
+        }
+    }
+    return out;
+}
+
+static bool InvertColorMatrix(const ColorMatrix3& matrix, ColorMatrix3* outInverse) {
+    if (!outInverse) return false;
+
+    const float a = matrix.m[0][0], b = matrix.m[0][1], c = matrix.m[0][2];
+    const float d = matrix.m[1][0], e = matrix.m[1][1], f = matrix.m[1][2];
+    const float g = matrix.m[2][0], h = matrix.m[2][1], i = matrix.m[2][2];
+
+    const float A = e * i - f * h;
+    const float B = -(d * i - f * g);
+    const float C = d * h - e * g;
+    const float D = -(b * i - c * h);
+    const float E = a * i - c * g;
+    const float F = -(a * h - b * g);
+    const float G = b * f - c * e;
+    const float H = -(a * f - c * d);
+    const float I = a * e - b * d;
+
+    const float det = a * A + b * B + c * C;
+    if (fabsf(det) < 1e-8f) return false;
+
+    const float invDet = 1.0f / det;
+    *outInverse = {{{A * invDet, D * invDet, G * invDet},
+                    {B * invDet, E * invDet, H * invDet},
+                    {C * invDet, F * invDet, I * invDet}}};
+    return true;
+}
+
+static bool BuildRgbToXyzMatrixFromChromaticities(
+    const ChromaticityPoint& red,
+    const ChromaticityPoint& green,
+    const ChromaticityPoint& blue,
+    const ChromaticityPoint& white,
+    ColorMatrix3* outMatrix) {
+    if (!outMatrix ||
+        red.x <= 0.0f || red.y <= 0.0f ||
+        green.x <= 0.0f || green.y <= 0.0f ||
+        blue.x <= 0.0f || blue.y <= 0.0f ||
+        white.x <= 0.0f || white.y <= 0.0f) {
+        return false;
+    }
+
+    const ColorMatrix3 primaries = {{
+        {red.x / red.y, green.x / green.y, blue.x / blue.y},
+        {1.0f,          1.0f,             1.0f},
+        {(1.0f - red.x - red.y) / red.y,
+         (1.0f - green.x - green.y) / green.y,
+         (1.0f - blue.x - blue.y) / blue.y}
+    }};
+
+    ColorMatrix3 primariesInverse = {};
+    if (!InvertColorMatrix(primaries, &primariesInverse)) {
+        return false;
+    }
+
+    const float whiteX = white.x / white.y;
+    const float whiteY = 1.0f;
+    const float whiteZ = (1.0f - white.x - white.y) / white.y;
+
+    const float scaleR = primariesInverse.m[0][0] * whiteX +
+                         primariesInverse.m[0][1] * whiteY +
+                         primariesInverse.m[0][2] * whiteZ;
+    const float scaleG = primariesInverse.m[1][0] * whiteX +
+                         primariesInverse.m[1][1] * whiteY +
+                         primariesInverse.m[1][2] * whiteZ;
+    const float scaleB = primariesInverse.m[2][0] * whiteX +
+                         primariesInverse.m[2][1] * whiteY +
+                         primariesInverse.m[2][2] * whiteZ;
+
+    const ColorMatrix3 scales = {{{scaleR, 0.0f, 0.0f},
+                                  {0.0f, scaleG, 0.0f},
+                                  {0.0f, 0.0f, scaleB}}};
+    *outMatrix = MultiplyColorMatrices(primaries, scales);
+    return true;
+}
+
 static ColorMatrix3 GetRgbToXyzMatrix(QuickView::ColorPrimaries primaries) {
     switch (primaries) {
     case QuickView::ColorPrimaries::DisplayP3:
@@ -878,6 +980,27 @@ static QuickView::ColorPrimaries ResolveDisplayPrimaries(const QuickView::Displa
     default:
         return QuickView::ColorPrimaries::SRGB;
     }
+}
+
+static bool TryBuildDisplayXyzToRgbMatrix(const QuickView::DisplayColorState& state,
+                                          ColorMatrix3* outMatrix) {
+    if (!outMatrix) return false;
+
+    if (state.HasChromaticities()) {
+        ColorMatrix3 rgbToXyz = {};
+        if (BuildRgbToXyzMatrixFromChromaticities(
+                {state.redPrimary[0], state.redPrimary[1]},
+                {state.greenPrimary[0], state.greenPrimary[1]},
+                {state.bluePrimary[0], state.bluePrimary[1]},
+                {state.whitePoint[0], state.whitePoint[1]},
+                &rgbToXyz) &&
+            InvertColorMatrix(rgbToXyz, outMatrix)) {
+            return true;
+        }
+    }
+
+    *outMatrix = GetXyzToRgbMatrix(ResolveDisplayPrimaries(state));
+    return true;
 }
 
 static std::wstring ToLowerCopy(std::wstring value) {
@@ -994,11 +1117,22 @@ static GamutWarningOverlayState AnalyzeGamutWarning(const GamutWarningSample& sa
     if (g_runtime.EnableSoftProofing && g_config.CmsRenderingIntent != 1) return result;
 
     const QuickView::ColorPrimaries srcPrimaries = NormalizePrimaries(sample.srcPrimaries);
-    const QuickView::ColorPrimaries dstPrimaries = NormalizePrimaries(ResolveGamutWarningDestinationPrimaries());
-    if (dstPrimaries == QuickView::ColorPrimaries::Unknown) return result;
-
     const ColorMatrix3 rgbToXyz = GetRgbToXyzMatrix(srcPrimaries);
-    const ColorMatrix3 xyzToDst = GetXyzToRgbMatrix(dstPrimaries);
+    ColorMatrix3 xyzToDst = {};
+
+    if (g_runtime.EnableSoftProofing && !g_runtime.SoftProofProfilePath.empty()) {
+        const QuickView::ColorPrimaries dstPrimaries =
+            NormalizePrimaries(ResolveGamutWarningDestinationPrimaries());
+        if (dstPrimaries == QuickView::ColorPrimaries::Unknown) return result;
+        xyzToDst = GetXyzToRgbMatrix(dstPrimaries);
+    } else {
+        const QuickView::DisplayColorState displayState =
+            g_renderEngine ? g_renderEngine->GetDisplayColorState() : QuickView::DisplayColorState{};
+        if (!TryBuildDisplayXyzToRgbMatrix(displayState, &xyzToDst)) {
+            return result;
+        }
+    }
+
     constexpr float kThreshold = 0.005f;
 
     result.mask.assign(static_cast<size_t>(sample.cols * sample.rows), 0);
@@ -1060,6 +1194,7 @@ static void ClearGamutWarningState(HWND hwnd) {
     {
         std::scoped_lock lock(g_gamutWarningMutex);
         g_gamutWarningOverlay = {};
+        g_gamutWarningRequest = {};
     }
     g_runtime.ShowGamutWarningOverlay = false;
     g_gamutWarningFlashActive = false;
@@ -1076,19 +1211,33 @@ static void ScheduleGamutWarningAnalysisImpl(HWND hwnd) {
         return;
     }
 
-    GamutWarningSample sampleCopy;
+    GamutWarningAnalysisRequest requestCopy;
     {
         std::scoped_lock lock(g_gamutWarningMutex);
-        sampleCopy = g_gamutWarningSample;
+        requestCopy = g_gamutWarningRequest;
     }
-    if (!sampleCopy.IsValid()) {
+    if (!requestCopy.IsValid()) {
         ClearGamutWarningState(hwnd);
         return;
     }
 
     const uint32_t jobId = ++g_gamutWarningJobId;
-    std::thread([hwnd, jobId, sample = std::move(sampleCopy)]() mutable {
-        GamutWarningOverlayState analyzed = AnalyzeGamutWarning(sample);
+    std::thread([hwnd, jobId, request = std::move(requestCopy)]() mutable {
+        GamutWarningOverlayState analyzed;
+        HRESULT hr = E_FAIL;
+        if (g_renderEngine && request.frame) {
+            CRenderEngine::GamutWarningAnalysisResult exactResult;
+            hr = g_renderEngine->AnalyzeGamutWarningIcc(*request.frame, request.options, &exactResult);
+            analyzed.width = exactResult.width;
+            analyzed.height = exactResult.height;
+            analyzed.cols = exactResult.cols;
+            analyzed.rows = exactResult.rows;
+            analyzed.mask = std::move(exactResult.mask);
+            analyzed.hasOverflow = exactResult.hasOverflow;
+        }
+        if (hr != S_OK && request.frame) {
+            analyzed = AnalyzeGamutWarning(BuildGamutWarningSample(*request.frame));
+        }
         if (jobId != g_gamutWarningJobId.load()) return;
         {
             std::scoped_lock lock(g_gamutWarningMutex);
@@ -10456,6 +10605,9 @@ void ProcessEngineEvents(HWND hwnd) {
             
             // Unified Path: RawImageFrame -> GPU
             bool resourceReady = false;
+            QuickView::DisplayColorState gamutAnalysisDisplayState =
+                g_compEngine ? g_compEngine->GetDisplayColorState()
+                             : g_renderEngine->GetDisplayColorState();
             
             if (evt.rawFrame && evt.rawFrame->IsValid()) {
                 if (evt.rawFrame->IsSvg()) {
@@ -10507,6 +10659,7 @@ void ProcessEngineEvents(HWND hwnd) {
                         g_compEngine ? g_compEngine->GetDisplayColorState() : g_renderEngine->GetDisplayColorState();
                     if (usePaneDisplayState) {
                         g_renderEngine->SetDisplayColorState(uploadState);
+                        gamutAnalysisDisplayState = uploadState;
                     }
                     hr = g_renderEngine->UploadRawFrameToGPU(*evt.rawFrame, &bitmap);
                     if (usePaneDisplayState) {
@@ -10673,7 +10826,13 @@ void ProcessEngineEvents(HWND hwnd) {
                 if (evt.rawFrame && evt.rawFrame->IsValid()) {
                     {
                         std::scoped_lock lock(g_gamutWarningMutex);
-                        g_gamutWarningSample = BuildGamutWarningSample(*evt.rawFrame);
+                        g_gamutWarningRequest.frame = evt.rawFrame;
+                        g_gamutWarningRequest.options.displayState = gamutAnalysisDisplayState;
+                        g_gamutWarningRequest.options.enableSoftProofing = g_runtime.EnableSoftProofing;
+                        g_gamutWarningRequest.options.softProofProfilePath = g_runtime.SoftProofProfilePath;
+                        g_gamutWarningRequest.options.effectiveCmsMode =
+                            g_runtime.GetEffectiveCmsMode(g_config.ColorManagement);
+                        g_gamutWarningRequest.options.renderingIntent = g_config.CmsRenderingIntent;
                     }
                     ScheduleGamutWarningAnalysis(hwnd);
                 } else {

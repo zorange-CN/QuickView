@@ -13,6 +13,7 @@
 #include "ComputeEngine.h"
 #include <mutex>
 #include <map>
+#include <string>
 #include <vector>
 
 // Direct2D Effects GUIDs
@@ -32,6 +33,23 @@ private:
     std::map<ColorContextCacheKey, Microsoft::WRL::ComPtr<ID2D1ColorContext>> m_colorContextCache;
     std::mutex m_cacheMutex;
 public:
+    struct GamutWarningAnalysisOptions {
+        QuickView::DisplayColorState displayState;
+        bool enableSoftProofing = false;
+        std::wstring softProofProfilePath;
+        int effectiveCmsMode = 1;
+        int renderingIntent = 1;
+    };
+
+    struct GamutWarningAnalysisResult {
+        int width = 0;
+        int height = 0;
+        int cols = 0;
+        int rows = 0;
+        std::vector<uint8_t> mask;
+        bool hasOverflow = false;
+    };
+
     CRenderEngine() = default;
     ~CRenderEngine();
 
@@ -72,6 +90,16 @@ public:
     /// Estimate the peak luminance of a floating point frame (scRGB) using SIMD.
     /// </summary>
     float EstimateFramePeakScRgb(const QuickView::RawImageFrame& frame);
+
+    /// <summary>
+    /// Run ICC-accurate out-of-gamut analysis using the Windows color system.
+    /// Returns S_FALSE when the exact ICC path is unavailable for this frame and
+    /// the caller should decide whether to fall back to an approximate path.
+    /// </summary>
+    HRESULT AnalyzeGamutWarningIcc(
+        const QuickView::RawImageFrame& frame,
+        const GamutWarningAnalysisOptions& options,
+        GamutWarningAnalysisResult* outResult) const;
 
     /// <summary>
     /// Get WIC factory

@@ -87,8 +87,15 @@ struct DisplayColorState {
     bool isValid = false;
     bool advancedColorSupported = false;
     bool advancedColorActive = false;
+    bool wideColorActive = false;
+    bool highDynamicRangeUserEnabled = false;
+    bool wideColorUserEnabled = false;
 
     DXGI_COLOR_SPACE_TYPE colorSpace = DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
+    float redPrimary[2] = {0.0f, 0.0f};
+    float greenPrimary[2] = {0.0f, 0.0f};
+    float bluePrimary[2] = {0.0f, 0.0f};
+    float whitePoint[2] = {0.0f, 0.0f};
     float minLuminanceNits = 0.0f;
     float maxLuminanceNits = 0.0f;
     float maxFullFrameLuminanceNits = 0.0f;
@@ -105,6 +112,17 @@ struct DisplayColorState {
 
     bool ShouldUseScRgbPipeline() const {
         return advancedColorActive;
+    }
+
+    bool ShouldBypassMonitorProfileForSdr() const {
+        return wideColorActive && !highDynamicRangeUserEnabled;
+    }
+
+    bool HasChromaticities() const {
+        return redPrimary[0] > 0.0f && redPrimary[1] > 0.0f &&
+               greenPrimary[0] > 0.0f && greenPrimary[1] > 0.0f &&
+               bluePrimary[0] > 0.0f && bluePrimary[1] > 0.0f &&
+               whitePoint[0] > 0.0f && whitePoint[1] > 0.0f;
     }
 };
 

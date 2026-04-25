@@ -4,6 +4,7 @@
 #include <mutex>
 #include <vector>
 #include <algorithm>
+#include <fstream>
 #include "RenderEngine.h"
 #include "QuickViewETW.h"
 static constexpr const char* CURRENT_MODULE = "RenderEngine";
@@ -63,6 +64,304 @@ uint8_t EncodeLinearToSdr8(float value) {
 struct ColorMatrix3x3 {
   float m[3][3];
 };
+
+struct ScopedColorProfile {
+  HPROFILE handle = nullptr;
+
+  ~ScopedColorProfile() {
+    if (handle) {
+      CloseColorProfile(handle);
+    }
+  }
+
+  ScopedColorProfile() = default;
+  ScopedColorProfile(const ScopedColorProfile &) = delete;
+  ScopedColorProfile &operator=(const ScopedColorProfile &) = delete;
+
+  ScopedColorProfile(ScopedColorProfile &&other) noexcept {
+    handle = other.handle;
+    other.handle = nullptr;
+  }
+
+  ScopedColorProfile &operator=(ScopedColorProfile &&other) noexcept {
+    if (this != &other) {
+      if (handle) {
+        CloseColorProfile(handle);
+      }
+      handle = other.handle;
+      other.handle = nullptr;
+    }
+    return *this;
+  }
+
+  void Reset(HPROFILE nextHandle = nullptr) {
+    if (handle) {
+      CloseColorProfile(handle);
+    }
+    handle = nextHandle;
+  }
+};
+
+struct ScopedColorTransform {
+  HTRANSFORM handle = nullptr;
+
+  ~ScopedColorTransform() {
+    if (handle) {
+      DeleteColorTransform(handle);
+    }
+  }
+
+  ScopedColorTransform() = default;
+  ScopedColorTransform(const ScopedColorTransform &) = delete;
+  ScopedColorTransform &operator=(const ScopedColorTransform &) = delete;
+
+  void Reset(HTRANSFORM nextHandle = nullptr) {
+    if (handle) {
+      DeleteColorTransform(handle);
+    }
+    handle = nextHandle;
+  }
+};
+
+bool LoadIccBytesFromResource(int resourceId, std::vector<uint8_t> *outBytes) {
+  if (!outBytes)
+    return false;
+  outBytes->clear();
+
+  HRSRC hRes = FindResourceW(GetModuleHandleW(nullptr),
+                             MAKEINTRESOURCEW(resourceId), L"ICC");
+  if (!hRes)
+    return false;
+  HGLOBAL hMem = LoadResource(GetModuleHandleW(nullptr), hRes);
+  if (!hMem)
+    return false;
+  DWORD size = SizeofResource(GetModuleHandleW(nullptr), hRes);
+  void *data = LockResource(hMem);
+  if (!data || size == 0)
+    return false;
+
+  const auto *bytes = static_cast<const uint8_t *>(data);
+  outBytes->assign(bytes, bytes + size);
+  return true;
+}
+
+bool BuildSrgbProfileBytes(std::vector<uint8_t> *outBytes) {
+  if (!outBytes)
+    return false;
+  outBytes->clear();
+
+  DWORD pathLen = 0;
+  if (!GetStandardColorSpaceProfileW(nullptr, LCS_sRGB, nullptr, &pathLen) ||
+      pathLen == 0) {
+    return false;
+  }
+
+  std::wstring profilePath(pathLen, L'\0');
+  if (!GetStandardColorSpaceProfileW(nullptr, LCS_sRGB, profilePath.data(),
+                                     &pathLen) ||
+      pathLen == 0) {
+    return false;
+  }
+  profilePath.resize(wcsnlen(profilePath.c_str(), pathLen));
+
+  std::ifstream stream(profilePath, std::ios::binary);
+  if (!stream) {
+    return false;
+  }
+
+  stream.seekg(0, std::ios::end);
+  const std::streamoff size = stream.tellg();
+  if (size <= 0) {
+    return false;
+  }
+
+  outBytes->resize(static_cast<size_t>(size));
+  stream.seekg(0, std::ios::beg);
+  stream.read(reinterpret_cast<char *>(outBytes->data()), size);
+  return stream.good() || stream.eof();
+}
+
+bool TryLoadProfileBytesForPrimaries(QuickView::ColorPrimaries primaries,
+                                     std::vector<uint8_t> *outBytes) {
+  if (!outBytes)
+    return false;
+
+  switch (primaries) {
+  case QuickView::ColorPrimaries::SRGB:
+  case QuickView::ColorPrimaries::Unknown:
+    return BuildSrgbProfileBytes(outBytes);
+  case QuickView::ColorPrimaries::DisplayP3:
+    return LoadIccBytesFromResource(IDR_ICC_P3, outBytes);
+  case QuickView::ColorPrimaries::AdobeRGB:
+    return LoadIccBytesFromResource(IDR_ICC_ADOBERGB, outBytes);
+  case QuickView::ColorPrimaries::ProPhotoRGB:
+    return LoadIccBytesFromResource(IDR_ICC_PROPHOTO, outBytes);
+  default:
+    return false;
+  }
+}
+
+HPROFILE OpenProfileFromBytes(const void *data, DWORD size) {
+  if (!data || size == 0)
+    return nullptr;
+
+  PROFILE profile = {};
+  profile.dwType = PROFILE_MEMBUFFER;
+  profile.pProfileData = const_cast<void *>(data);
+  profile.cbDataSize = size;
+  return OpenColorProfileW(&profile, PROFILE_READ, FILE_SHARE_READ, OPEN_EXISTING);
+}
+
+HPROFILE OpenProfileFromPath(const std::wstring &path) {
+  if (path.empty())
+    return nullptr;
+
+  PROFILE profile = {};
+  profile.dwType = PROFILE_FILENAME;
+  profile.pProfileData = const_cast<wchar_t *>(path.c_str());
+  profile.cbDataSize =
+      static_cast<DWORD>((path.size() + 1) * sizeof(wchar_t));
+  return OpenColorProfileW(&profile, PROFILE_READ, FILE_SHARE_READ, OPEN_EXISTING);
+}
+
+bool TryGetMonitorProfilePath(const QuickView::DisplayColorState &displayState,
+                              std::wstring *outPath) {
+  if (!outPath)
+    return false;
+  outPath->clear();
+
+  if (displayState.gdiDeviceName.empty())
+    return false;
+
+  HDC hdcMon =
+      CreateDCW(L"DISPLAY", displayState.gdiDeviceName.c_str(), NULL, NULL);
+  if (!hdcMon)
+    return false;
+
+  DWORD dwLen = 0;
+  GetICMProfileW(hdcMon, &dwLen, NULL);
+  if (dwLen == 0) {
+    DeleteDC(hdcMon);
+    return false;
+  }
+
+  std::wstring profilePath(dwLen, L'\0');
+  const BOOL ok = GetICMProfileW(hdcMon, &dwLen, &profilePath[0]);
+  DeleteDC(hdcMon);
+  if (!ok || dwLen == 0)
+    return false;
+
+  profilePath.resize(dwLen - 1);
+  *outPath = std::move(profilePath);
+  return true;
+}
+
+QuickView::ColorPrimaries ResolveFrameProfilePrimaries(
+    const QuickView::RawImageFrame &frame) {
+  if (frame.colorInfo.primaries != QuickView::ColorPrimaries::Unknown) {
+    return frame.colorInfo.primaries;
+  }
+  return frame.hdrMetadata.primaries;
+}
+
+bool BuildGamutCheckSampleFrame(const QuickView::RawImageFrame &frame,
+                                QuickView::RawImageFrame *outSample,
+                                int *outCols, int *outRows) {
+  if (!outSample || !outCols || !outRows || !frame.IsValid() || !frame.pixels ||
+      frame.width <= 0 || frame.height <= 0) {
+    return false;
+  }
+
+  if (frame.format == QuickView::PixelFormat::R32G32B32A32_FLOAT ||
+      frame.format == QuickView::PixelFormat::SVG_XML) {
+    return false;
+  }
+
+  outSample->Release();
+  outSample->format = QuickView::PixelFormat::BGRX8888;
+  outSample->width = std::clamp(frame.width / 16, 48, 256);
+  outSample->height = std::clamp(frame.height / 16, 48, 256);
+  outSample->stride = outSample->width * 4;
+  outSample->iccProfile = frame.iccProfile;
+  outSample->colorInfo = frame.colorInfo;
+  outSample->hdrMetadata = frame.hdrMetadata;
+  outSample->pixels =
+      static_cast<uint8_t *>(malloc(static_cast<size_t>(outSample->stride) *
+                                    static_cast<size_t>(outSample->height)));
+  outSample->memoryDeleter = [](uint8_t *p) { free(p); };
+  if (!outSample->pixels) {
+    outSample->Release();
+    return false;
+  }
+
+  for (int row = 0; row < outSample->height; ++row) {
+    uint8_t *dstRow =
+        outSample->pixels + static_cast<size_t>(row) * outSample->stride;
+    const float v = (static_cast<float>(row) + 0.5f) /
+                    static_cast<float>(outSample->height);
+    const int sy = std::clamp(
+        static_cast<int>(v * static_cast<float>(frame.height - 1)), 0,
+        frame.height - 1);
+    const uint8_t *srcRow =
+        frame.pixels + static_cast<size_t>(sy) * frame.stride;
+
+    for (int col = 0; col < outSample->width; ++col) {
+      const float u = (static_cast<float>(col) + 0.5f) /
+                      static_cast<float>(outSample->width);
+      const int sx = std::clamp(
+          static_cast<int>(u * static_cast<float>(frame.width - 1)), 0,
+          frame.width - 1);
+
+      const uint8_t *src = srcRow + static_cast<size_t>(sx) * 4;
+      uint8_t *dst = dstRow + static_cast<size_t>(col) * 4;
+      switch (frame.format) {
+      case QuickView::PixelFormat::BGRA8888:
+      case QuickView::PixelFormat::BGRX8888:
+        dst[0] = src[0];
+        dst[1] = src[1];
+        dst[2] = src[2];
+        dst[3] = 0;
+        break;
+      case QuickView::PixelFormat::RGBA8888:
+        dst[0] = src[2];
+        dst[1] = src[1];
+        dst[2] = src[0];
+        dst[3] = 0;
+        break;
+      default:
+        outSample->Release();
+        return false;
+      }
+    }
+  }
+
+  *outCols = outSample->width;
+  *outRows = outSample->height;
+  return true;
+}
+
+void DilateBinaryMask(std::vector<uint8_t> &mask, int cols, int rows) {
+  if (mask.empty() || cols <= 0 || rows <= 0)
+    return;
+
+  std::vector<uint8_t> expanded = mask;
+  for (int row = 0; row < rows; ++row) {
+    for (int col = 0; col < cols; ++col) {
+      if (!mask[static_cast<size_t>(row * cols + col)])
+        continue;
+      for (int oy = -1; oy <= 1; ++oy) {
+        for (int ox = -1; ox <= 1; ++ox) {
+          const int nx = col + ox;
+          const int ny = row + oy;
+          if (nx >= 0 && nx < cols && ny >= 0 && ny < rows) {
+            expanded[static_cast<size_t>(ny * cols + nx)] = 255;
+          }
+        }
+      }
+    }
+  }
+  mask.swap(expanded);
+}
 
 ColorMatrix3x3 MakeIdentityMatrix() {
   return {{{1.0f, 0.0f, 0.0f},
@@ -289,6 +588,152 @@ BuildToneMapSettings(const QuickView::RawImageFrame &frame,
 float CRenderEngine::EstimateFramePeakScRgb(const QuickView::RawImageFrame &frame) {
   return InternalEstimateFramePeakScRgb(frame);
 }
+
+HRESULT CRenderEngine::AnalyzeGamutWarningIcc(
+    const QuickView::RawImageFrame &frame,
+    const GamutWarningAnalysisOptions &options,
+    GamutWarningAnalysisResult *outResult) const {
+  if (!outResult)
+    return E_INVALIDARG;
+
+  *outResult = {};
+  outResult->width = frame.width;
+  outResult->height = frame.height;
+
+  if (!frame.IsValid() || !frame.pixels || frame.width <= 0 || frame.height <= 0) {
+    return E_INVALIDARG;
+  }
+
+  // A hard clipping warning is only meaningful in relative colorimetric mode.
+  if (options.renderingIntent != 1) {
+    return S_OK;
+  }
+
+  // Windows can expose a synthetic or generic display ICC that does not
+  // describe the panel's real gamut. For screen-gamut warnings, prefer the
+  // caller's display-primaries approximation path instead of a misleading ICC
+  // transform. Keep the exact ICC path for explicit soft proofing only.
+  if (!options.enableSoftProofing || options.softProofProfilePath.empty()) {
+    return S_FALSE;
+  }
+
+  QuickView::RawImageFrame sampledFrame;
+  if (!BuildGamutCheckSampleFrame(frame, &sampledFrame, &outResult->cols,
+                                  &outResult->rows)) {
+    return S_FALSE;
+  }
+
+  ScopedColorProfile srcProfile;
+  ScopedColorProfile dstProfile;
+  std::vector<uint8_t> profileBytes;
+
+  auto openPrimariesProfile = [&](QuickView::ColorPrimaries primaries,
+                                  ScopedColorProfile *outProfile) -> bool {
+    if (!outProfile)
+      return false;
+    if (primaries == QuickView::ColorPrimaries::SRGB ||
+        primaries == QuickView::ColorPrimaries::Unknown) {
+      DWORD pathLen = 0;
+      if (!GetStandardColorSpaceProfileW(nullptr, LCS_sRGB, nullptr, &pathLen) ||
+          pathLen == 0) {
+        return false;
+      }
+      std::wstring profilePath(pathLen, L'\0');
+      if (!GetStandardColorSpaceProfileW(nullptr, LCS_sRGB, profilePath.data(),
+                                         &pathLen) ||
+          pathLen == 0) {
+        return false;
+      }
+      profilePath.resize(wcsnlen(profilePath.c_str(), pathLen));
+      outProfile->Reset(OpenProfileFromPath(profilePath));
+      return outProfile->handle != nullptr;
+    }
+    profileBytes.clear();
+    if (!TryLoadProfileBytesForPrimaries(primaries, &profileBytes)) {
+      return false;
+    }
+    outProfile->Reset(OpenProfileFromBytes(
+        profileBytes.data(), static_cast<DWORD>(profileBytes.size())));
+    return outProfile->handle != nullptr;
+  };
+
+  const QuickView::ColorPrimaries framePrimaries =
+      ResolveFrameProfilePrimaries(frame);
+
+  if (options.effectiveCmsMode == 2) {
+    openPrimariesProfile(QuickView::ColorPrimaries::SRGB, &srcProfile);
+  } else if (options.effectiveCmsMode == 3) {
+    openPrimariesProfile(QuickView::ColorPrimaries::DisplayP3, &srcProfile);
+  } else if (options.effectiveCmsMode == 4) {
+    openPrimariesProfile(QuickView::ColorPrimaries::AdobeRGB, &srcProfile);
+  } else if (options.effectiveCmsMode == 6) {
+    openPrimariesProfile(QuickView::ColorPrimaries::ProPhotoRGB, &srcProfile);
+  } else if (!frame.iccProfile.empty()) {
+    srcProfile.Reset(OpenProfileFromBytes(frame.iccProfile.data(),
+                                          static_cast<DWORD>(frame.iccProfile.size())));
+  } else if (!openPrimariesProfile(framePrimaries, &srcProfile)) {
+    const int fallback = g_config.CmsDefaultFallback;
+    if (fallback == 1) {
+      openPrimariesProfile(QuickView::ColorPrimaries::DisplayP3, &srcProfile);
+    } else if (fallback == 2) {
+      openPrimariesProfile(QuickView::ColorPrimaries::AdobeRGB, &srcProfile);
+    } else if (fallback == 3) {
+      openPrimariesProfile(QuickView::ColorPrimaries::ProPhotoRGB, &srcProfile);
+    } else {
+      openPrimariesProfile(QuickView::ColorPrimaries::SRGB, &srcProfile);
+    }
+  }
+
+  if (options.enableSoftProofing && !options.softProofProfilePath.empty()) {
+    dstProfile.Reset(OpenProfileFromPath(options.softProofProfilePath));
+  } else {
+    std::wstring monitorProfilePath;
+    if (TryGetMonitorProfilePath(options.displayState, &monitorProfilePath)) {
+      dstProfile.Reset(OpenProfileFromPath(monitorProfilePath));
+    }
+  }
+  if (!dstProfile.handle) {
+    openPrimariesProfile(QuickView::ColorPrimaries::SRGB, &dstProfile);
+  }
+
+  if (!srcProfile.handle || !dstProfile.handle) {
+    return S_FALSE;
+  }
+
+  HPROFILE profiles[] = {srcProfile.handle, dstProfile.handle};
+  DWORD intents[] = {INTENT_RELATIVE_COLORIMETRIC};
+  ScopedColorTransform transform;
+  DWORD transformFlags =
+      BEST_MODE | ENABLE_GAMUT_CHECKING | USE_RELATIVE_COLORIMETRIC;
+  transform.Reset(CreateMultiProfileTransform(profiles, 2, intents, 1,
+                                              transformFlags, 0));
+  if (!transform.handle) {
+    return S_FALSE;
+  }
+
+  outResult->mask.assign(
+      static_cast<size_t>(outResult->cols * outResult->rows), 0);
+  if (!CheckBitmapBits(transform.handle, sampledFrame.pixels, BM_xRGBQUADS,
+                       static_cast<DWORD>(sampledFrame.width),
+                       static_cast<DWORD>(sampledFrame.height),
+                       static_cast<DWORD>(sampledFrame.stride),
+                       outResult->mask.data(), nullptr, 0)) {
+    const DWORD lastError = GetLastError();
+    return HRESULT_FROM_WIN32(lastError != 0 ? lastError : ERROR_NOT_SUPPORTED);
+  }
+
+  for (uint8_t &entry : outResult->mask) {
+    entry = entry ? 255 : 0;
+    outResult->hasOverflow |= entry != 0;
+  }
+
+  if (outResult->hasOverflow) {
+    DilateBinaryMask(outResult->mask, outResult->cols, outResult->rows);
+  }
+
+  return S_OK;
+}
+
 CRenderEngine::~CRenderEngine() {
   // ComPtr automatically releases resources
 }
@@ -515,6 +960,15 @@ HRESULT CRenderEngine::ResolveDestinationColorContext(
 
   if (ShouldUseHdrOutputForFrame(frame)) {
     return m_d2dContext->CreateColorContext(D2D1_COLOR_SPACE_SCRGB, nullptr, 0,
+                                            outContext);
+  }
+
+  // Windows 11 ACM / WCG can already apply the display transform after
+  // composition. In that mode we should output a standard SDR working space
+  // instead of pre-baking monitor correction into the bitmap, otherwise
+  // soft-proof previews can become muted or effectively double-managed.
+  if (m_displayColorState.ShouldBypassMonitorProfileForSdr()) {
+    return m_d2dContext->CreateColorContext(D2D1_COLOR_SPACE_SRGB, nullptr, 0,
                                             outContext);
   }
 

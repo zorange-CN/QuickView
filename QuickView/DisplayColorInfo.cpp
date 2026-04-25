@@ -207,6 +207,14 @@ bool DisplayColorInfo::Refresh(HWND hwnd, bool forceHdrSimulation) {
         m_state.advancedColorActive != nextState.advancedColorActive ||
         m_state.advancedColorSupported != nextState.advancedColorSupported ||
         m_state.colorSpace != nextState.colorSpace ||
+        std::abs(m_state.redPrimary[0] - nextState.redPrimary[0]) > 0.0001f ||
+        std::abs(m_state.redPrimary[1] - nextState.redPrimary[1]) > 0.0001f ||
+        std::abs(m_state.greenPrimary[0] - nextState.greenPrimary[0]) > 0.0001f ||
+        std::abs(m_state.greenPrimary[1] - nextState.greenPrimary[1]) > 0.0001f ||
+        std::abs(m_state.bluePrimary[0] - nextState.bluePrimary[0]) > 0.0001f ||
+        std::abs(m_state.bluePrimary[1] - nextState.bluePrimary[1]) > 0.0001f ||
+        std::abs(m_state.whitePoint[0] - nextState.whitePoint[0]) > 0.0001f ||
+        std::abs(m_state.whitePoint[1] - nextState.whitePoint[1]) > 0.0001f ||
         std::abs(m_state.maxLuminanceNits - nextState.maxLuminanceNits) > 0.01f ||
         std::abs(m_state.maxFullFrameLuminanceNits - nextState.maxFullFrameLuminanceNits) > 0.01f ||
         std::abs(m_state.sdrWhiteLevelNits - nextState.sdrWhiteLevelNits) > 0.01f ||
@@ -258,12 +266,90 @@ bool DisplayColorInfo::QueryForMonitor(HMONITOR monitor, DisplayColorState* stat
                 DXGI_OUTPUT_DESC1 desc1 = {};
                 if (SUCCEEDED(output6->GetDesc1(&desc1))) {
                     stateOut->colorSpace = desc1.ColorSpace;
+                    stateOut->redPrimary[0] = desc1.RedPrimary[0];
+                    stateOut->redPrimary[1] = desc1.RedPrimary[1];
+                    stateOut->greenPrimary[0] = desc1.GreenPrimary[0];
+                    stateOut->greenPrimary[1] = desc1.GreenPrimary[1];
+                    stateOut->bluePrimary[0] = desc1.BluePrimary[0];
+                    stateOut->bluePrimary[1] = desc1.BluePrimary[1];
+                    stateOut->whitePoint[0] = desc1.WhitePoint[0];
+                    stateOut->whitePoint[1] = desc1.WhitePoint[1];
                     stateOut->minLuminanceNits = desc1.MinLuminance;
                     stateOut->maxLuminanceNits = desc1.MaxLuminance;
                     stateOut->maxFullFrameLuminanceNits = desc1.MaxFullFrameLuminance;
                     stateOut->advancedColorActive = IsHdrColorSpace(desc1.ColorSpace);
                     stateOut->advancedColorSupported =
                         stateOut->advancedColorActive || desc1.MaxLuminance > 0.0f;
+                }
+            }
+
+            UINT32 pathCount = 0;
+            UINT32 modeCount = 0;
+            if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &pathCount,
+                                            &modeCount) == ERROR_SUCCESS) {
+                std::vector<DISPLAYCONFIG_PATH_INFO> paths(pathCount);
+                std::vector<DISPLAYCONFIG_MODE_INFO> modes(modeCount);
+                if (QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &pathCount,
+                                       paths.data(), &modeCount, modes.data(),
+                                       nullptr) == ERROR_SUCCESS) {
+                    for (UINT32 pathIndex = 0; pathIndex < pathCount; ++pathIndex) {
+                        DISPLAYCONFIG_SOURCE_DEVICE_NAME sourceName = {};
+                        sourceName.header.type =
+                            DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
+                        sourceName.header.size = sizeof(sourceName);
+                        sourceName.header.adapterId =
+                            paths[pathIndex].sourceInfo.adapterId;
+                        sourceName.header.id = paths[pathIndex].sourceInfo.id;
+                        if (DisplayConfigGetDeviceInfo(&sourceName.header) !=
+                                ERROR_SUCCESS ||
+                            stateOut->gdiDeviceName != sourceName.viewGdiDeviceName) {
+                            continue;
+                        }
+
+                        DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2 advancedColorInfo2 = {};
+                        advancedColorInfo2.header.type =
+                            DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2;
+                        advancedColorInfo2.header.size = sizeof(advancedColorInfo2);
+                        advancedColorInfo2.header.adapterId =
+                            paths[pathIndex].targetInfo.adapterId;
+                        advancedColorInfo2.header.id =
+                            paths[pathIndex].targetInfo.id;
+                        if (DisplayConfigGetDeviceInfo(&advancedColorInfo2.header) ==
+                            ERROR_SUCCESS) {
+                            stateOut->advancedColorSupported =
+                                advancedColorInfo2.advancedColorSupported != 0;
+                            stateOut->advancedColorActive =
+                                advancedColorInfo2.advancedColorActive != 0;
+                            stateOut->highDynamicRangeUserEnabled =
+                                advancedColorInfo2.highDynamicRangeUserEnabled != 0;
+                            stateOut->wideColorUserEnabled =
+                                advancedColorInfo2.wideColorUserEnabled != 0;
+                            stateOut->wideColorActive =
+                                advancedColorInfo2.activeColorMode ==
+                                    DISPLAYCONFIG_ADVANCED_COLOR_MODE_WCG ||
+                                advancedColorInfo2.wideColorUserEnabled != 0;
+                            break;
+                        }
+
+                        DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO advancedColorInfo = {};
+                        advancedColorInfo.header.type =
+                            DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO;
+                        advancedColorInfo.header.size = sizeof(advancedColorInfo);
+                        advancedColorInfo.header.adapterId =
+                            paths[pathIndex].targetInfo.adapterId;
+                        advancedColorInfo.header.id =
+                            paths[pathIndex].targetInfo.id;
+                        if (DisplayConfigGetDeviceInfo(&advancedColorInfo.header) ==
+                            ERROR_SUCCESS) {
+                            stateOut->advancedColorSupported =
+                                advancedColorInfo.advancedColorSupported != 0;
+                            stateOut->advancedColorActive =
+                                advancedColorInfo.advancedColorEnabled != 0;
+                            stateOut->wideColorActive =
+                                advancedColorInfo.wideColorEnforced != 0;
+                            break;
+                        }
+                    }
                 }
             }
 
