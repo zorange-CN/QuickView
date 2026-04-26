@@ -119,9 +119,13 @@ struct DialogState {
     DialogResult FinalResult = DialogResult::None;
     bool UseCustomCenter = false;
     D2D1_POINT_2F CustomCenter = D2D1::Point2F(0.0f, 0.0f);
-};
+    };
 
+    DialogResult ShowQuickViewDialog(HWND hwnd, const std::wstring& title, const std::wstring& messageContent,
+                             D2D1_COLOR_F accentColor, const std::vector<DialogButton>& buttons,
+                             bool hasChecbox = false, const std::wstring& checkboxText = L"", const std::wstring& qualityText = L"");
 
+    // Globals
 #include "FileNavigator.h"
 #include "GalleryOverlay.h"
 #include "Toolbar.h"
@@ -2295,6 +2299,10 @@ static void EnterOverlayMode(HWND hwnd) {
                                    D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.0f), false);
     g_compEngine->Commit();
 
+    // Disable DWM frame extension in overlay mode to eliminate the system background color
+    MARGINS margins = { 0, 0, 0, 0 };
+    DwmExtendFrameIntoClientArea(hwnd, &margins);
+
     // Switch toolbar to overlay mode
     g_toolbar.SetOverlayMode(true);
     g_toolbar.SetOverlayAlpha(g_runtime.OverlayAlpha);
@@ -2336,6 +2344,10 @@ static void ExitOverlayMode(HWND hwnd) {
 
     g_runtime.OverlayModeState = OverlayState::Normal;
 
+    // Restore DWM frame extension for drop shadow
+    MARGINS margins = { 0, 0, 0, 1 };
+    DwmExtendFrameIntoClientArea(hwnd, &margins);
+
     // Force background redraw with normal canvas color
     RECT bgRc{};
     GetClientRect(hwnd, &bgRc);
@@ -2370,15 +2382,24 @@ static void AdjustOverlayAlpha(HWND hwnd, int delta) {
 static void EnterPassthroughMode(HWND hwnd) {
     if (!IsOverlayModeActive() || IsPassthroughModeActive()) return;
 
-    // Show confirmation dialog
-    int result = MessageBoxW(hwnd,
+    // Show confirmation dialog using custom dialog system
+    std::vector<DialogButton> buttons = {
+        { DialogResult::Yes, L"Continue", true },
+        { DialogResult::Cancel, L"Cancel" }
+    };
+    DialogResult result = ShowQuickViewDialog(hwnd,
+        L"QuickView - Click-Through Mode",
         L"Click-through mode will make QuickView transparent to all mouse input.\n\n"
         L"Press Shift+Esc or right-click QuickView on the taskbar to exit.\n\n"
         L"Continue?",
-        L"QuickView - Click-Through Mode",
-        MB_OKCANCEL | MB_ICONINFORMATION | MB_DEFBUTTON1);
+        D2D1::ColorF(D2D1::ColorF::DodgerBlue),
+        buttons);
 
-    if (result != IDOK) return;
+    if (result != DialogResult::Yes) return;
+
+    // Hide toolbar immediately
+    g_toolbar.HideImmediately();
+    g_toolbar.SetPinned(false);
 
     // Add WS_EX_LAYERED | WS_EX_TRANSPARENT for mouse passthrough
     // CRITICAL: Do NOT call SetLayeredWindowAttributes — it breaks DComp!
@@ -2387,10 +2408,6 @@ static void EnterPassthroughMode(HWND hwnd) {
 
     // Register global hotkey (Shift+Esc) — only way to exit since we lose focus
     RegisterHotKey(hwnd, HOTKEY_ID_EXIT_PASSTHROUGH, MOD_SHIFT, VK_ESCAPE);
-
-    // Hide toolbar
-    g_toolbar.SetVisible(false);
-    g_toolbar.SetPinned(false);
 
     g_runtime.OverlayModeState = OverlayState::Overlay_Passthrough;
 
@@ -4642,10 +4659,9 @@ static void EnsureWindowSizeForDialog(HWND hwnd) {
 
 DialogResult ShowQuickViewDialog(HWND hwnd, const std::wstring& title, const std::wstring& messageContent, 
                              D2D1_COLOR_F accentColor, const std::vector<DialogButton>& buttons,
-                             bool hasChecbox = false, const std::wstring& checkboxText = L"", const std::wstring& qualityText = L"") 
-{
-    g_dialog.IsVisible = true;
-    g_dialog.Title = title;
+                             bool hasChecbox, const std::wstring& checkboxText, const std::wstring& qualityText)
+                             {
+                             g_dialog.IsVisible = true;    g_dialog.Title = title;
     g_dialog.Message = messageContent;
     g_dialog.QualityText = qualityText;
     g_dialog.AccentColor = accentColor;
@@ -6882,7 +6898,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int nCmdSh
     int xPos = (screenW - winW) / 2;
     int yPos = (screenH - winH) / 2;
 
-    HWND hwnd = CreateWindowExW(0, g_szClassName, g_szWindowTitle, WS_OVERLAPPEDWINDOW, xPos, yPos, winW, winH, nullptr, nullptr, hInstance, nullptr);
+    HWND hwnd = CreateWindowExW(WS_EX_NOREDIRECTIONBITMAP, g_szClassName, g_szWindowTitle, WS_OVERLAPPEDWINDOW, xPos, yPos, winW, winH, nullptr, nullptr, hInstance, nullptr);
     if (!hwnd) return 0;
     RefreshWindowDpi(hwnd);
 
@@ -7164,8 +7180,16 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
             SetTimer(hwnd, TIMER_ID_REGISTRY_CHECK, 1000, nullptr);
         }
 
-        MARGINS margins = { 0, 0, 0, 1 }; 
-        DwmExtendFrameIntoClientArea(hwnd, &margins); 
+        MARGINS margins = { 0, 0, 0, 1 };
+        DwmExtendFrameIntoClientArea(hwnd, &margins);
+
+        // [Fix] Permanently disable Windows 11 default caption/background color from bleeding into our transparent DComp surface
+        // DWMWA_CAPTION_COLOR (35), DWMWA_COLOR_NONE (0xFFFFFFFE)
+        if (SystemInfo::IsWindows11OrGreater()) {
+            COLORREF captionColor = 0xFFFFFFFE;
+            DwmSetWindowAttribute(hwnd, 35, &captionColor, sizeof(captionColor));
+        }
+
         ApplyWindowTheme(hwnd);
         return 0;
     }
@@ -8972,12 +8996,6 @@ SKIP_EDGE_NAV:;
                     break;
                 case ToolbarButtonID::OverlayAlphaDown:
                     AdjustOverlayAlpha(hwnd, -25);
-                    break;
-                case ToolbarButtonID::OverlayZoomIn:
-                    SendMessage(hwnd, WM_KEYDOWN, VK_ADD, 0);
-                    break;
-                case ToolbarButtonID::OverlayZoomOut:
-                    SendMessage(hwnd, WM_KEYDOWN, VK_SUBTRACT, 0);
                     break;
                 case ToolbarButtonID::OverlayPassthrough:
                     if (!IsPassthroughModeActive()) EnterPassthroughMode(hwnd);

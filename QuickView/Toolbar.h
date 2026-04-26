@@ -37,8 +37,6 @@ enum class ToolbarButtonID {
     // Overlay (Tracing) mode
     OverlayAlphaUp,
     OverlayAlphaDown,
-    OverlayZoomIn,
-    OverlayZoomOut,
     OverlayPassthrough,
     OverlayExit
 };
@@ -74,6 +72,7 @@ public:
     bool IsVisible() const { return m_opacity > 0.0f; }
     void SetVisible(bool visible); // Triggers animation logic external to this class?
     // actually, we can just set a target state and let UpdateAnimation be called by Timer.
+    void HideImmediately() { m_opacity = 0.0f; m_targetVisible = false; }
     bool IsPinned() const { return m_isPinned; }
     void TogglePin() { m_isPinned = !m_isPinned; }
     void SetPinned(bool pinned) { m_isPinned = pinned; }

@@ -49,8 +49,6 @@ Toolbar::Toolbar() {
       // Overlay mode buttons (hidden in normal mode)
       {ToolbarButtonID::OverlayAlphaUp,     Icons::ChevronUp,    {}, true, false},
       {ToolbarButtonID::OverlayAlphaDown,   Icons::ChevronDown,  {}, true, false},
-      {ToolbarButtonID::OverlayZoomIn,      Icons::ZoomIn,       {}, true, false},
-      {ToolbarButtonID::OverlayZoomOut,     Icons::ZoomOut,      {}, true, false},
       {ToolbarButtonID::OverlayPassthrough, Icons::Eye,          {}, true, false},
       {ToolbarButtonID::OverlayExit,        Icons::ExitToolbar,  {}, true, false},
       // Pin at the very end
@@ -159,8 +157,6 @@ void Toolbar::UpdateLayout(float winW, float winH) {
     switch (id) {
     case ToolbarButtonID::OverlayAlphaUp:
     case ToolbarButtonID::OverlayAlphaDown:
-    case ToolbarButtonID::OverlayZoomIn:
-    case ToolbarButtonID::OverlayZoomOut:
     case ToolbarButtonID::OverlayPassthrough:
     case ToolbarButtonID::OverlayExit:
       return true;
@@ -176,6 +172,7 @@ void Toolbar::UpdateLayout(float winW, float winH) {
   auto isVisibleButton = [&](const ToolbarButton &btn) {
     if (m_overlayMode) {
       if (isOverlayButton(btn.id)) return true;
+      if (btn.id == ToolbarButtonID::CompareZoomIn || btn.id == ToolbarButtonID::CompareZoomOut) return true;
       if (isAlwaysVisible(btn.id)) return true;
       return false;
     }
@@ -192,7 +189,7 @@ void Toolbar::UpdateLayout(float winW, float winH) {
       return true;
     }
 
-    if (isCompareButton(btn.id) || isAnimButton(btn.id))
+    if (isCompareButton(btn.id) || isAnimButton(btn.id) || isOverlayButton(btn.id))
       return false;
     if (btn.id == ToolbarButtonID::RawToggle && !btn.isEnabled)
       return false;
@@ -388,10 +385,6 @@ const wchar_t *GetTooltipText(const ToolbarButton &btn) {
     return L"Increase Opacity";
   case ToolbarButtonID::OverlayAlphaDown:
     return L"Decrease Opacity";
-  case ToolbarButtonID::OverlayZoomIn:
-    return L"Zoom In";
-  case ToolbarButtonID::OverlayZoomOut:
-    return L"Zoom Out";
   case ToolbarButtonID::OverlayPassthrough:
     return btn.isToggled ? L"Disable Click-Through" : L"Enable Click-Through";
   case ToolbarButtonID::OverlayExit:
