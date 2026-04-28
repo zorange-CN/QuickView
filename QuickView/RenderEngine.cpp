@@ -1405,15 +1405,6 @@ HRESULT CRenderEngine::ResolveDestinationColorContext(
                                             outContext);
   }
 
-  // Windows 11 ACM / WCG can already apply the display transform after
-  // composition. In that mode we should output a standard SDR working space
-  // instead of pre-baking monitor correction into the bitmap, otherwise
-  // soft-proof previews can become muted or effectively double-managed.
-  if (m_displayColorState.ShouldBypassMonitorProfileForSdr()) {
-    return m_d2dContext->CreateColorContext(D2D1_COLOR_SPACE_SRGB, nullptr, 0,
-                                            outContext);
-  }
-
   if (!m_displayColorState.gdiDeviceName.empty()) {
     HDC hdcMon =
         CreateDCW(L"DISPLAY", m_displayColorState.gdiDeviceName.c_str(), NULL, NULL);

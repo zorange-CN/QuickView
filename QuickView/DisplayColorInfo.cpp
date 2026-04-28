@@ -316,10 +316,9 @@ bool DisplayColorInfo::QueryForMonitor(HMONITOR monitor, DisplayColorState* stat
                             paths[pathIndex].targetInfo.id;
                         if (DisplayConfigGetDeviceInfo(&advancedColorInfo2.header) ==
                             ERROR_SUCCESS) {
-                            stateOut->advancedColorSupported =
-                                advancedColorInfo2.advancedColorSupported != 0;
-                            stateOut->advancedColorActive =
-                                advancedColorInfo2.advancedColorActive != 0;
+                            // Only supplement fields not covered by DXGI GetDesc1.
+                            // Do NOT overwrite advancedColorActive / advancedColorSupported
+                            // which were already reliably set via IsHdrColorSpace().
                             stateOut->highDynamicRangeUserEnabled =
                                 advancedColorInfo2.highDynamicRangeUserEnabled != 0;
                             stateOut->wideColorUserEnabled =
@@ -341,10 +340,8 @@ bool DisplayColorInfo::QueryForMonitor(HMONITOR monitor, DisplayColorState* stat
                             paths[pathIndex].targetInfo.id;
                         if (DisplayConfigGetDeviceInfo(&advancedColorInfo.header) ==
                             ERROR_SUCCESS) {
-                            stateOut->advancedColorSupported =
-                                advancedColorInfo.advancedColorSupported != 0;
-                            stateOut->advancedColorActive =
-                                advancedColorInfo.advancedColorEnabled != 0;
+                            // Only supplement wideColorActive; do not overwrite
+                            // DXGI-derived advancedColorActive / advancedColorSupported.
                             stateOut->wideColorActive =
                                 advancedColorInfo.wideColorEnforced != 0;
                             break;
