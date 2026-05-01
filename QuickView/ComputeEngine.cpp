@@ -310,9 +310,9 @@ void CSGamutAnalytic(uint3 id : SV_DispatchThreadID)
     uint idxG = min((uint)round(saturate(encoded.g) * lastIndex), lastIndex);
     uint idxB = min((uint)round(saturate(encoded.b) * lastIndex), lastIndex);
 
-    float r = SrcTrcR.Load(idxR);
-    float g = SrcTrcG.Load(idxG);
-    float b = SrcTrcB.Load(idxB);
+    float r = SrcTrcR.Load(int2(idxR, 0));
+    float g = SrcTrcG.Load(int2(idxG, 0));
+    float b = SrcTrcB.Load(int2(idxB, 0));
 
     float X = dot(SrcToXyz0.xyz, float3(r, g, b));
     float Y = dot(SrcToXyz1.xyz, float3(r, g, b));
@@ -453,7 +453,7 @@ HRESULT ComputeEngine::CompileShaders() {
     // Constant Buffers
     D3D11_BUFFER_DESC cbDesc = {};
     cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-    cbDesc.ByteWidth = 32;
+    cbDesc.ByteWidth = sizeof(ToneMapSettings);
     cbDesc.Usage = D3D11_USAGE_DYNAMIC;
     cbDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
     hr = m_d3dDevice->CreateBuffer(&cbDesc, nullptr, &m_toneMapConstantBuffer);

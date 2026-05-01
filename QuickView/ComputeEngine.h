@@ -10,23 +10,25 @@ using Microsoft::WRL::ComPtr;
 
 namespace QuickView {
 
-struct ToneMapSettings {
+struct alignas(16) ToneMapSettings {
     float contentPeakScRgb = 1.0f;
     float displayPeakScRgb = 1.0f;
     float paperWhiteScRgb = 1.0f;
     float exposure = 1.0f;
     int toneMappingMode = 0;
+    float _pad0[3] = {};
 };
+static_assert(sizeof(ToneMapSettings) % 16 == 0, "CB size must be multiple of 16 bytes");
 
-struct GamutAnalyticParams {
+struct alignas(16) GamutAnalyticParams {
     float srcToXyz[12] = {};
     float xyzToDst[12] = {};
     float epsilon = 0.005f;
     uint32_t trcEntries = 0;
     uint32_t width = 0;
     uint32_t height = 0;
-    uint32_t _pad0 = 0;
 };
+static_assert(sizeof(GamutAnalyticParams) % 16 == 0, "CB size must be multiple of 16 bytes");
 
 struct GamutMaskReadback {
     int width = 0;

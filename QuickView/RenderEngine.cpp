@@ -1242,19 +1242,25 @@ HRESULT CRenderEngine::CreateDeviceResources() {
   if (FAILED(hr))
     return hr;
 
+  // Enable D3D11 Multithread Protection (fixes crashes when Compute Shader runs on background thread)
+  ComPtr<ID3D11Multithread> d3dMultithread;
+  if (SUCCEEDED(m_d3dContext.As(&d3dMultithread))) {
+    d3dMultithread->SetMultithreadProtected(TRUE);
+  }
+
   // Get DXGI device
   ComPtr<IDXGIDevice1> dxgiDevice;
   hr = m_d3dDevice.As(&dxgiDevice);
   if (FAILED(hr))
     return hr;
 
-  // Create D2D factory
+  // Create D2D factory (Multi-Threaded to cooperate with D3D11 multithreading)
   D2D1_FACTORY_OPTIONS options = {};
 #ifdef _DEBUG
   options.debugLevel = D2D1_DEBUG_LEVEL_INFORMATION;
 #endif
 
-  hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, options,
+  hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_MULTI_THREADED, options,
                          m_d2dFactory.GetAddressOf());
   if (FAILED(hr))
     return hr;
