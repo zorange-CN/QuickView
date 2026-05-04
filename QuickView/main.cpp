@@ -1283,9 +1283,13 @@ void RefreshGamutWarningOverlayVisual(HWND hwnd) {
         return;
     }
 
+    UINT layerW = 0, layerH = 0;
+    g_compEngine->GetLayerSpecs(g_compEngine->GetActiveLayerIndex(), &layerW, &layerH);
+    if (layerW == 0 || layerH == 0) return;
+
     ID2D1DeviceContext* dc = g_compEngine->BeginImageOverlayUpdate(
-        static_cast<UINT>(overlay.width),
-        static_cast<UINT>(overlay.height),
+        layerW,
+        layerH,
         static_cast<UINT>(overlay.cols),
         static_cast<UINT>(overlay.rows));
     if (!dc) return;
