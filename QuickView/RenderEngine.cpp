@@ -903,39 +903,136 @@ bool BuildLutProgram(cmsHPROFILE srcProfile,
     }
   }
 
-  ScopedCmsTransform standard;
-  standard.Reset(cmsCreateTransform(srcProfile, TYPE_RGB_16, dstProfile, TYPE_RGB_16,
-                                    renderingIntent, cmsFLAGS_HIGHRESPRECALC));
-  if (!standard.handle) return false;
-
-  ScopedCmsTransform gamut;
-  static std::mutex s_alarmMutex;
-  {
-    std::scoped_lock lock(s_alarmMutex);
-    cmsUInt16Number alarm[16] = {0}; // cmsMAXCHANNELS is usually 16
-    for (int i = 0; i < 16; ++i) alarm[i] = 0xFFFF;
-    cmsSetAlarmCodes(alarm);
-    gamut.Reset(cmsCreateProofingTransform(
-        srcProfile, TYPE_RGB_16, dstProfile, TYPE_RGB_16, dstProfile,
-        renderingIntent, renderingIntent,
-        cmsFLAGS_SOFTPROOFING | cmsFLAGS_GAMUTCHECK | cmsFLAGS_HIGHRESPRECALC));
-  }
-  if (!gamut.handle) return false;
-
-  std::vector<cmsUInt16Number> gamutOut(voxelCount * 3);
-  cmsDoTransform(gamut.handle, input.data(), gamutOut.data(),
-                 static_cast<cmsUInt32Number>(voxelCount));
-
   program->lut.edge = kEdge;
   program->lut.overflowLut.assign(voxelCount, 0);
-  for (size_t i = 0; i < voxelCount; ++i) {
-    const size_t base = i * 3;
-    const bool overflow =
-        gamutOut[base + 0] == 0xFFFF &&
-        gamutOut[base + 1] == 0xFFFF &&
-        gamutOut[base + 2] == 0xFFFF;
-    program->lut.overflowLut[i] = overflow ? 255 : 0;
+
+  bool extractedLinear = false;
+  if (cmsIsMatrixShaper(dstProfile)) {
+    // Universal approach for matrix-shaper profiles that works for ALL hardware:
+    //
+    // Problem: lcms2 always clamps float output to [0,1] in its formatter stage
+    // (table-based TRCs cannot extrapolate), so TYPE_RGB_FLT against dstProfile
+    // loses out-of-gamut information regardless of cmsFLAGS_NOOPTIMIZE.
+    //
+    // Solution: Work entirely in D50-PCS (XYZ) space.
+    //   1. Transform src -> D50 XYZ using lcms2 (handles CHAD and BPC correctly).
+    //   2. Apply dstProfile's M^-1 ourselves (M is from colorant tags, which ARE
+    //      in D50-PCS — no coordinate-system confusion). This bypasses TRC entirely.
+    //   3. Check resulting linear RGB against [-tol, 1+tol].
+    //
+    const auto* rTag = static_cast<const cmsCIEXYZ*>(cmsReadTag(dstProfile, cmsSigRedColorantTag));
+    const auto* gTag = static_cast<const cmsCIEXYZ*>(cmsReadTag(dstProfile, cmsSigGreenColorantTag));
+    const auto* bTag = static_cast<const cmsCIEXYZ*>(cmsReadTag(dstProfile, cmsSigBlueColorantTag));
+
+    if (rTag && gTag && bTag) {
+      // Build the forward matrix M (column-major: each column is a primary's XYZ).
+      // Row 0 = X component, Row 1 = Y, Row 2 = Z.
+      const double M[9] = {
+          rTag->X, gTag->X, bTag->X,
+          rTag->Y, gTag->Y, bTag->Y,
+          rTag->Z, gTag->Z, bTag->Z,
+      };
+
+      // Invert M via Cramer's rule (3x3, always exact for non-degenerate primaries).
+      const double det =
+          M[0] * (M[4]*M[8] - M[5]*M[7]) -
+          M[1] * (M[3]*M[8] - M[5]*M[6]) +
+          M[2] * (M[3]*M[7] - M[4]*M[6]);
+
+      if (std::abs(det) > 1e-10) {
+        const double invDet = 1.0 / det;
+        const double Minv[9] = {
+            invDet * (M[4]*M[8] - M[5]*M[7]),
+            invDet * (M[2]*M[7] - M[1]*M[8]),
+            invDet * (M[1]*M[5] - M[2]*M[4]),
+            invDet * (M[5]*M[6] - M[3]*M[8]),
+            invDet * (M[0]*M[8] - M[2]*M[6]),
+            invDet * (M[2]*M[3] - M[0]*M[5]),
+            invDet * (M[3]*M[7] - M[4]*M[6]),
+            invDet * (M[1]*M[6] - M[0]*M[7]),
+            invDet * (M[0]*M[4] - M[1]*M[3]),
+        };
+
+        // Create a transform: src -> XYZ (D50 PCS). lcms2 handles CHAD internally.
+        cmsHPROFILE xyzProfile = cmsCreateXYZProfile();
+        if (xyzProfile) {
+          ScopedCmsTransform xyzTransform;
+          xyzTransform.Reset(cmsCreateTransform(srcProfile, TYPE_RGB_16,
+                                                xyzProfile, TYPE_XYZ_FLT,
+                                                renderingIntent,
+                                                cmsFLAGS_NOOPTIMIZE));
+          cmsCloseProfile(xyzProfile);
+
+          if (xyzTransform.handle) {
+            std::vector<float> xyzOut(voxelCount * 3);
+            cmsDoTransform(xyzTransform.handle, input.data(), xyzOut.data(),
+                           static_cast<cmsUInt32Number>(voxelCount));
+
+            const float tolerance = 0.005f;
+            for (size_t i = 0; i < voxelCount; ++i) {
+              const double X = xyzOut[i * 3 + 0];
+              const double Y = xyzOut[i * 3 + 1];
+              const double Z = xyzOut[i * 3 + 2];
+              // Apply M^-1: linear dst RGB (unclamped, no TRC involved).
+              const double dr = Minv[0]*X + Minv[1]*Y + Minv[2]*Z;
+              const double dg = Minv[3]*X + Minv[4]*Y + Minv[5]*Z;
+              const double db = Minv[6]*X + Minv[7]*Y + Minv[8]*Z;
+              const bool overflow =
+                  dr < -tolerance || dr > 1.0 + tolerance ||
+                  dg < -tolerance || dg > 1.0 + tolerance ||
+                  db < -tolerance || db > 1.0 + tolerance;
+              program->lut.overflowLut[i] = overflow ? 255 : 0;
+            }
+            extractedLinear = true;
+          }
+        }
+      }
+    }
   }
+
+  if (!extractedLinear) {
+    // Universal fallback for any profile type (CMYK, Grayscale, Lab, etc.).
+    //
+    // WRONG (old): dstProfile used as both Output AND Proofing.
+    //   → When dstProfile is CMYK, TYPE_RGB_16 output mismatches → transform fails.
+    //
+    // CORRECT: Use sRGB as the display Output (always RGB), dstProfile as the
+    //   Proofing target. lcms2 simulates src→proof→display and marks out-of-gamut
+    //   pixels with the alarm color. Works for RGB, CMYK, Gray, Lab, etc.
+    cmsHPROFILE srgbOutput = cmsCreate_sRGBProfile();
+    if (!srgbOutput) return false;
+
+    ScopedCmsTransform gamut;
+    static std::mutex s_alarmMutex;
+    {
+      std::scoped_lock lock(s_alarmMutex);
+      cmsUInt16Number alarm[16] = {0};
+      for (int i = 0; i < 16; ++i) alarm[i] = 0xFFFF;
+      cmsSetAlarmCodes(alarm);
+      gamut.Reset(cmsCreateProofingTransform(
+          srcProfile,  TYPE_RGB_16,
+          srgbOutput,  TYPE_RGB_16,   // Output: sRGB display (always RGB, no mismatch)
+          dstProfile,                 // Proofing: the actual target (any ICC color space)
+          renderingIntent, renderingIntent,
+          cmsFLAGS_SOFTPROOFING | cmsFLAGS_GAMUTCHECK | cmsFLAGS_HIGHRESPRECALC));
+    }
+    cmsCloseProfile(srgbOutput);
+    if (!gamut.handle) return false;
+
+    std::vector<cmsUInt16Number> gamutOut(voxelCount * 3);
+    cmsDoTransform(gamut.handle, input.data(), gamutOut.data(),
+                   static_cast<cmsUInt32Number>(voxelCount));
+
+    for (size_t i = 0; i < voxelCount; ++i) {
+      const size_t base = i * 3;
+      const bool overflow =
+          gamutOut[base + 0] == 0xFFFF &&
+          gamutOut[base + 1] == 0xFFFF &&
+          gamutOut[base + 2] == 0xFFFF;
+      program->lut.overflowLut[i] = overflow ? 255 : 0;
+    }
+  }
+
 
   if (FAILED(computeEngine->UploadOverflowLut(program->lut.overflowLut.data(), kEdge,
                                               &program->lut.overflowTexture))) {

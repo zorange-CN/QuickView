@@ -1221,6 +1221,17 @@ static void ScheduleGamutWarningAnalysisImpl(HWND hwnd) {
     GamutWarningAnalysisRequest requestCopy;
     {
         std::scoped_lock lock(g_gamutWarningMutex);
+        // Refresh all runtime-mutable options so that toggling soft proof,
+        // changing the proof target, or changing CMS mode takes effect immediately
+        // without waiting for the next image-load event.
+        auto& opts = g_gamutWarningRequest.options;
+        opts.enableSoftProofing   = g_runtime.EnableSoftProofing;
+        opts.softProofProfilePath = g_runtime.SoftProofProfilePath;
+        opts.targetKind = (g_runtime.EnableSoftProofing && !g_runtime.SoftProofProfilePath.empty())
+                              ? CRenderEngine::GamutTargetKind::ProofTarget
+                              : CRenderEngine::GamutTargetKind::ScreenTarget;
+        opts.effectiveCmsMode = g_runtime.GetEffectiveCmsMode(g_config.ColorManagement);
+        opts.renderingIntent  = g_config.CmsRenderingIntent;
         requestCopy = g_gamutWarningRequest;
     }
     if (!requestCopy.IsValid()) {
@@ -1263,6 +1274,7 @@ static void ScheduleGamutWarningAnalysisImpl(HWND hwnd) {
 
 void RefreshGamutWarningOverlayVisual(HWND hwnd) {
     if (!g_compEngine || !g_compEngine->IsInitialized()) return;
+
 
     GamutWarningOverlayState overlay;
     {
