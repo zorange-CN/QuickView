@@ -880,65 +880,7 @@ bool ResolveTargetProfileBlob(const CRenderEngine::GamutWarningAnalysisOptions& 
   return BuildProfileBlobForPrimaries(QuickView::ColorPrimaries::SRGB, outBlob);
 }
 
-bool ExtractMatrixShaperProgram(cmsHPROFILE srcProfile,
-                                cmsHPROFILE dstProfile,
-                                QuickView::ComputeEngine* computeEngine,
-                                CRenderEngine::GamutProgram* program) {
-  if (!srcProfile || !dstProfile || !computeEngine || !program) return false;
-  if (!cmsIsMatrixShaper(srcProfile) || !cmsIsMatrixShaper(dstProfile)) return false;
-  if (cmsChannelsOfColorSpace(cmsGetColorSpace(srcProfile)) != 3 ||
-      cmsChannelsOfColorSpace(cmsGetColorSpace(dstProfile)) != 3) {
-    return false;
-  }
 
-  const auto* srcR = static_cast<const cmsCIEXYZ*>(cmsReadTag(srcProfile, cmsSigRedColorantTag));
-  const auto* srcG = static_cast<const cmsCIEXYZ*>(cmsReadTag(srcProfile, cmsSigGreenColorantTag));
-  const auto* srcB = static_cast<const cmsCIEXYZ*>(cmsReadTag(srcProfile, cmsSigBlueColorantTag));
-  const auto* dstR = static_cast<const cmsCIEXYZ*>(cmsReadTag(dstProfile, cmsSigRedColorantTag));
-  const auto* dstG = static_cast<const cmsCIEXYZ*>(cmsReadTag(dstProfile, cmsSigGreenColorantTag));
-  const auto* dstB = static_cast<const cmsCIEXYZ*>(cmsReadTag(dstProfile, cmsSigBlueColorantTag));
-  auto* trcR = static_cast<cmsToneCurve*>(cmsReadTag(srcProfile, cmsSigRedTRCTag));
-  auto* trcG = static_cast<cmsToneCurve*>(cmsReadTag(srcProfile, cmsSigGreenTRCTag));
-  auto* trcB = static_cast<cmsToneCurve*>(cmsReadTag(srcProfile, cmsSigBlueTRCTag));
-  if (!srcR || !srcG || !srcB || !dstR || !dstG || !dstB || !trcR || !trcG || !trcB) {
-    return false;
-  }
-
-  Matrix3 srcToXyz = {{{static_cast<float>(srcR->X), static_cast<float>(srcG->X), static_cast<float>(srcB->X)},
-                       {static_cast<float>(srcR->Y), static_cast<float>(srcG->Y), static_cast<float>(srcB->Y)},
-                       {static_cast<float>(srcR->Z), static_cast<float>(srcG->Z), static_cast<float>(srcB->Z)}}};
-  Matrix3 dstToXyz = {{{static_cast<float>(dstR->X), static_cast<float>(dstG->X), static_cast<float>(dstB->X)},
-                       {static_cast<float>(dstR->Y), static_cast<float>(dstG->Y), static_cast<float>(dstB->Y)},
-                       {static_cast<float>(dstR->Z), static_cast<float>(dstG->Z), static_cast<float>(dstB->Z)}}};
-  Matrix3 xyzToDst = {};
-  if (!InvertMatrix3(dstToXyz, &xyzToDst)) return false;
-
-  constexpr int kTrcEntries = 1024;
-  program->analytic.trcR.resize(kTrcEntries);
-  program->analytic.trcG.resize(kTrcEntries);
-  program->analytic.trcB.resize(kTrcEntries);
-  for (int i = 0; i < kTrcEntries; ++i) {
-    const float t = static_cast<float>(i) / static_cast<float>(kTrcEntries - 1);
-    program->analytic.trcR[i] = cmsEvalToneCurveFloat(trcR, t);
-    program->analytic.trcG[i] = cmsEvalToneCurveFloat(trcG, t);
-    program->analytic.trcB[i] = cmsEvalToneCurveFloat(trcB, t);
-  }
-
-  memcpy(program->analytic.srcToXyz.data(), &srcToXyz.m[0][0], sizeof(float) * 9);
-  memcpy(program->analytic.xyzToDst.data(), &xyzToDst.m[0][0], sizeof(float) * 9);
-
-  if (FAILED(computeEngine->CreateTrcTexture1D(program->analytic.trcR.data(), kTrcEntries,
-                                               &program->analytic.trcSrvR)) ||
-      FAILED(computeEngine->CreateTrcTexture1D(program->analytic.trcG.data(), kTrcEntries,
-                                               &program->analytic.trcSrvG)) ||
-      FAILED(computeEngine->CreateTrcTexture1D(program->analytic.trcB.data(), kTrcEntries,
-                                               &program->analytic.trcSrvB))) {
-    return false;
-  }
-
-  program->backend = CRenderEngine::GamutBackendKind::AnalyticMatrixTrc;
-  return true;
-}
 
 bool BuildLutProgram(cmsHPROFILE srcProfile,
                      cmsHPROFILE dstProfile,
@@ -947,7 +889,7 @@ bool BuildLutProgram(cmsHPROFILE srcProfile,
                      CRenderEngine::GamutProgram* program) {
   if (!srcProfile || !dstProfile || !computeEngine || !program) return false;
 
-  constexpr int kEdge = 33;
+  constexpr int kEdge = 65;
   const size_t voxelCount = static_cast<size_t>(kEdge) * kEdge * kEdge;
   std::vector<cmsUInt16Number> input(voxelCount * 3);
   for (int b = 0; b < kEdge; ++b) {
@@ -970,7 +912,8 @@ bool BuildLutProgram(cmsHPROFILE srcProfile,
   static std::mutex s_alarmMutex;
   {
     std::scoped_lock lock(s_alarmMutex);
-    const cmsUInt16Number alarm[cmsMAXCHANNELS] = { 0, 65535, 0 };
+    cmsUInt16Number alarm[16] = {0}; // cmsMAXCHANNELS is usually 16
+    for (int i = 0; i < 16; ++i) alarm[i] = 0xFFFF;
     cmsSetAlarmCodes(alarm);
     gamut.Reset(cmsCreateProofingTransform(
         srcProfile, TYPE_RGB_16, dstProfile, TYPE_RGB_16, dstProfile,
@@ -979,10 +922,7 @@ bool BuildLutProgram(cmsHPROFILE srcProfile,
   }
   if (!gamut.handle) return false;
 
-  std::vector<cmsUInt16Number> standardOut(voxelCount * 3);
   std::vector<cmsUInt16Number> gamutOut(voxelCount * 3);
-  cmsDoTransform(standard.handle, input.data(), standardOut.data(),
-                 static_cast<cmsUInt32Number>(voxelCount));
   cmsDoTransform(gamut.handle, input.data(), gamutOut.data(),
                  static_cast<cmsUInt32Number>(voxelCount));
 
@@ -991,9 +931,9 @@ bool BuildLutProgram(cmsHPROFILE srcProfile,
   for (size_t i = 0; i < voxelCount; ++i) {
     const size_t base = i * 3;
     const bool overflow =
-        standardOut[base + 0] != gamutOut[base + 0] ||
-        standardOut[base + 1] != gamutOut[base + 1] ||
-        standardOut[base + 2] != gamutOut[base + 2];
+        gamutOut[base + 0] == 0xFFFF &&
+        gamutOut[base + 1] == 0xFFFF &&
+        gamutOut[base + 2] == 0xFFFF;
     program->lut.overflowLut[i] = overflow ? 255 : 0;
   }
 
@@ -1076,13 +1016,9 @@ HRESULT CRenderEngine::AnalyzeGamutWarningIcc(
     compiled->srcName = srcBlob.name.empty() ? DescribeLcmsProfile(srcProfile.handle, L"Source ICC") : srcBlob.name;
     compiled->dstName = dstBlob.name.empty() ? DescribeLcmsProfile(dstProfile.handle, L"Target ICC") : dstBlob.name;
 
-    if (!ExtractMatrixShaperProgram(srcProfile.handle, dstProfile.handle, m_computeEngine.get(),
-                                    compiled.get())) {
-      if (!options.allowGpuLutFallback ||
-          !BuildLutProgram(srcProfile.handle, dstProfile.handle, options.renderingIntent,
-                           m_computeEngine.get(), compiled.get())) {
-        return S_FALSE;
-      }
+    if (!BuildLutProgram(srcProfile.handle, dstProfile.handle, options.renderingIntent,
+                         m_computeEngine.get(), compiled.get())) {
+      return S_FALSE;
     }
 
     {
@@ -1107,31 +1043,9 @@ HRESULT CRenderEngine::AnalyzeGamutWarningIcc(
                                                    &srcTexture);
     if (FAILED(hr)) return hr;
 
-    if (program->backend == GamutBackendKind::AnalyticMatrixTrc) {
-      QuickView::GamutAnalyticParams params = {};
-      auto fillMatrix = [](const std::array<float, 9>& src, float dst[12]) {
-        memset(dst, 0, sizeof(float) * 12);
-        dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2];
-        dst[4] = src[3]; dst[5] = src[4]; dst[6] = src[5];
-        dst[8] = src[6]; dst[9] = src[7]; dst[10] = src[8];
-      };
-      fillMatrix(program->analytic.srcToXyz, params.srcToXyz);
-      fillMatrix(program->analytic.xyzToDst, params.xyzToDst);
-      params.epsilon = 0.005f;
-      params.trcEntries = static_cast<uint32_t>(program->analytic.trcR.size());
-      params.width = static_cast<uint32_t>(sampledFrame.width);
-      params.height = static_cast<uint32_t>(sampledFrame.height);
-      hr = m_computeEngine->DispatchGamutMaskAnalytic(
-          srcTexture.Get(),
-          program->analytic.trcSrvR.Get(),
-          program->analytic.trcSrvG.Get(),
-          program->analytic.trcSrvB.Get(),
-          params, readback);
-    } else {
-      hr = m_computeEngine->DispatchGamutMaskLut(
-          srcTexture.Get(), program->lut.overflowSrv.Get(),
-          program->lut.edge, 0.1f, readback);
-    }
+    hr = m_computeEngine->DispatchGamutMaskLut(
+        srcTexture.Get(), program->lut.overflowSrv.Get(),
+        program->lut.edge, 0.5f, readback);
     return hr;
   };
 

@@ -276,58 +276,7 @@ void CSComposeGainMap(uint3 id : SV_DispatchThreadID)
 }
 )";
 
-static const char* HLSL_GamutAnalytic = R"(
-Texture2D<float4> SrcTex : register(t0);
-Texture1D<float> SrcTrcR : register(t1);
-Texture1D<float> SrcTrcG : register(t2);
-Texture1D<float> SrcTrcB : register(t3);
-RWTexture2D<uint> MaskTex : register(u0);
 
-cbuffer GamutAnalyticParams : register(b0)
-{
-    float4 SrcToXyz0;
-    float4 SrcToXyz1;
-    float4 SrcToXyz2;
-    float4 XyzToDst0;
-    float4 XyzToDst1;
-    float4 XyzToDst2;
-    float Epsilon;
-    uint TrcEntries;
-    uint Width;
-    uint Height;
-};
-
-[numthreads(8, 8, 1)]
-void CSGamutAnalytic(uint3 id : SV_DispatchThreadID)
-{
-    if (id.x >= Width || id.y >= Height) {
-        return;
-    }
-
-    float4 encoded = SrcTex[id.xy];
-    uint lastIndex = (TrcEntries > 0) ? (TrcEntries - 1) : 0;
-    uint idxR = min((uint)round(saturate(encoded.r) * lastIndex), lastIndex);
-    uint idxG = min((uint)round(saturate(encoded.g) * lastIndex), lastIndex);
-    uint idxB = min((uint)round(saturate(encoded.b) * lastIndex), lastIndex);
-
-    float r = SrcTrcR.Load(int2(idxR, 0));
-    float g = SrcTrcG.Load(int2(idxG, 0));
-    float b = SrcTrcB.Load(int2(idxB, 0));
-
-    float X = dot(SrcToXyz0.xyz, float3(r, g, b));
-    float Y = dot(SrcToXyz1.xyz, float3(r, g, b));
-    float Z = dot(SrcToXyz2.xyz, float3(r, g, b));
-
-    float dr = dot(XyzToDst0.xyz, float3(X, Y, Z));
-    float dg = dot(XyzToDst1.xyz, float3(X, Y, Z));
-    float db = dot(XyzToDst2.xyz, float3(X, Y, Z));
-
-    bool overflow =
-        dr < -Epsilon || dg < -Epsilon || db < -Epsilon ||
-        dr > (1.0 + Epsilon) || dg > (1.0 + Epsilon) || db > (1.0 + Epsilon);
-    MaskTex[id.xy] = overflow ? 255u : 0u;
-}
-)";
 
 static const char* HLSL_GamutLut = R"(
 Texture2D<float4> SrcTex : register(t0);
@@ -352,7 +301,8 @@ void CSGamutLut(uint3 id : SV_DispatchThreadID)
 
     float3 encoded = saturate(SrcTex[id.xy].rgb);
     float overflow = OverflowLut.SampleLevel(LinearSampler, encoded, 0);
-    MaskTex[id.xy] = (overflow > Epsilon) ? 255u : 0u;
+    // Use strict > 0.5f threshold to prevent trilinear interpolation bleeding
+    MaskTex[id.xy] = (overflow > 0.5f) ? 255u : 0u;
 }
 )";
 
@@ -426,17 +376,7 @@ HRESULT ComputeEngine::CompileShaders() {
     hr = m_d3dDevice->CreateComputeShader(blob->GetBufferPointer(), blob->GetBufferSize(), nullptr, &m_csComposeGainMap);
     if (FAILED(hr)) return hr;
 
-    // 6. Gamut analytic dispatch
-    blob.Reset(); errorBlob.Reset();
-    hr = D3DCompile(HLSL_GamutAnalytic, strlen(HLSL_GamutAnalytic), nullptr, nullptr, nullptr, "CSGamutAnalytic", "cs_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &blob, &errorBlob);
-    if (FAILED(hr)) {
-        if (errorBlob) {
-            QV_LOG("Shader_Error", TraceLoggingString((char*)errorBlob->GetBufferPointer(), "Message"));
-        }
-        return hr;
-    }
-    hr = m_d3dDevice->CreateComputeShader(blob->GetBufferPointer(), blob->GetBufferSize(), nullptr, &m_csGamutAnalytic);
-    if (FAILED(hr)) return hr;
+
 
     // 7. Gamut LUT dispatch
     blob.Reset(); errorBlob.Reset();
@@ -464,9 +404,7 @@ HRESULT ComputeEngine::CompileShaders() {
     hr = m_d3dDevice->CreateBuffer(&cbDesc, nullptr, &m_gainMapConstantBuffer);
     if (FAILED(hr)) return hr;
 
-    cbDesc.ByteWidth = sizeof(GamutAnalyticParams);
-    hr = m_d3dDevice->CreateBuffer(&cbDesc, nullptr, &m_gamutAnalyticConstantBuffer);
-    if (FAILED(hr)) return hr;
+
 
     cbDesc.ByteWidth = 16;
     hr = m_d3dDevice->CreateBuffer(&cbDesc, nullptr, &m_gamutLutConstantBuffer);
@@ -655,33 +593,7 @@ HRESULT ComputeEngine::UploadOverflowLut(const uint8_t* values, int edge, ID3D11
     return S_OK;
 }
 
-HRESULT ComputeEngine::CreateTrcTexture1D(const float* values, int entries, ID3D11ShaderResourceView** outSrv) {
-    if (!m_valid || !values || entries <= 0 || !outSrv) return E_INVALIDARG;
 
-    D3D11_TEXTURE1D_DESC desc = {};
-    desc.Width = static_cast<UINT>(entries);
-    desc.MipLevels = 1;
-    desc.ArraySize = 1;
-    desc.Format = DXGI_FORMAT_R32_FLOAT;
-    desc.Usage = D3D11_USAGE_DEFAULT;
-    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-
-    D3D11_SUBRESOURCE_DATA initData = {};
-    initData.pSysMem = values;
-    initData.SysMemPitch = static_cast<UINT>(entries * sizeof(float));
-
-    ComPtr<ID3D11Texture1D> texture;
-    HRESULT hr = m_d3dDevice->CreateTexture1D(&desc, &initData, &texture);
-    if (FAILED(hr)) return hr;
-
-    D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-    srvDesc.Format = desc.Format;
-    srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE1D;
-    srvDesc.Texture1D.MostDetailedMip = 0;
-    srvDesc.Texture1D.MipLevels = 1;
-
-    return m_d3dDevice->CreateShaderResourceView(texture.Get(), &srvDesc, outSrv);
-}
 
 HRESULT ComputeEngine::ReadbackMaskTexture(ID3D11Texture2D* maskTexture, GamutMaskReadback* outReadback) {
     if (!maskTexture || !outReadback) return E_INVALIDARG;
@@ -724,61 +636,7 @@ HRESULT ComputeEngine::ReadbackMaskTexture(ID3D11Texture2D* maskTexture, GamutMa
     return S_OK;
 }
 
-HRESULT ComputeEngine::DispatchGamutMaskAnalytic(
-    ID3D11Texture2D* srcTexture,
-    ID3D11ShaderResourceView* srcTrcR,
-    ID3D11ShaderResourceView* srcTrcG,
-    ID3D11ShaderResourceView* srcTrcB,
-    const GamutAnalyticParams& params,
-    GamutMaskReadback* outReadback) {
-    if (!m_valid || !srcTexture || !srcTrcR || !srcTrcG || !srcTrcB || !outReadback) {
-        return E_INVALIDARG;
-    }
 
-    ComPtr<ID3D11ShaderResourceView> srcSrv;
-    HRESULT hr = m_d3dDevice->CreateShaderResourceView(srcTexture, nullptr, &srcSrv);
-    if (FAILED(hr)) return hr;
-
-    D3D11_TEXTURE2D_DESC maskDesc = {};
-    maskDesc.Width = params.width;
-    maskDesc.Height = params.height;
-    maskDesc.MipLevels = 1;
-    maskDesc.ArraySize = 1;
-    maskDesc.Format = DXGI_FORMAT_R32_UINT;
-    maskDesc.SampleDesc.Count = 1;
-    maskDesc.Usage = D3D11_USAGE_DEFAULT;
-    maskDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS;
-
-    ComPtr<ID3D11Texture2D> maskTexture;
-    hr = m_d3dDevice->CreateTexture2D(&maskDesc, nullptr, &maskTexture);
-    if (FAILED(hr)) return hr;
-
-    ComPtr<ID3D11UnorderedAccessView> maskUav;
-    hr = m_d3dDevice->CreateUnorderedAccessView(maskTexture.Get(), nullptr, &maskUav);
-    if (FAILED(hr)) return hr;
-
-    D3D11_MAPPED_SUBRESOURCE mapped = {};
-    hr = m_d3dContext->Map(m_gamutAnalyticConstantBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-    if (FAILED(hr)) return hr;
-    memcpy(mapped.pData, &params, sizeof(params));
-    m_d3dContext->Unmap(m_gamutAnalyticConstantBuffer.Get(), 0);
-
-    m_d3dContext->CSSetShader(m_csGamutAnalytic.Get(), nullptr, 0);
-    ID3D11ShaderResourceView* srvs[] = { srcSrv.Get(), srcTrcR, srcTrcG, srcTrcB };
-    m_d3dContext->CSSetShaderResources(0, 4, srvs);
-    ID3D11UnorderedAccessView* uavs[] = { maskUav.Get() };
-    m_d3dContext->CSSetUnorderedAccessViews(0, 1, uavs, nullptr);
-    ID3D11Buffer* cbs[] = { m_gamutAnalyticConstantBuffer.Get() };
-    m_d3dContext->CSSetConstantBuffers(0, 1, cbs);
-    m_d3dContext->Dispatch((params.width + 7) / 8, (params.height + 7) / 8, 1);
-
-    ID3D11UnorderedAccessView* nullUav[] = { nullptr };
-    m_d3dContext->CSSetUnorderedAccessViews(0, 1, nullUav, nullptr);
-    ID3D11ShaderResourceView* nullSrvs[] = { nullptr, nullptr, nullptr, nullptr };
-    m_d3dContext->CSSetShaderResources(0, 4, nullSrvs);
-
-    return ReadbackMaskTexture(maskTexture.Get(), outReadback);
-}
 
 HRESULT ComputeEngine::DispatchGamutMaskLut(
     ID3D11Texture2D* srcTexture,
