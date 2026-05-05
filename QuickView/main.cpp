@@ -626,6 +626,9 @@ struct CompareSlot {
     CompareView view;
     bool valid = false;
     EditState editState;
+    int CmsModeOverride = -1;
+    bool EnableSoftProofing = false;
+    std::wstring SoftProofProfilePath;
 
     void Reset() {
         resource.Reset();
@@ -634,6 +637,9 @@ struct CompareSlot {
         view = {};
         valid = false;
         editState.Reset();
+        CmsModeOverride = -1;
+        EnableSoftProofing = false;
+        SoftProofProfilePath.clear();
     }
 };
 
@@ -2066,6 +2072,9 @@ static void CaptureCurrentImageAsCompareLeft() {
         g_compare.left.view.ExifOrientation = 1;
         g_compare.left.metadata.ExifOrientation = 1;
     }
+    g_compare.left.CmsModeOverride = g_runtime.CmsModeOverride;
+    g_compare.left.EnableSoftProofing = g_runtime.EnableSoftProofing;
+    g_compare.left.SoftProofProfilePath = g_runtime.SoftProofProfilePath;
     // [Fix] Also restore metadata ExifOrientation (was neutralized after RenderImageToDComp)
     if (g_config.AutoRotate && g_renderExifOrientation > 1) {
         g_compare.left.metadata.ExifOrientation = g_renderExifOrientation;
@@ -6149,7 +6158,13 @@ void RefreshImageDisplay(HWND hwnd) {
                 g_currentMetadata.MeasuredPeakNits = g_renderEngine->EstimateFramePeakScRgb(*frame) * 80.0f;
             }
             ComPtr<ID2D1Bitmap> bitmap;
-            if (SUCCEEDED(g_renderEngine->UploadRawFrameToGPU(*frame, &bitmap))) {
+            CRenderEngine::RenderPipelineOptions rightOpts;
+            rightOpts.hasOverrides = true;
+            rightOpts.effectiveCmsMode = g_runtime.GetEffectiveCmsMode(g_config.ColorManagement);
+            rightOpts.enableSoftProofing = g_runtime.EnableSoftProofing;
+            rightOpts.softProofProfilePath = g_runtime.SoftProofProfilePath;
+
+            if (SUCCEEDED(g_renderEngine->UploadRawFrameToGPU(*frame, &bitmap, &rightOpts))) {
                 g_imageResource.bitmap = bitmap;
                 g_isImageDirty = false; // [v10.3.1] Force refresh consumed, preventing redundant OnPaint cycle
                 
@@ -6172,7 +6187,14 @@ void RefreshImageDisplay(HWND hwnd) {
                 g_compare.left.metadata.MeasuredPeakNits = g_renderEngine->EstimateFramePeakScRgb(*leftFrame) * 80.0f;
             }
             ComPtr<ID2D1Bitmap> leftBitmap;
-            if (SUCCEEDED(g_renderEngine->UploadRawFrameToGPU(*leftFrame, &leftBitmap))) {
+            CRenderEngine::RenderPipelineOptions leftOpts;
+            leftOpts.hasOverrides = true;
+            int leftCmsModeOverride = g_compare.left.CmsModeOverride;
+            leftOpts.effectiveCmsMode = (leftCmsModeOverride != -1) ? leftCmsModeOverride : (g_config.ColorManagement ? 1 : 0);
+            leftOpts.enableSoftProofing = g_compare.left.EnableSoftProofing;
+            leftOpts.softProofProfilePath = g_compare.left.SoftProofProfilePath;
+
+            if (SUCCEEDED(g_renderEngine->UploadRawFrameToGPU(*leftFrame, &leftBitmap, &leftOpts))) {
                 g_compare.left.resource.bitmap = leftBitmap;
                 needsRepaint = true;
             }
@@ -10022,7 +10044,12 @@ SKIP_EDGE_NAV:;
         }
         
         bool isPixelArtMode = GetCurrentPixelArtState(hwnd);
-        ShowContextMenu(hwnd, pt, hasImage, extensionFixNeeded, g_runtime.LockWindowSize, g_runtime.ShowInfoPanel, g_runtime.InfoPanelExpanded, g_config.AlwaysOnTop, renderRaw, isRaw, IsZoomed(hwnd) != 0, g_runtime.CrossMonitorMode, IsCompareModeActive(), isPixelArtMode);
+        const bool contextLeft = IsCompareModeActive() && g_compare.contextPane == ComparePane::Left;
+        int menuCmsMode = contextLeft ? (g_compare.left.CmsModeOverride != -1 ? g_compare.left.CmsModeOverride : (g_config.ColorManagement ? 1 : 0)) : g_runtime.GetEffectiveCmsMode(g_config.ColorManagement);
+        bool menuEnableSoftProofing = contextLeft ? g_compare.left.EnableSoftProofing : g_runtime.EnableSoftProofing;
+        std::wstring menuSoftProofPath = contextLeft ? g_compare.left.SoftProofProfilePath : g_runtime.SoftProofProfilePath;
+
+        ShowContextMenu(hwnd, pt, hasImage, extensionFixNeeded, g_runtime.LockWindowSize, g_runtime.ShowInfoPanel, g_runtime.InfoPanelExpanded, g_config.AlwaysOnTop, renderRaw, isRaw, IsZoomed(hwnd) != 0, g_runtime.CrossMonitorMode, IsCompareModeActive(), isPixelArtMode, menuCmsMode, menuEnableSoftProofing, menuSoftProofPath);
         return 0;
     }
     
@@ -10044,30 +10071,36 @@ SKIP_EDGE_NAV:;
         UINT cmdId = LOWORD(wParam);
         UINT wmId = cmdId;
 
+        const bool contextLeft = IsCompareContextLeft();
+        const std::wstring& contextPath = contextLeft ? g_compare.left.path : g_imagePath;
+        const CImageLoader::ImageMetadata& contextMeta = contextLeft ? g_compare.left.metadata : g_currentMetadata;
+
         // Soft Proofing Profile Dynamic Dispatch
-                if (cmdId >= IDM_SOFT_PROOF_BASE && cmdId <= IDM_SOFT_PROOF_BASE + 99) {
+        if (cmdId >= IDM_SOFT_PROOF_BASE && cmdId <= IDM_SOFT_PROOF_BASE + 99) {
             extern std::vector<std::wstring>& GetSystemIccProfiles();
             std::vector<std::wstring>& profiles = GetSystemIccProfiles();
             int idx = cmdId - IDM_SOFT_PROOF_BASE;
             if (idx >= 0 && idx < profiles.size()) {
-                g_runtime.SoftProofProfilePath = profiles[idx];
-                g_runtime.EnableSoftProofing = true;
+                if (contextLeft) {
+                    g_compare.left.SoftProofProfilePath = profiles[idx];
+                    g_compare.left.EnableSoftProofing = true;
+                } else {
+                    g_runtime.SoftProofProfilePath = profiles[idx];
+                    g_runtime.EnableSoftProofing = true;
+                }
                 
-                std::wstring fileName = g_runtime.SoftProofProfilePath;
+                std::wstring fileName = profiles[idx];
                 size_t pos = fileName.find_last_of(L"\\/");
                 if (pos != std::wstring::npos) fileName = fileName.substr(pos + 1);
                 
                 g_osd.Show(hwnd, L"Proofing: " + fileName, false, false, D2D1::ColorF(D2D1::ColorF::Cyan));
                 
                 RefreshImageDisplay(hwnd);
-                ScheduleGamutWarningAnalysis(hwnd);
+                if (!contextLeft) ScheduleGamutWarningAnalysis(hwnd);
             }
             return 0;
         }
 
-        const bool contextLeft = IsCompareContextLeft();
-        const std::wstring& contextPath = contextLeft ? g_compare.left.path : g_imagePath;
-        const CImageLoader::ImageMetadata& contextMeta = contextLeft ? g_compare.left.metadata : g_currentMetadata;
         switch (cmdId) {
         case IDM_GALLERY_OPEN_COMPARE: {
             if (g_galleryContextMenuIndex >= 0 && g_galleryContextMenuIndex < (int)g_navigator.Count()) {
@@ -10747,11 +10780,15 @@ SKIP_EDGE_NAV:;
         case IDM_CMS_GRAY:
         case IDM_CMS_PROPHOTO: {
              int newMode = (int)cmdId - (int)IDM_CMS_UNMANAGED;
-             g_runtime.CmsModeOverride = newMode;
+             if (contextLeft) {
+                 g_compare.left.CmsModeOverride = newMode;
+             } else {
+                 g_runtime.CmsModeOverride = newMode;
+             }
              
              // Apply immediately by forcing a GPU re-upload (isFastUpgrade=true, no window resize)
              RefreshImageDisplay(hwnd);
-             ScheduleGamutWarningAnalysis(hwnd);
+             if (!contextLeft) ScheduleGamutWarningAnalysis(hwnd);
 
              std::wstring msg = L"Color Space: ";
              switch (newMode) {
@@ -10769,24 +10806,32 @@ SKIP_EDGE_NAV:;
         }
 
         case IDM_SOFT_PROOF_TOGGLE: {
-             if (g_runtime.SoftProofProfilePath.empty() && !g_config.CustomSoftProofProfile.empty()) {
-                 g_runtime.SoftProofProfilePath = g_config.CustomSoftProofProfile;
+             std::wstring& currentProfile = contextLeft ? g_compare.left.SoftProofProfilePath : g_runtime.SoftProofProfilePath;
+             bool& currentEnable = contextLeft ? g_compare.left.EnableSoftProofing : g_runtime.EnableSoftProofing;
+
+             if (currentProfile.empty() && !g_config.CustomSoftProofProfile.empty()) {
+                 currentProfile = g_config.CustomSoftProofProfile;
              }
-             if (g_runtime.SoftProofProfilePath.empty()) {
+             if (currentProfile.empty()) {
                  g_osd.Show(hwnd, L"Please select a Soft Proof Profile first.", false);
                  break;
              }
-             g_runtime.EnableSoftProofing = !g_runtime.EnableSoftProofing;
+             currentEnable = !currentEnable;
              RefreshImageDisplay(hwnd);
-             ScheduleGamutWarningAnalysis(hwnd);
-             g_osd.Show(hwnd, g_runtime.EnableSoftProofing ? L"Soft Proofing: ON" : L"Soft Proofing: OFF", false);
+             if (!contextLeft) ScheduleGamutWarningAnalysis(hwnd);
+             g_osd.Show(hwnd, currentEnable ? L"Soft Proofing: ON" : L"Soft Proofing: OFF", false);
              break;
         }
         case IDM_SOFT_PROOF_CUSTOM: {
-             g_runtime.SoftProofProfilePath = g_config.CustomSoftProofProfile;
-             g_runtime.EnableSoftProofing = true;
+             if (contextLeft) {
+                 g_compare.left.SoftProofProfilePath = g_config.CustomSoftProofProfile;
+                 g_compare.left.EnableSoftProofing = true;
+             } else {
+                 g_runtime.SoftProofProfilePath = g_config.CustomSoftProofProfile;
+                 g_runtime.EnableSoftProofing = true;
+             }
              RefreshImageDisplay(hwnd);
-             ScheduleGamutWarningAnalysis(hwnd);
+             if (!contextLeft) ScheduleGamutWarningAnalysis(hwnd);
              g_osd.Show(hwnd, L"Soft Proofing Target Updated", false);
              break;
         }
@@ -12362,6 +12407,10 @@ static FireAndForget LoadImageIntoCompareLeftSlot(HWND hwnd, std::wstring path, 
     if (frameExif < 1 || frameExif > 8) frameExif = 1;
     g_compare.left.metadata.ExifOrientation = frameExif;
     g_compare.left.view.ExifOrientation = g_config.AutoRotate ? frameExif : 1;
+
+    g_compare.left.CmsModeOverride = g_runtime.CmsModeOverride;
+    g_compare.left.EnableSoftProofing = g_runtime.EnableSoftProofing;
+    g_compare.left.SoftProofProfilePath = g_runtime.SoftProofProfilePath;
 
     if (g_runtime.ShowCompareInfo && (g_compare.left.metadata.HistL.empty() || !g_compare.left.metadata.IsFullMetadataLoaded)) {
         UpdateCompareLeftHistogramAsync(hwnd, localPath);

@@ -1579,7 +1579,8 @@ HRESULT CRenderEngine::CreateBitmapFromWIC(IWICBitmapSource *wicBitmap,
 
 HRESULT
 CRenderEngine::UploadRawFrameToGPU(const QuickView::RawImageFrame &frame,
-                                   ID2D1Bitmap **outBitmap) {
+                                   ID2D1Bitmap **outBitmap,
+                                   const RenderPipelineOptions* options) {
   if (!m_d2dContext)
     return E_POINTER;
   if (!outBitmap)
@@ -1773,7 +1774,12 @@ CRenderEngine::UploadRawFrameToGPU(const QuickView::RawImageFrame &frame,
   bool applyCms = false;
   ComPtr<ID2D1ColorContext> srcContext;
   ComPtr<ID2D1Bitmap1> rawBitmap;
-  int effectiveCmsMode = g_runtime.GetEffectiveCmsMode(g_config.ColorManagement);
+
+  // CMS & Soft Proofing Config Resolution
+  // If options are provided, they take priority; otherwise, we fall back to global g_runtime state.
+  const int effectiveCmsMode = (options && options->hasOverrides) ? options->effectiveCmsMode : g_runtime.GetEffectiveCmsMode(g_config.ColorManagement);
+  const bool enableSoftProofing = (options && options->hasOverrides) ? options->enableSoftProofing : g_runtime.EnableSoftProofing;
+  const std::wstring softProofPath = (options && options->hasOverrides) ? options->softProofProfilePath : g_runtime.SoftProofProfilePath;
   const bool useHdrOutput = ShouldUseHdrOutputForFrame(frame);
 
   // [Diagnostic] HDR routing decision + full display state snapshot
@@ -1945,8 +1951,8 @@ CRenderEngine::UploadRawFrameToGPU(const QuickView::RawImageFrame &frame,
   }
 
   // Step 3: Apply CMS and Soft Proofing
-  const bool enableSoftProofing = g_runtime.EnableSoftProofing && !g_runtime.SoftProofProfilePath.empty();
-  if ((applyCms && effectiveCmsMode != 0) || enableSoftProofing) {
+  const bool shouldEnableSoftProofing = enableSoftProofing && !softProofPath.empty();
+  if ((applyCms && effectiveCmsMode != 0) || shouldEnableSoftProofing) {
     // Find destination context (Monitor or scRGB)
     ComPtr<ID2D1ColorContext> dstContext;
 
@@ -1963,9 +1969,9 @@ CRenderEngine::UploadRawFrameToGPU(const QuickView::RawImageFrame &frame,
         ComPtr<ID2D1Effect> softProofEffect;
         bool softProofSucceeded = false;
 
-        if (g_runtime.EnableSoftProofing && !g_runtime.SoftProofProfilePath.empty()) {
+        if (shouldEnableSoftProofing) {
           if (SUCCEEDED(m_d2dContext->CreateColorContextFromFilename(
-                  g_runtime.SoftProofProfilePath.c_str(), &proofContext))) {
+                  softProofPath.c_str(), &proofContext))) {
             if (SUCCEEDED(m_d2dContext->CreateEffect(CLSID_D2D1ColorManagement, &softProofEffect))) {
               softProofEffect->SetInput(0, currentInput.Get());
               softProofEffect->SetValue(D2D1_COLORMANAGEMENT_PROP_SOURCE_COLOR_CONTEXT, srcContext.Get());

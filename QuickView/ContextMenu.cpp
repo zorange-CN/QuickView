@@ -17,7 +17,8 @@ using AB = ActionButton;
 void ShowContextMenu(HWND hwnd, POINT pt, bool hasImage, bool needsExtensionFix,
                      bool isWindowLocked, bool showInfoPanel, bool infoPanelExpanded,
                      bool alwaysOnTop, bool renderRaw, bool isRawFile, bool isFullscreen,
-                     bool isCrossMonitor, bool isCompareMode, bool isPixelArtMode) {
+                     bool isCrossMonitor, bool isCompareMode, bool isPixelArtMode,
+                     int cmsMode, bool enableSoftProofing, const std::wstring& softProofProfilePath) {
 
     // ========================================================
     // Top Action Row (4 buttons)
@@ -83,7 +84,7 @@ void ShowContextMenu(HWND hwnd, POINT pt, bool hasImage, bool needsExtensionFix,
 
     // --- Color Space Submenu ---
     {
-        int cms = g_runtime.GetEffectiveCmsMode(g_config.ColorManagement);
+        int cms = cmsMode;
         std::vector<MI> cmsItems;
         cmsItems.push_back(MI::Check(IDM_CMS_UNMANAGED, AppStrings::Settings_Option_CmsUnmanaged, cms == 0));
         cmsItems.push_back(MI::Check(IDM_CMS_AUTO, AppStrings::Settings_Option_Auto, cms == 1));
@@ -111,7 +112,7 @@ void ShowContextMenu(HWND hwnd, POINT pt, bool hasImage, bool needsExtensionFix,
     // --- Soft Proofing Submenu ---
     {
         std::vector<MI> proofItems;
-        proofItems.push_back(MI::Check(IDM_SOFT_PROOF_TOGGLE, AppStrings::Context_SoftProofing, g_runtime.EnableSoftProofing));
+        proofItems.push_back(MI::Check(IDM_SOFT_PROOF_TOGGLE, AppStrings::Context_SoftProofing, enableSoftProofing));
         proofItems.push_back(MI::Sep());
 
         extern std::vector<std::wstring>& GetSystemIccProfiles();
@@ -120,14 +121,14 @@ void ShowContextMenu(HWND hwnd, POINT pt, bool hasImage, bool needsExtensionFix,
         if (!g_config.CustomSoftProofProfile.empty()) {
             std::wstring name = g_config.CustomSoftProofProfile.substr(
                 g_config.CustomSoftProofProfile.find_last_of(L"/\\") + 1);
-            bool sel = (g_runtime.SoftProofProfilePath == g_config.CustomSoftProofProfile);
+            bool sel = (softProofProfilePath == g_config.CustomSoftProofProfile);
             proofItems.push_back(MI::Check(IDM_SOFT_PROOF_CUSTOM, (L"[*] " + name).c_str(), sel));
             proofItems.push_back(MI::Sep());
         }
 
         for (int i = 0; i < (int)profiles.size(); i++) {
             std::wstring fn = profiles[i].substr(profiles[i].find_last_of(L"/\\") + 1);
-            bool sel = (g_runtime.SoftProofProfilePath == profiles[i]);
+            bool sel = (softProofProfilePath == profiles[i]);
             proofItems.push_back(MI::Check(IDM_SOFT_PROOF_BASE + i, fn.c_str(), sel));
         }
         items.push_back(MI::Sub(AppStrings::Context_SoftProofProfile, GeekIcons::SoftProof, std::move(proofItems)));

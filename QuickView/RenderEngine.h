@@ -62,6 +62,14 @@ public:
         bool acmAware = false;
     };
 
+    struct RenderPipelineOptions {
+        bool hasOverrides = false;
+        int effectiveCmsMode = 1;
+        bool enableSoftProofing = false;
+        std::wstring softProofProfilePath;
+    };
+
+
     struct GamutWarningAnalysisResult {
         int width = 0;
         int height = 0;
@@ -106,8 +114,9 @@ public:
     /// </summary>
     /// <param name="frame">Source frame (read-only reference)</param>
     /// <param name="outBitmap">Output D2D bitmap pointer</param>
+    /// <param name="options">Optional rendering pipeline options (CMS and Soft Proofing)</param>
     /// <returns>S_OK on success, error code on failure</returns>
-    HRESULT UploadRawFrameToGPU(const QuickView::RawImageFrame& frame, ID2D1Bitmap** outBitmap);
+    HRESULT UploadRawFrameToGPU(const QuickView::RawImageFrame& frame, ID2D1Bitmap** outBitmap, const RenderPipelineOptions* options = nullptr);
 
     /// <summary>
     /// Estimate the peak luminance of a floating point frame (scRGB) using SIMD.
