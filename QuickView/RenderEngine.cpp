@@ -1980,6 +1980,16 @@ CRenderEngine::UploadRawFrameToGPU(const QuickView::RawImageFrame &frame,
               softProofEffect->SetValue(D2D1_COLORMANAGEMENT_PROP_SOURCE_RENDERING_INTENT, intent);
               softProofEffect->SetValue(D2D1_COLORMANAGEMENT_PROP_DESTINATION_RENDERING_INTENT, intent);
               softProofEffect->GetOutput(&currentInput);
+              
+              // Simulate physical gamut limitations by clamping out-of-gamut values in proof space.
+              // Crucial for FP16 pipelines where values > 1.0 would otherwise simply bypass the profile boundaries.
+              ComPtr<ID2D1Effect> clampEffect;
+              if (SUCCEEDED(m_d2dContext->CreateEffect(CLSID_D2D1ColorMatrix, &clampEffect))) {
+                  clampEffect->SetInput(0, currentInput.Get());
+                  clampEffect->SetValue(D2D1_COLORMATRIX_PROP_CLAMP_OUTPUT, TRUE);
+                  clampEffect->GetOutput(&currentInput);
+              }
+
               softProofSucceeded = true;
             }
           }
@@ -1994,8 +2004,15 @@ CRenderEngine::UploadRawFrameToGPU(const QuickView::RawImageFrame &frame,
         const D2D1_COLORMANAGEMENT_RENDERING_INTENT intent = (g_config.CmsRenderingIntent == 0) ? 
             D2D1_COLORMANAGEMENT_RENDERING_INTENT_PERCEPTUAL : 
             D2D1_COLORMANAGEMENT_RENDERING_INTENT_RELATIVE_COLORIMETRIC;
-        colorManagementEffect->SetValue(D2D1_COLORMANAGEMENT_PROP_SOURCE_RENDERING_INTENT, intent);
-        colorManagementEffect->SetValue(D2D1_COLORMANAGEMENT_PROP_DESTINATION_RENDERING_INTENT, intent);
+        
+        // If we just soft-proofed the image, the pixel data is already tightly fit to the proof gamut.
+        // We MUST use Relative Colorimetric to send these pixels exactly to the physical monitor,
+        // otherwise a second Perceptual mapping could inappropriately stretch/distort the gamut again.
+        const D2D1_COLORMANAGEMENT_RENDERING_INTENT finalIntent = softProofSucceeded ? 
+            D2D1_COLORMANAGEMENT_RENDERING_INTENT_RELATIVE_COLORIMETRIC : intent;
+
+        colorManagementEffect->SetValue(D2D1_COLORMANAGEMENT_PROP_SOURCE_RENDERING_INTENT, finalIntent);
+        colorManagementEffect->SetValue(D2D1_COLORMANAGEMENT_PROP_DESTINATION_RENDERING_INTENT, finalIntent);
 
         ComPtr<ID2D1Image> cmsOutput;
         colorManagementEffect->GetOutput(&cmsOutput);
