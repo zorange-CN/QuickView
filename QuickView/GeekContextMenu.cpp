@@ -406,8 +406,8 @@ void GeekContextMenu::CreateResources() {
     m_rt->CreateSolidColorBrush(D2D1::ColorF(L ? 0.35f : 0.75f, L ? 0.40f : 0.75f, L ? 0.48f : 0.75f), &m_dimBrush);
     m_rt->CreateSolidColorBrush(D2D1::ColorF(L ? 0.55f : 0.40f, L ? 0.55f : 0.40f, L ? 0.57f : 0.42f), &m_disabledBrush);
 
-    // Separator line
-    m_rt->CreateSolidColorBrush(D2D1::ColorF(L ? D2D1::ColorF(0,0,0,0.08f) : D2D1::ColorF(1,1,1,0.06f)), &m_sepBrush);
+    // Separator line (Decoupled from global opacity to ensure visibility)
+    m_rt->CreateSolidColorBrush(D2D1::ColorF(L ? D2D1::ColorF(0,0,0,0.12f) : D2D1::ColorF(1,1,1,0.10f)), &m_sepBrush);
 
     // Accent and Text Colors (Respect Custom Theme)
     D2D1_COLOR_F accentClr, textClr;
@@ -551,11 +551,6 @@ void GeekContextMenu::RenderCapsule() {
         }
     }
 
-    // Separator line below capsule
-    if (m_sepBrush) {
-        float y = m_actionRowH - 0.5f;
-        m_rt->DrawLine(D2D1::Point2F(pad + 8, y), D2D1::Point2F(m_menuW - pad - 8, y), m_sepBrush.Get(), 1.0f);
-    }
 }
 
 void GeekContextMenu::RenderActionRow() {
@@ -989,11 +984,10 @@ void GeekContextMenu::RenderAndUI() {
     }
 
     // 4. Render Menu Content (Syncing detail brushes with master opacity for
-    // consistency) [UI Fix] Capsules are decoupled from density to ensure
-    // visibility at low settings
+    // consistency) [UI Fix] Capsules and Separators are decoupled from density
+    // to ensure visibility at low settings
     if (m_bevelLightBrush) m_bevelLightBrush->SetOpacity(config.opacity);
     if (m_bevelDarkBrush) m_bevelDarkBrush->SetOpacity(config.opacity);
-    if (m_sepBrush) m_sepBrush->SetOpacity(config.opacity);
     
     RenderCapsule();
     RenderActionRow();
