@@ -1260,7 +1260,9 @@ static void ScheduleGamutWarningAnalysisImpl(HWND hwnd) {
         if (hr != S_OK && request.frame) {
             analyzed = AnalyzeGamutWarning(BuildGamutWarningSample(*request.frame));
             std::scoped_lock lock(g_gamutWarningMutex);
-            g_gamutWarningDebugSummary = L"Gamut CPU fallback";
+            if (g_gamutWarningDebugSummary.empty() || g_gamutWarningDebugSummary == L"LUT Build Failed") {
+                g_gamutWarningDebugSummary = L"Gamut CPU fallback";
+            }
         }
         if (jobId != g_gamutWarningJobId.load()) return;
         {
@@ -7443,7 +7445,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
         } else if (g_config.GamutWarningAutoPrompt) {
             g_toolbar.SetGamutWarningActive(g_runtime.ShowGamutWarningOverlay);
             g_osd.Show(hwnd, L"Detected out-of-gamut colors", false, true,
-                       D2D1::ColorF(g_config.GamutWarningColorR, g_config.GamutWarningColorG, g_config.GamutWarningColorB, 1.0f));
+                       D2D1::ColorF(g_config.GamutWarningColorR, g_config.GamutWarningColorG, g_config.GamutWarningColorB, 1.0f),
+                       OSDPosition::Bottom, 5000);
         } else {
             g_toolbar.SetGamutWarningActive(g_runtime.ShowGamutWarningOverlay);
         }
@@ -7459,7 +7462,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
             }
             if (!debugOsd.empty()) {
                 g_osd.Show(hwnd, debugOsd, false, true,
-                           D2D1::ColorF(0.95f, 0.78f, 0.18f, 1.0f));
+                           D2D1::ColorF(0.95f, 0.78f, 0.18f, 1.0f),
+                           OSDPosition::Bottom, 5000);
             }
         }
         RequestRepaint(PaintLayer::Static | PaintLayer::Dynamic);
@@ -9987,15 +9991,22 @@ SKIP_EDGE_NAV:;
         UINT wmId = cmdId;
 
         // Soft Proofing Profile Dynamic Dispatch
-        if (cmdId >= IDM_SOFT_PROOF_BASE && cmdId <= IDM_SOFT_PROOF_BASE + 99) {
+                if (cmdId >= IDM_SOFT_PROOF_BASE && cmdId <= IDM_SOFT_PROOF_BASE + 99) {
             extern std::vector<std::wstring>& GetSystemIccProfiles();
             std::vector<std::wstring>& profiles = GetSystemIccProfiles();
             int idx = cmdId - IDM_SOFT_PROOF_BASE;
             if (idx >= 0 && idx < profiles.size()) {
                 g_runtime.SoftProofProfilePath = profiles[idx];
                 g_runtime.EnableSoftProofing = true;
+                
+                std::wstring fileName = g_runtime.SoftProofProfilePath;
+                size_t pos = fileName.find_last_of(L"\\/");
+                if (pos != std::wstring::npos) fileName = fileName.substr(pos + 1);
+                
+                g_osd.Show(hwnd, L"Proofing: " + fileName, false, false, D2D1::ColorF(D2D1::ColorF::Cyan));
+                
                 RefreshImageDisplay(hwnd);
-                g_osd.Show(hwnd, L"Soft Proofing Target Updated", false);
+                ScheduleGamutWarningAnalysis(hwnd);
             }
             return 0;
         }

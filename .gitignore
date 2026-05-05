@@ -103,6 +103,7 @@ jpegview-static-post2024-vs2019-x64/
 *.py
 *.etl
 *.csv
+scratch/
 
 .agent/
 

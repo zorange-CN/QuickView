@@ -17,7 +17,7 @@ struct OSDState {
     D2D1_COLOR_F CustomColor = D2D1::ColorF(D2D1::ColorF::Black, 0.0f);
     OSDPosition Position = OSDPosition::Bottom;
 
-    void Show(HWND hwnd, const std::wstring& msg, bool error = false, bool warning = false, D2D1_COLOR_F color = D2D1::ColorF(D2D1::ColorF::White), OSDPosition pos = OSDPosition::Bottom) {
+    void Show(HWND hwnd, const std::wstring& msg, bool error = false, bool warning = false, D2D1_COLOR_F color = D2D1::ColorF(D2D1::ColorF::White), OSDPosition pos = OSDPosition::Bottom, DWORD durationMs = 1000) {
         Message = msg;
         IsCompareOSD = false;
         StartTime = GetTickCount();
@@ -25,13 +25,14 @@ struct OSDState {
         IsWarning = warning;
         CustomColor = color;
         Position = pos;
+        Duration = durationMs;
         if (hwnd) {
             SetTimer(hwnd, 994, 30, nullptr);
             InvalidateRect(hwnd, nullptr, FALSE);
         }
     }
 
-    void ShowCompare(HWND hwnd, const std::wstring& left, const std::wstring& right, D2D1_COLOR_F color = D2D1::ColorF(D2D1::ColorF::White)) {
+    void ShowCompare(HWND hwnd, const std::wstring& left, const std::wstring& right, D2D1_COLOR_F color = D2D1::ColorF(D2D1::ColorF::White), DWORD durationMs = 1000) {
         MessageLeft = left;
         MessageRight = right;
         Message = L"COMPARE"; // Dummy to trigger visibility
@@ -41,6 +42,7 @@ struct OSDState {
         IsWarning = false;
         CustomColor = color;
         Position = OSDPosition::Bottom;
+        Duration = durationMs;
         if (hwnd) {
             SetTimer(hwnd, 994, 30, nullptr);
             InvalidateRect(hwnd, nullptr, FALSE);

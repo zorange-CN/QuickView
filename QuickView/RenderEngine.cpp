@@ -886,7 +886,8 @@ bool BuildLutProgram(cmsHPROFILE srcProfile,
                      cmsHPROFILE dstProfile,
                      int renderingIntent,
                      QuickView::ComputeEngine* computeEngine,
-                     CRenderEngine::GamutProgram* program) {
+                     CRenderEngine::GamutProgram* program,
+                     std::wstring* outError = nullptr) {
   if (!srcProfile || !dstProfile || !computeEngine || !program) return false;
 
   constexpr int kEdge = 65;
@@ -991,48 +992,97 @@ bool BuildLutProgram(cmsHPROFILE srcProfile,
   }
 
   if (!extractedLinear) {
-    // Universal fallback for any profile type (CMYK, Grayscale, Lab, etc.).
-    //
-    // WRONG (old): dstProfile used as both Output AND Proofing.
-    //   → When dstProfile is CMYK, TYPE_RGB_16 output mismatches → transform fails.
-    //
-    // CORRECT: Use sRGB as the display Output (always RGB), dstProfile as the
-    //   Proofing target. lcms2 simulates src→proof→display and marks out-of-gamut
-    //   pixels with the alarm color. Works for RGB, CMYK, Gray, Lab, etc.
-    cmsHPROFILE srgbOutput = cmsCreate_sRGBProfile();
-    if (!srgbOutput) return false;
+    // Universal Gamut Detection via Round-trip conversion (Source -> Target -> Source).
+    // If a color is out-of-gamut, the Target profile will clamp it, and the return
+    // trip to Source space will result in a different color.
+    
+    cmsColorSpaceSignature dstSpace = cmsGetColorSpace(dstProfile);
+    cmsUInt32Number dstFormat = TYPE_RGB_16; // Default
+    int dstChannels = 3;
 
-    ScopedCmsTransform gamut;
-    static std::mutex s_alarmMutex;
-    {
-      std::scoped_lock lock(s_alarmMutex);
-      cmsUInt16Number alarm[16] = {0};
-      for (int i = 0; i < 16; ++i) alarm[i] = 0xFFFF;
-      cmsSetAlarmCodes(alarm);
-      gamut.Reset(cmsCreateProofingTransform(
-          srcProfile,  TYPE_RGB_16,
-          srgbOutput,  TYPE_RGB_16,   // Output: sRGB display (always RGB, no mismatch)
-          dstProfile,                 // Proofing: the actual target (any ICC color space)
-          renderingIntent, renderingIntent,
-          cmsFLAGS_SOFTPROOFING | cmsFLAGS_GAMUTCHECK | cmsFLAGS_HIGHRESPRECALC));
+    if (dstSpace == cmsSigCmykData) {
+        dstFormat = TYPE_CMYK_16;
+        dstChannels = 4;
+    } else if (dstSpace == cmsSigGrayData) {
+        dstFormat = TYPE_GRAY_16;
+        dstChannels = 1;
+    } else if (dstSpace == cmsSigRgbData) {
+        dstFormat = TYPE_RGB_16;
+        dstChannels = 3;
+    } else {
+        // Fallback to whatever lcms thinks is best for this space
+        int ch = (int)cmsChannelsOf(dstSpace);
+        dstFormat = COLORSPACE_SH(PT_ANY) | CHANNELS_SH(ch) | BYTES_SH(2);
+        dstChannels = ch;
     }
-    cmsCloseProfile(srgbOutput);
-    if (!gamut.handle) return false;
+    
+    ScopedCmsTransform forw; // Source -> Target
+    ScopedCmsTransform back; // Target -> Source
+    
+    forw.Reset(cmsCreateTransform(srcProfile, TYPE_RGB_16, dstProfile, dstFormat, 
+                                  renderingIntent, cmsFLAGS_HIGHRESPRECALC));
+    if (!forw.handle) {
+        // Fallback to Perceptual if the requested intent is not supported
+        forw.Reset(cmsCreateTransform(srcProfile, TYPE_RGB_16, dstProfile, dstFormat, 
+                                      INTENT_PERCEPTUAL, cmsFLAGS_HIGHRESPRECALC));
+    }
 
-    std::vector<cmsUInt16Number> gamutOut(voxelCount * 3);
-    cmsDoTransform(gamut.handle, input.data(), gamutOut.data(),
-                   static_cast<cmsUInt32Number>(voxelCount));
+    back.Reset(cmsCreateTransform(dstProfile, dstFormat, srcProfile, TYPE_RGB_16, 
+                                  renderingIntent, cmsFLAGS_HIGHRESPRECALC));
+    if (!back.handle) {
+        back.Reset(cmsCreateTransform(dstProfile, dstFormat, srcProfile, TYPE_RGB_16, 
+                                      INTENT_PERCEPTUAL, cmsFLAGS_HIGHRESPRECALC));
+    }
+
+    // Update dstName with extra metadata (move this UP so it happens even if handles fail)
+    if (program->dstName.find(L"[") == std::wstring::npos) {
+        cmsColorSpaceSignature css = cmsGetColorSpace(dstProfile);
+        std::wstring space = L"Unknown";
+        if (css == cmsSigRgbData) space = L"RGB";
+        else if (css == cmsSigCmykData) space = L"CMYK";
+        else if (css == cmsSigGrayData) space = L"Gray";
+        else if (css == cmsSigLabData) space = L"Lab";
+        
+        cmsProfileClassSignature cls = cmsGetDeviceClass(dstProfile);
+        std::wstring clsStr = L"";
+        if (cls == cmsSigLinkClass) clsStr = L" (Link)";
+        else if (cls == cmsSigAbstractClass) clsStr = L" (Abs)";
+        else if (cls == cmsSigNamedColorClass) clsStr = L" (Named)";
+        else if (cls == cmsSigInputClass) clsStr = L" (In)";
+        else if (cls == cmsSigDisplayClass) clsStr = L" (Disp)";
+        else if (cls == cmsSigOutputClass) clsStr = L" (Out)";
+        else if (cls == cmsSigColorSpaceClass) clsStr = L" (Spc)";
+
+        program->dstName = L"[" + space + clsStr + L"] " + program->dstName;
+    }
+
+    if (!forw.handle) {
+        if (outError) *outError = L"Forw Transform Failed";
+        return false;
+    }
+    if (!back.handle) {
+        if (outError) *outError = L"Back Transform Failed";
+        return false;
+    }
+
+    const size_t voxelCount = static_cast<size_t>(kEdge) * kEdge * kEdge;
+    std::vector<cmsUInt16Number> intermediate(voxelCount * (dstChannels > 4 ? dstChannels : 4)); 
+    std::vector<cmsUInt16Number> returned(voxelCount * 3);
+
+    cmsDoTransform(forw.handle, input.data(), intermediate.data(), static_cast<cmsUInt32Number>(voxelCount));
+    cmsDoTransform(back.handle, intermediate.data(), returned.data(), static_cast<cmsUInt32Number>(voxelCount));
+
+    const int tolerance = static_cast<int>(0.002f * 65535.0f);
 
     for (size_t i = 0; i < voxelCount; ++i) {
       const size_t base = i * 3;
-      const bool overflow =
-          gamutOut[base + 0] == 0xFFFF &&
-          gamutOut[base + 1] == 0xFFFF &&
-          gamutOut[base + 2] == 0xFFFF;
-      program->lut.overflowLut[i] = overflow ? 255 : 0;
+      const int dr = std::abs(static_cast<int>(input[base + 0]) - static_cast<int>(returned[base + 0]));
+      const int dg = std::abs(static_cast<int>(input[base + 1]) - static_cast<int>(returned[base + 1]));
+      const int db = std::abs(static_cast<int>(input[base + 2]) - static_cast<int>(returned[base + 2]));
+
+      program->lut.overflowLut[i] = (dr > tolerance || dg > tolerance || db > tolerance) ? 255 : 0;
     }
   }
-
 
   if (FAILED(computeEngine->UploadOverflowLut(program->lut.overflowLut.data(), kEdge,
                                               &program->lut.overflowTexture))) {
@@ -1073,7 +1123,7 @@ HRESULT CRenderEngine::AnalyzeGamutWarningIcc(
     return E_INVALIDARG;
   }
 
-  if (options.renderingIntent != 1 || !m_computeEngine || !m_computeEngine->IsAvailable()) {
+  if (!m_computeEngine || !m_computeEngine->IsAvailable()) {
     return S_FALSE;
   }
 
@@ -1105,16 +1155,28 @@ HRESULT CRenderEngine::AnalyzeGamutWarningIcc(
     auto compiled = std::make_shared<GamutProgram>();
     ScopedCmsProfile srcProfile;
     ScopedCmsProfile dstProfile;
-    if (!OpenCmsProfileFromBlob(srcBlob, &srcProfile) ||
-        !OpenCmsProfileFromBlob(dstBlob, &dstProfile)) {
-      return S_FALSE;
+    if (!OpenCmsProfileFromBlob(srcBlob, &srcProfile)) {
+        outResult->debugSummary = L"Src Profile Load Failed";
+        return S_FALSE;
+    }
+    if (!OpenCmsProfileFromBlob(dstBlob, &dstProfile)) {
+        outResult->debugSummary = L"Dst Profile Load Failed: " + dstBlob.name;
+        return S_FALSE;
     }
 
     compiled->srcName = srcBlob.name.empty() ? DescribeLcmsProfile(srcProfile.handle, L"Source ICC") : srcBlob.name;
     compiled->dstName = dstBlob.name.empty() ? DescribeLcmsProfile(dstProfile.handle, L"Target ICC") : dstBlob.name;
 
+    std::wstring buildError;
     if (!BuildLutProgram(srcProfile.handle, dstProfile.handle, options.renderingIntent,
-                         m_computeEngine.get(), compiled.get())) {
+                         m_computeEngine.get(), compiled.get(), &buildError)) {
+      
+      cmsProfileClassSignature cls = cmsGetDeviceClass(dstProfile.handle);
+      if (cls == cmsSigInputClass) {
+          outResult->debugSummary = L"Incompatible Target: " + compiled->dstName + L" (Input profiles lack target tags)";
+      } else {
+          outResult->debugSummary = L"Gamut Analysis Failed: " + compiled->dstName + L" (" + buildError + L")";
+      }
       return S_FALSE;
     }
 
