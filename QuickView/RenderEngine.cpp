@@ -84,6 +84,27 @@ float ToneMapAces(float value) {
   return (res < 0.0f) ? 0.0f : (res > 1.0f ? 1.0f : res);
 }
 
+// CPU-side Reinhard Extended: matches GPU ReinhardExtended.
+// Per-channel version for CPU fallback path.
+static inline float ReinhardExtendedScalar(float L, float Lwhite) {
+  if (L <= 0.0f) return 0.0f;
+  const float LwSq = Lwhite * Lwhite;
+  float mapped = L * (1.0f + L / LwSq) / (1.0f + L);
+  return (mapped > 1.0f) ? 1.0f : mapped;
+}
+
+// Apply Reinhard Extended tone mapping preserving chrominance (max-channel luminance).
+static inline void ReinhardExtendedRGB(float r, float g, float b, float Lwhite,
+                                       float& outR, float& outG, float& outB) {
+  float L = (r > g) ? (r > b ? r : b) : (g > b ? g : b); // max channel
+  if (L <= 0.0f) { outR = outG = outB = 0.0f; return; }
+  float mappedL = ReinhardExtendedScalar(L, Lwhite);
+  float scale = mappedL / L;
+  outR = r * scale;
+  outG = g * scale;
+  outB = b * scale;
+}
+
 uint8_t EncodeLinearToSdr8(float value) {
   value = powf((value > 0.0f ? value : 0.0f), 1.0f / 2.2f);
   value = (value < 0.0f) ? 0.0f : (value > 1.0f ? 1.0f : value);
@@ -1512,8 +1533,19 @@ HRESULT CRenderEngine::ResolveDestinationColorContext(
 
 bool CRenderEngine::ShouldUseHdrOutputForFrame(
     const QuickView::RawImageFrame &frame) const {
-  return IsHdrLikeFrame(frame) && m_isAdvancedColor &&
-         g_config.IsAdvancedColorEnabled(m_displayColorState.advancedColorActive);
+  if (!IsHdrLikeFrame(frame)) return false;
+  if (!m_isAdvancedColor) return false;
+
+  // [Fix] When HDR simulation is active on a physically-SDR display,
+  // route through HdrToSdr so the output (BGRA8) is actually visible.
+  // FP16 output on SDR gets clipped at 1.0 by DWM, rendering all
+  // highlights invisible and the slider non-functional.
+  if (g_runtime.ForceHdrSimulation &&
+      !m_displayColorState.highDynamicRangeUserEnabled) {
+    return false;
+  }
+
+  return g_config.IsAdvancedColorEnabled(m_displayColorState.advancedColorActive);
 }
 
 // Helper to standardize D2D1 bitmap properties creation
@@ -1814,30 +1846,44 @@ CRenderEngine::UploadRawFrameToGPU(const QuickView::RawImageFrame &frame,
               TraceLoggingFloat32(toneMapSettings.exposure, "Exposure"),
               TraceLoggingInt32(toneMapSettings.toneMappingMode, "ToneMappingMode"));
 
-          if (m_computeEngine && m_computeEngine->IsAvailable() && toneMapSettings.contentPeakScRgb > (toneMapSettings.displayPeakScRgb > 1.0f ? toneMapSettings.displayPeakScRgb : 1.0f)) {
+          if (m_computeEngine && m_computeEngine->IsAvailable()) {
+              // [Fix] Always dispatch compute shader for HDR content.
+              // The shader contains a GPU-side fast path (direct passthrough) when
+              // content fits within display range, so there is no performance penalty.
+              const bool needsActiveMapping = toneMapSettings.contentPeakScRgb > toneMapSettings.displayPeakScRgb;
               QV_LOG("Render_ToneMapDecision",
-                  TraceLoggingString("ToneMapHdrToHdr ACTIVE", "Shader"),
+                  TraceLoggingString(needsActiveMapping ? "ToneMapHdrToHdr ACTIVE" : "ToneMapHdrToHdr FAST_PATH", "Shader"),
                   TraceLoggingFloat32(toneMapSettings.displayPeakScRgb, "DisplayPeak"),
                   TraceLoggingFloat32(toneMapSettings.contentPeakScRgb, "ContentPeak"));
               ComPtr<ID3D11Texture2D> pTex;
-              if (SUCCEEDED(m_computeEngine->ToneMapHdrToHdr(
+              HRESULT hrToneMap = m_computeEngine->ToneMapHdrToHdr(
                       uploadPixels, static_cast<int>(frame.width),
                       static_cast<int>(frame.height), static_cast<int>(uploadStride),
-                      toneMapSettings, &pTex))) {
+                      toneMapSettings, &pTex);
+              if (SUCCEEDED(hrToneMap)) {
                   ComPtr<IDXGISurface> dxgiSurface;
                   if (SUCCEEDED(pTex.As(&dxgiSurface))) {
                       D2D1_BITMAP_PROPERTIES1 hdrProps = GetDefaultBitmapProps(
                           DXGI_FORMAT_R16G16B16A16_FLOAT, D2D1_ALPHA_MODE_STRAIGHT);
                       hdrProps.colorContext = scRgbContext.Get();
-                      m_d2dContext->CreateBitmapFromDxgiSurface(
+                      HRESULT hrBitmap = m_d2dContext->CreateBitmapFromDxgiSurface(
                           dxgiSurface.Get(), &hdrProps, &rawBitmap);
+                      if (FAILED(hrBitmap)) {
+                          QV_LOG("Render_ToneMapDecision",
+                              TraceLoggingString("ERROR: CreateBitmapFromDxgiSurface failed", "Shader"),
+                              TraceLoggingHResult(hrBitmap, "HRESULT"));
+                      }
                   }
+              } else {
+                  QV_LOG("Render_ToneMapDecision",
+                      TraceLoggingString("ERROR: ToneMapHdrToHdr dispatch failed", "Shader"),
+                      TraceLoggingHResult(hrToneMap, "HRESULT"));
               }
           }
           if (!rawBitmap) {
-              // PASSTHROUGH: No tone mapping applied - content fits within display range
+              // PASSTHROUGH: Fallback only when compute engine is unavailable or GPU dispatch failed
               QV_LOG("Render_ToneMapDecision",
-                  TraceLoggingString("HDR PASSTHROUGH - No ToneMap (content <= display)", "Shader"),
+                  TraceLoggingString("HDR PASSTHROUGH (ComputeEngine unavailable or error fallback)", "Shader"),
                   TraceLoggingFloat32(toneMapSettings.displayPeakScRgb, "DisplayPeak"),
                   TraceLoggingFloat32(toneMapSettings.contentPeakScRgb, "ContentPeak"),
                   TraceLoggingBool(m_computeEngine && m_computeEngine->IsAvailable(), "ComputeAvailable"));
@@ -1878,20 +1924,24 @@ CRenderEngine::UploadRawFrameToGPU(const QuickView::RawImageFrame &frame,
           if (!rawBitmap) {
               std::vector<uint8_t> sdrPixels(static_cast<size_t>(frame.width) * frame.height * 4);
               const QuickView::ToneMapSettings toneMapSettings = BuildToneMapSettings(frame, m_displayColorState);
-              const float sceneScale = toneMapSettings.exposure * toneMapSettings.paperWhiteScRgb;
+              const float exposure = toneMapSettings.exposure;
+              const float contentPeak = (toneMapSettings.contentPeakScRgb > 1.0f ? toneMapSettings.contentPeakScRgb : 1.0f);
+              const float Lwhite = contentPeak * exposure;
               for (int y = 0; y < frame.height; ++y) {
                   const float *srcRow = reinterpret_cast<const float *>(uploadPixels + static_cast<size_t>(y) * uploadStride);
                   uint8_t *dstRow = sdrPixels.data() + static_cast<size_t>(y) * frame.width * 4;
                   for (int x = 0; x < frame.width; ++x) {
-                      const float r = srcRow[x * 4 + 0] * sceneScale;
-                      const float g = srcRow[x * 4 + 1] * sceneScale;
-                      const float b = srcRow[x * 4 + 2] * sceneScale;
+                      const float r = std::max(0.0f, srcRow[x * 4 + 0] * exposure);
+                      const float g = std::max(0.0f, srcRow[x * 4 + 1] * exposure);
+                      const float b = std::max(0.0f, srcRow[x * 4 + 2] * exposure);
                       const float a = std::clamp(srcRow[x * 4 + 3], 0.0f, 1.0f);
                       float premulR, premulG, premulB;
                       if (toneMapSettings.toneMappingMode == 1) { // Colorimetric
                           premulR = std::min(1.0f, r) * a; premulG = std::min(1.0f, g) * a; premulB = std::min(1.0f, b) * a;
-                      } else { // Perceptual
-                          premulR = ToneMapAces(r) * a; premulG = ToneMapAces(g) * a; premulB = ToneMapAces(b) * a;
+                      } else { // Perceptual: Reinhard Extended (matches GPU shader)
+                          float mapR, mapG, mapB;
+                          ReinhardExtendedRGB(r, g, b, Lwhite, mapR, mapG, mapB);
+                          premulR = mapR * a; premulG = mapG * a; premulB = mapB * a;
                       }
                       dstRow[x * 4 + 0] = EncodeLinearToSdr8(premulB);
                       dstRow[x * 4 + 1] = EncodeLinearToSdr8(premulG);

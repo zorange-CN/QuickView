@@ -77,6 +77,22 @@ float3 ToneMapAces(float3 value)
     return saturate((value * (a * value + b)) / (value * (c * value + d) + e));
 }
 
+// Reinhard Extended: content-peak-aware perceptual tone mapping.
+// Maps [0, Lwhite] → [0, ~1.0] with smooth highlight roll-off.
+// Mathematically guarantees L=Lwhite → output≈1.0, spreading the full
+// HDR range across the entire SDR output space.
+float3 ReinhardExtended(float3 color, float Lwhite)
+{
+    float L = max(color.r, max(color.g, color.b));
+    if (L <= 0.0) return (float3)0;
+
+    float LwhiteSq = Lwhite * Lwhite;
+    float mappedL = L * (1.0 + L / LwhiteSq) / (1.0 + L);
+    mappedL = min(mappedL, 1.0);
+
+    return color * (mappedL / L);
+}
+
 [numthreads(8, 8, 1)]
 void CSToneMap(uint3 id : SV_DispatchThreadID)
 {
@@ -92,6 +108,7 @@ void CSToneMap(uint3 id : SV_DispatchThreadID)
 
     float paperWhite = max(PaperWhiteScRgb, 1.0);
     float displayPeak = max(DisplayPeakScRgb, paperWhite);
+    float contentPeak = max(ContentPeakScRgb, 1.0);
 
     if (ToneMappingMode == 1) {
         // Colorimetric Mode: Hard clip at display peak (normalized to [0,1])
@@ -99,10 +116,12 @@ void CSToneMap(uint3 id : SV_DispatchThreadID)
         float3 encoded = LinearToSrgb(mapped) * color.a;
         DstTex[id.xy] = float4(encoded.r, encoded.g, encoded.b, color.a);
     } else {
-        // Perceptual Mode: Normalize scene by display peak, then apply ACES filmic curve.
-        // Higher display peak → smaller scale → darker output → more highlight preservation.
-        float sceneScale = Exposure * (paperWhite / displayPeak);
-        float3 mapped = ToneMapAces(color.rgb * sceneScale);
+        // Perceptual Mode: Reinhard Extended with content-peak normalization.
+        // Uses ContentPeakScRgb as Lwhite so the full HDR range (10-1000+ nits)
+        // maps to distinguishable SDR levels, matching Chrome's visual fidelity.
+        float3 exposed = color.rgb * Exposure;
+        float Lwhite = contentPeak * Exposure;
+        float3 mapped = ReinhardExtended(exposed, Lwhite);
         float3 encoded = LinearToSrgb(mapped) * color.a;
         DstTex[id.xy] = float4(encoded.r, encoded.g, encoded.b, color.a);
     }
@@ -191,6 +210,13 @@ void CSToneMapHDR(uint3 id : SV_DispatchThreadID)
 
     float contentPeak = max(ContentPeakScRgb, 1.0);
     float displayPeak = max(DisplayPeakScRgb, 1.0);
+
+    // Fast Path: content fits within display range, no user exposure override
+    // Just pass through the linear ScRGB values directly (zero-cost on GPU)
+    if (contentPeak <= displayPeak && Exposure >= 0.999 && Exposure <= 1.001) {
+        DstTex[id.xy] = color;
+        return;
+    }
 
     // Apply exposure
     color.rgb *= Exposure;
@@ -734,7 +760,7 @@ HRESULT ComputeEngine::ToneMapHdrToSdr(const uint8_t* srcPixels, int width, int 
     dstDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
     dstDesc.SampleDesc.Count = 1;
     dstDesc.Usage = D3D11_USAGE_DEFAULT;
-    dstDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
+    dstDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
 
     ComPtr<ID3D11Texture2D> pDst;
     hr = m_d3dDevice->CreateTexture2D(&dstDesc, nullptr, &pDst);
@@ -823,7 +849,7 @@ HRESULT ComputeEngine::ToneMapHdrToHdr(const uint8_t* srcPixels, int width, int 
     dstDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
     dstDesc.SampleDesc.Count = 1;
     dstDesc.Usage = D3D11_USAGE_DEFAULT;
-    dstDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
+    dstDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
 
     ComPtr<ID3D11Texture2D> pDst;
     hr = m_d3dDevice->CreateTexture2D(&dstDesc, nullptr, &pDst);
@@ -978,7 +1004,7 @@ HRESULT ComputeEngine::ComposeGainMap(
     D3D11_TEXTURE2D_DESC dstDesc = sdrDesc;
     dstDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
     dstDesc.Usage = D3D11_USAGE_DEFAULT;
-    dstDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
+    dstDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
 
     ComPtr<ID3D11Texture2D> pDst;
     HRESULT hr = m_d3dDevice->CreateTexture2D(&dstDesc, nullptr, &pDst);
