@@ -116,11 +116,11 @@ void CSToneMap(uint3 id : SV_DispatchThreadID)
         float3 encoded = LinearToSrgb(mapped) * color.a;
         DstTex[id.xy] = float4(encoded.r, encoded.g, encoded.b, color.a);
     } else {
-        // Perceptual Mode: Reinhard Extended with content-peak normalization.
-        // Uses ContentPeakScRgb as Lwhite so the full HDR range (10-1000+ nits)
-        // maps to distinguishable SDR levels, matching Chrome's visual fidelity.
+        // Perceptual Mode: Reinhard Extended with display-peak anchor.
+        // Uses DisplayPeakScRgb (slider or monitor peak) as Lwhite.
+        // This ensures the brightness slider directly controls highlight compression.
         float3 exposed = color.rgb * Exposure;
-        float Lwhite = contentPeak * Exposure;
+        float Lwhite = displayPeak * Exposure;
         float3 mapped = ReinhardExtended(exposed, Lwhite);
         float3 encoded = LinearToSrgb(mapped) * color.a;
         DstTex[id.xy] = float4(encoded.r, encoded.g, encoded.b, color.a);

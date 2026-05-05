@@ -770,7 +770,15 @@ BuildToneMapSettings(const QuickView::RawImageFrame &frame,
       TraceLoggingFloat32(frame.hdrMetadata.masteringMaxNits, "RawMasteringMax"));
 
   settings.contentPeakScRgb = (contentPeakScRgb > 1.0f ? contentPeakScRgb : 1.0f);
-  settings.displayPeakScRgb = displayPeakScRgb;
+
+  // [Fix] In "Auto" mode (Override == 0) on an SDR/Simulated display, 
+  // we want Perceptual mapping to automatically fit the content.
+  if (g_config.HdrPeakNitsOverride <= 0.0f && !displayState.highDynamicRangeUserEnabled) {
+      settings.displayPeakScRgb = settings.contentPeakScRgb;
+  } else {
+      settings.displayPeakScRgb = displayPeakScRgb;
+  }
+
   settings.paperWhiteScRgb = paperWhiteScRgb;
   settings.toneMappingMode = g_config.HdrToneMappingMode;
 
@@ -1925,8 +1933,7 @@ CRenderEngine::UploadRawFrameToGPU(const QuickView::RawImageFrame &frame,
               std::vector<uint8_t> sdrPixels(static_cast<size_t>(frame.width) * frame.height * 4);
               const QuickView::ToneMapSettings toneMapSettings = BuildToneMapSettings(frame, m_displayColorState);
               const float exposure = toneMapSettings.exposure;
-              const float contentPeak = (toneMapSettings.contentPeakScRgb > 1.0f ? toneMapSettings.contentPeakScRgb : 1.0f);
-              const float Lwhite = contentPeak * exposure;
+              const float Lwhite = toneMapSettings.displayPeakScRgb * exposure;
               for (int y = 0; y < frame.height; ++y) {
                   const float *srcRow = reinterpret_cast<const float *>(uploadPixels + static_cast<size_t>(y) * uploadStride);
                   uint8_t *dstRow = sdrPixels.data() + static_cast<size_t>(y) * frame.width * 4;
