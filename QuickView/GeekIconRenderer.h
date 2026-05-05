@@ -10,7 +10,8 @@ public:
         ID2D1RenderTarget* dc,
         const GeekIcons::VectorIcon& icon,
         const D2D1_RECT_F& rect,
-        ID2D1Brush* brush
+        ID2D1Brush* brush,
+        float rotationAngle = 0.0f
     );
 };
 

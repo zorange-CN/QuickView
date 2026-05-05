@@ -133,6 +133,7 @@ private:
     void RenderItems();
     void RenderItem(const GeekMenuItem& item, int index);
     void RenderSeparator(float y);
+    void RenderScrollIndicators();
     void RenderBevel();
     void RenderAndUI();          // The new unified render + UpdateLayeredWindow path
     void ApplyWindowRegion();    // DWM rounded window region
@@ -215,6 +216,9 @@ private:
     float m_menuW = 0;
     float m_actionRowH = 0;
     float m_bodyStartY = 0;  // Y offset where body items begin
+    float m_scrollOffset = 0.0f;
+    float m_maxBodyH = 0.0f;
+    float m_totalBodyH = 0.0f;
 
     // --- Static ---
     static std::unique_ptr<GeekContextMenu> s_root;

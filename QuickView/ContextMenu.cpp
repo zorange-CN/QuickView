@@ -125,9 +125,7 @@ void ShowContextMenu(HWND hwnd, POINT pt, bool hasImage, bool needsExtensionFix,
             proofItems.push_back(MI::Sep());
         }
 
-        int maxP = (int)profiles.size();
-        if (maxP > 50) maxP = 50;
-        for (int i = 0; i < maxP; i++) {
+        for (int i = 0; i < (int)profiles.size(); i++) {
             std::wstring fn = profiles[i].substr(profiles[i].find_last_of(L"/\\") + 1);
             bool sel = (g_runtime.SoftProofProfilePath == profiles[i]);
             proofItems.push_back(MI::Check(IDM_SOFT_PROOF_BASE + i, fn.c_str(), sel));

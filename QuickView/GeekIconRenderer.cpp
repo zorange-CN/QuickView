@@ -43,7 +43,8 @@ void GeekIconRenderer::DrawVectorIcon(
     ID2D1RenderTarget* dc,
     const GeekIcons::VectorIcon& icon,
     const D2D1_RECT_F& rect,
-    ID2D1Brush* brush)
+    ID2D1Brush* brush,
+    float rotationAngle)
 {
     if (!dc || !icon.commands || icon.count == 0 || !brush) return;
 
@@ -75,9 +76,14 @@ void GeekIconRenderer::DrawVectorIcon(
     D2D1_MATRIX_3X2_F oldTransform;
     dc->GetTransform(&oldTransform);
 
-    D2D1_MATRIX_3X2_F local =
-        D2D1::Matrix3x2F::Scale(rect.right - rect.left, rect.bottom - rect.top) *
-        D2D1::Matrix3x2F::Translation(rect.left, rect.top);
+    // 1. Rotation first (on unit square)
+    D2D1_MATRIX_3X2_F local = D2D1::Matrix3x2F::Rotation(rotationAngle, D2D1::Point2F(0.5f, 0.5f));
+
+    // 2. Then scale to target size
+    local = local * D2D1::Matrix3x2F::Scale(rect.right - rect.left, rect.bottom - rect.top);
+
+    // 3. Finally translate to target position
+    local = local * D2D1::Matrix3x2F::Translation(rect.left, rect.top);
 
     dc->SetTransform(local * oldTransform);
     dc->FillGeometry(geometry.Get(), brush);

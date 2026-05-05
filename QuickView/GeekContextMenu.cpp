@@ -309,6 +309,17 @@ LRESULT GeekContextMenu::HandleMsg(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_KEYDOWN:
         if (wp == VK_ESCAPE) { DismissAll(0); return 0; }
         break;
+    case WM_MOUSEWHEEL: {
+        if (m_totalBodyH <= m_maxBodyH) return 0;
+        CloseSubmenu();
+        short delta = (short)HIWORD(wp);
+        m_scrollOffset -= (float)delta / 120.0f * ITEM_H * 3.0f;
+        float maxScroll = std::max(0.0f, m_totalBodyH - m_maxBodyH);
+        if (m_scrollOffset > maxScroll) m_scrollOffset = maxScroll;
+        if (m_scrollOffset < 0) m_scrollOffset = 0;
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return 0;
+    }
     case WM_NCDESTROY:
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
         m_hwnd = nullptr;
@@ -374,7 +385,10 @@ void GeekContextMenu::CreateResources() {
         DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
         DWRITE_FONT_STRETCH_NORMAL, 10.5f, L"", &m_actionFont);
 
-    if (m_itemFont)     m_itemFont->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+    if (m_itemFont) {
+        m_itemFont->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+        m_itemFont->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+    }
     if (m_shortcutFont) m_shortcutFont->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
     if (m_actionFont) {
         m_actionFont->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
@@ -465,7 +479,7 @@ void GeekContextMenu::CalculateLayout() {
     float itemH = ITEM_H * touchFactor;
     m_menuW = MENU_WIDTH;
     m_actionRowH = m_actions.empty() ? 0.0f : ACTION_H;
-    m_bodyStartY = m_actionRowH;
+    m_bodyStartY = m_actionRowH + (m_actions.empty() ? 16.0f : 0.0f);
 
     if (!m_actions.empty()) {
         float pad = MENU_PAD;
@@ -477,21 +491,34 @@ void GeekContextMenu::CalculateLayout() {
         }
     }
 
-    float y = m_bodyStartY;
+    float y = 0.0f; // Body-local Y
     for (auto& item : m_items) {
         float h = (item.type == MenuItemType::Separator) ? SEP_H : itemH;
         item.hitRect = D2D1::RectF(0, y, m_menuW, y + h);
         y += h;
     }
+    m_totalBodyH = y;
+
+    // Calculate max height based on monitor
+    POINT pt = m_originPt;
+    HMONITOR hMon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi = { sizeof(mi) };
+    GetMonitorInfoW(hMon, &mi);
+    float waH = (float)(mi.rcWork.bottom - mi.rcWork.top) / m_scale;
+    
+    // Max menu height should be around 85% of work area height
+    m_maxBodyH = (waH * 0.85f) - m_actionRowH - MENU_PAD * 2.0f;
+    
+    // Clamp scroll offset
+    float maxScroll = std::max(0.0f, m_totalBodyH - m_maxBodyH);
+    if (m_scrollOffset > maxScroll) m_scrollOffset = maxScroll;
+    if (m_scrollOffset < 0) m_scrollOffset = 0;
 }
 
 SIZE GeekContextMenu::GetWindowSize() const {
-    float touchFactor = m_isTouch ? 1.2f : 1.0f;
-    float itemH = ITEM_H * touchFactor;
-    float totalH = m_bodyStartY;
-    for (const auto& item : m_items)
-        totalH += (item.type == MenuItemType::Separator) ? SEP_H : itemH;
-    totalH += MENU_PAD;
+    float bodyH = std::min(m_totalBodyH, m_maxBodyH);
+    float bottomPad = m_actions.empty() ? 16.0f : MENU_PAD;
+    float totalH = m_bodyStartY + bodyH + bottomPad;
     return { (LONG)std::ceil(m_menuW * m_scale), (LONG)std::ceil(totalH * m_scale) };
 }
 
@@ -571,14 +598,59 @@ void GeekContextMenu::RenderActionRow() {
 }
 
 void GeekContextMenu::RenderItems() {
+    float bodyH = std::min(m_totalBodyH, m_maxBodyH);
+    D2D1_RECT_F clipR = D2D1::RectF(0, m_bodyStartY, m_menuW, m_bodyStartY + bodyH);
+    m_rt->PushAxisAlignedClip(clipR, D2D1_ANTIALIAS_MODE_ALIASED);
+
+    D2D1_MATRIX_3X2_F oldXform;
+    m_rt->GetTransform(&oldXform);
+
+    D2D1_MATRIX_3X2_F transform = D2D1::Matrix3x2F::Translation(0, m_bodyStartY - m_scrollOffset) * oldXform;
+    m_rt->SetTransform(transform);
+
     for (int i = 0; i < (int)m_items.size(); i++) {
         const auto& item = m_items[i];
+        
+        // Skip items outside visible range
+        if (item.hitRect.bottom < m_scrollOffset) continue;
+        if (item.hitRect.top > m_scrollOffset + bodyH) continue;
+
         if (item.type == MenuItemType::Separator) {
             float cy = (item.hitRect.top + item.hitRect.bottom) / 2.0f;
             RenderSeparator(cy);
         } else {
             RenderItem(item, i);
         }
+    }
+
+    m_rt->SetTransform(oldXform);
+    m_rt->PopAxisAlignedClip();
+
+    RenderScrollIndicators();
+}
+
+void GeekContextMenu::RenderScrollIndicators() {
+    if (m_totalBodyH <= m_maxBodyH) return;
+
+    float bodyH = std::min(m_totalBodyH, m_maxBodyH);
+    float indicatorSize = 10.0f;
+    float arrowEdgePad = 3.0f; // (16px padding - 10px arrow) / 2 = 3px centered
+
+    // Up arrow
+    if (m_scrollOffset > 0.1f) {
+        D2D1_RECT_F upR = D2D1::RectF(m_menuW / 2 - indicatorSize / 2, arrowEdgePad,
+                                     m_menuW / 2 + indicatorSize / 2, arrowEdgePad + indicatorSize);
+        // Use ChevronVector (Right) rotated 270 degrees for Up
+        GeekIconRenderer::DrawVectorIcon(m_rt.Get(), GeekIcons::ChevronVector, upR, m_accentBrush.Get(), 270.0f);
+    }
+
+    // Down arrow
+    if (m_scrollOffset < m_totalBodyH - m_maxBodyH - 0.1f) {
+        float windowH = GetWindowSize().cy / m_scale;
+        D2D1_RECT_F downR = D2D1::RectF(m_menuW / 2 - indicatorSize / 2, windowH - arrowEdgePad - indicatorSize,
+                                       m_menuW / 2 + indicatorSize / 2, windowH - arrowEdgePad);
+        // Use ChevronVector (Right) rotated 90 degrees for Down
+        GeekIconRenderer::DrawVectorIcon(m_rt.Get(), GeekIcons::ChevronVector, downR, m_accentBrush.Get(), 90.0f);
     }
 }
 
@@ -670,10 +742,12 @@ int GeekContextMenu::HitTestAction(float lx, float ly) const {
 }
 
 int GeekContextMenu::HitTestItem(float lx, float ly) const {
+    if (ly < m_bodyStartY || ly > m_bodyStartY + std::min(m_totalBodyH, m_maxBodyH)) return -1;
+    float bodyLy = ly - m_bodyStartY + m_scrollOffset;
     for (int i = 0; i < (int)m_items.size(); i++) {
         const auto& r = m_items[i].hitRect;
         if (m_items[i].type == MenuItemType::Separator) continue;
-        if (lx >= r.left && lx < r.right && ly >= r.top && ly < r.bottom) return i;
+        if (lx >= r.left && lx < r.right && bodyLy >= r.top && bodyLy < r.bottom) return i;
     }
     return -1;
 }
@@ -786,7 +860,8 @@ void GeekContextMenu::OpenSubmenu(int index) {
     GetWindowRect(m_hwnd, &selfRc);
     const auto& item = m_items[index];
     int sx = selfRc.right - (int)(4 * m_scale);
-    int sy = selfRc.top + (int)(item.hitRect.top * m_scale) - (int)(4 * m_scale);
+    float itemBodyY = item.hitRect.top - m_scrollOffset;
+    int sy = selfRc.top + (int)((m_bodyStartY + itemBodyY) * m_scale) - (int)(4 * m_scale);
 
     ShowSubmenuPopup(m_parentAppHwnd, sx, sy, item.submenu, this);
 }
