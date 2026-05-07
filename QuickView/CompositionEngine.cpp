@@ -1284,14 +1284,13 @@ HRESULT CompositionEngine::UpdateBackground(float width, float height, const D2D
     bool needsRedraw = (bgColor.r != m_lastBgColor.r || bgColor.g != m_lastBgColor.g || bgColor.b != m_lastBgColor.b || bgColor.a != m_lastBgColor.a) ||
                        (showGrid != m_lastBgGrid) ||
                        (w != m_lastBgW || h != m_lastBgH) ||
-                       (m_surfaceFormat != m_lastBgFormat) ||
                        (!m_backgroundLayer.surface);
 
     if (!needsRedraw) return S_OK;
 
     if (!m_backgroundLayer.surface || m_backgroundLayer.width != w || m_backgroundLayer.height != h) {
         m_backgroundLayer.surface.Reset();
-        HRESULT hr = m_device->CreateSurface(w, h, m_surfaceFormat, DXGI_ALPHA_MODE_PREMULTIPLIED, &m_backgroundLayer.surface);
+        HRESULT hr = m_device->CreateSurface(w, h, kUiSurfaceFormat, DXGI_ALPHA_MODE_PREMULTIPLIED, &m_backgroundLayer.surface);
         if (FAILED(hr)) return hr;
         m_backgroundLayer.visual->SetContent(m_backgroundLayer.surface.Get());
         m_backgroundLayer.width = w;
@@ -1307,7 +1306,7 @@ HRESULT CompositionEngine::UpdateBackground(float width, float height, const D2D
     ComPtr<ID2D1Bitmap1> target;
     D2D1_BITMAP_PROPERTIES1 props = D2D1::BitmapProperties1(
         D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
-        D2D1::PixelFormat(m_surfaceFormat, D2D1_ALPHA_MODE_PREMULTIPLIED)
+        D2D1::PixelFormat(kUiSurfaceFormat, D2D1_ALPHA_MODE_PREMULTIPLIED)
     );
 
     hr = m_backgroundLayer.context->CreateBitmapFromDxgiSurface(dxgiSurface.Get(), &props, &target);
@@ -1351,7 +1350,6 @@ HRESULT CompositionEngine::UpdateBackground(float width, float height, const D2D
     m_lastBgGrid = showGrid;
     m_lastBgW = w;
     m_lastBgH = h;
-    m_lastBgFormat = m_surfaceFormat;
 
     return S_OK;
 }
