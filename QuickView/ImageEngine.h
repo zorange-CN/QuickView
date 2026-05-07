@@ -137,6 +137,7 @@ public:
     
     // [v4.0] Infrastructure: Global Token Access
     ImageID GetGlobalToken() const { return m_currentImageId.load(); }
+    CImageLoader* GetLoader() const { return m_loader; }
     
     // [Phase 6] Dynamic Gating
     // High Priority = Warp Mode (Skip Slow Decodes)

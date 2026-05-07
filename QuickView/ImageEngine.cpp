@@ -48,7 +48,8 @@ ImageEngine::ImageEngine(CImageLoader* loader)
 }
 
 ImageEngine::~ImageEngine() {
-    // jthreads define implicit stop requests and joins
+    // Stop HeavyLanePool threads before member destruction to prevent use-after-free
+    m_heavyPool.reset();
 }
 
 void ImageEngine::SetWindow(HWND hwnd) {
@@ -1199,10 +1200,15 @@ void ImageEngine::FastLane::QueueWorker() {
                 // [v5.3 Lazy] Reverted Sync ReadMetadata. 
                 // Metadata will be populated only when InfoPanel requests it.
                 
-                // [v5.3 Eager] Compute Histogram (Fast)
+                // [v10.3.1 Optimized] Removed Eager Histogram Calculation.
+                // Navigation latency was multi-second because ComputeHistogramFromFrame 
+                // ran synchronously on the FastLane/Heavy thread even when InfoPanel was hidden.
+                // Histogram is now triggered via UpdateHistogramAsync (Lazy) in main.cpp.
+                /*
                 if (e.rawFrame && e.rawFrame->IsValid()) {
                     m_loader->ComputeHistogramFromFrame(*e.rawFrame, &e.metadata);
                 }
+                */
                 
                 e.isScaled = !isClear;
                 // pixels empty

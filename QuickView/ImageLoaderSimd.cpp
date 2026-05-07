@@ -335,7 +335,7 @@ void ComputeHistogramRowFloatImpl(const float* row, int width, float mapRange,
 // ComputeHistogramRowGainMap - SDR + GainMap histogram
 // ============================================================================
 void ComputeHistogramRowGainMapImpl(const uint8_t* sdrRow, const uint8_t* gainMapRow,
-                                    int width, float mapRange, const ::QuickView::GpuShaderPayload& payload,
+                                    int width, int auxWidth, float mapRange, const ::QuickView::GpuShaderPayload& payload,
                                     uint32_t* histR, uint32_t* histG,
                                     uint32_t* histB, uint32_t* histL) {
     const float W = payload.targetHeadroom;
@@ -366,9 +366,15 @@ void ComputeHistogramRowGainMapImpl(const uint8_t* sdrRow, const uint8_t* gainMa
         gmGainB[i] = std::exp2(mapLogB * W) * scale * inv255;
     }
     
+    uint32_t stepX = auxWidth > 0 ? ((uint32_t)auxWidth << 16) / width : 0;
+    uint32_t auxX_fp = 0;
+    
     for (int x = 0; x < width; ++x) {
         const uint8_t* px = sdrRow + x * 4;
-        uint8_t gmIdx = gainMapRow[x]; // Assuming 1 byte per pixel
+        uint32_t auxX = auxX_fp >> 16;
+        if (auxX >= (uint32_t)auxWidth) auxX = auxWidth > 0 ? auxWidth - 1 : 0;
+        uint8_t gmIdx = gainMapRow[auxX]; 
+        auxX_fp += stepX;
         
         float hdrB = px[0] * gmGainB[gmIdx];
         float hdrG = px[1] * gmGainG[gmIdx];
@@ -711,10 +717,10 @@ void ComputeHistogramRowFloat(const float* row, int width, float mapRange,
 }
 
 void ComputeHistogramRowGainMap(const uint8_t* sdrRow, const uint8_t* gainMapRow,
-                                int width, float mapRange, const ::QuickView::GpuShaderPayload& payload,
+                                int width, int auxWidth, float mapRange, const ::QuickView::GpuShaderPayload& payload,
                                 uint32_t* histR, uint32_t* histG,
                                 uint32_t* histB, uint32_t* histL) {
-    HWY_DYNAMIC_DISPATCH(ComputeHistogramRowGainMapImpl)(sdrRow, gainMapRow, width, mapRange, payload, histR, histG, histB, histL);
+    HWY_DYNAMIC_DISPATCH(ComputeHistogramRowGainMapImpl)(sdrRow, gainMapRow, width, auxWidth, mapRange, payload, histR, histG, histB, histL);
 }
 
 uint64_t SumLuminance8BitRange(const uint8_t* row, int x0, int x1, bool isRgbaOrder) {

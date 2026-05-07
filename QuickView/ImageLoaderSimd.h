@@ -46,7 +46,7 @@ void ComputeHistogramRowFloat(const float* row, int width, float mapRange,
 /// Compute SDR+GainMap histogram row.
 /// Combines 8-bit SDR and GainMap on the fly to calculate HDR histogram.
 void ComputeHistogramRowGainMap(const uint8_t* sdrRow, const uint8_t* gainMapRow,
-                                int width, float mapRange, const ::QuickView::GpuShaderPayload& payload,
+                                int width, int auxWidth, float mapRange, const ::QuickView::GpuShaderPayload& payload,
                                 uint32_t* histR, uint32_t* histG,
                                 uint32_t* histB, uint32_t* histL);
 

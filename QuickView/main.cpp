@@ -11630,6 +11630,11 @@ void ProcessEngineEvents(HWND hwnd) {
                 // This ensures the HDR effect appears as soon as the auxiliary layer is ready.
                 RefreshImageDisplay(hwnd);
 
+                // [v10.3.1] Trigger Histogram Refresh for HDR Gain Map
+                if (g_runtime.ShowInfoPanel && g_runtime.InfoPanelExpanded) {
+                    UpdateHistogramAsync(hwnd, evt.filePath);
+                }
+
                 QV_LOG("Main_AuxLayer", TraceLoggingString("GainMapApplied GpuBake", "Action"));
             }
         }
@@ -12261,24 +12266,38 @@ FireAndForget UpdateHistogramAsync(HWND hwnd, std::wstring path) {
     
     co_await ResumeBackground{};
     
-    ComPtr<IWICBitmap> tempBitmap;
-    std::wstring loaderName; // dummy
-    if (SUCCEEDED(g_imageLoader->LoadToMemory(path.c_str(), &tempBitmap, &loaderName))) {
-         CImageLoader::ImageMetadata histMeta;
-         g_imageLoader->ComputeHistogram(tempBitmap.Get(), &histMeta);
-         
-         co_await ResumeMainThread(hwnd);
-         
+    // [v10.3.1 Optimized] Zero-Copy Histogram Calculation
+    // We no longer call LoadToMemory() (which re-decodes the file from disk).
+    // Instead, we use the pixels already residing in the engine's cache.
+    auto frame = (g_pImageEngine) ? g_pImageEngine->GetCachedImage(path) : nullptr;
+    if (frame && frame->IsValid()) {
+        g_pImageEngine->GetLoader()->ComputeHistogramFromFrame(*frame, &g_currentMetadata);
+        
+        co_await ResumeMainThread(hwnd);
         if (path == g_imagePath) {
-            g_currentMetadata.HistR = histMeta.HistR;
-            g_currentMetadata.HistG = histMeta.HistG;
-            g_currentMetadata.HistB = histMeta.HistB;
-            g_currentMetadata.HistL = histMeta.HistL;
-            g_currentMetadata.Sharpness = histMeta.Sharpness;
-            g_currentMetadata.Entropy = histMeta.Entropy;
-            g_currentMetadata.HasSharpness = histMeta.HasSharpness;
-            g_currentMetadata.HasEntropy = histMeta.HasEntropy;
-            RequestRepaint(PaintLayer::All);
+            RequestRepaint(PaintLayer::Dynamic);
+        }
+    } else {
+        // Fallback for cases where rawFrame is missing (unlikely in current engine)
+        ComPtr<IWICBitmap> tempBitmap;
+        std::wstring loaderName; 
+        if (SUCCEEDED(g_imageLoader->LoadToMemory(path.c_str(), &tempBitmap, &loaderName))) {
+             CImageLoader::ImageMetadata histMeta;
+             g_imageLoader->ComputeHistogram(tempBitmap.Get(), &histMeta);
+             
+             co_await ResumeMainThread(hwnd);
+             
+            if (path == g_imagePath) {
+                g_currentMetadata.HistR = histMeta.HistR;
+                g_currentMetadata.HistG = histMeta.HistG;
+                g_currentMetadata.HistB = histMeta.HistB;
+                g_currentMetadata.HistL = histMeta.HistL;
+                g_currentMetadata.Sharpness = histMeta.Sharpness;
+                g_currentMetadata.Entropy = histMeta.Entropy;
+                g_currentMetadata.HasSharpness = histMeta.HasSharpness;
+                g_currentMetadata.HasEntropy = histMeta.HasEntropy;
+                RequestRepaint(PaintLayer::All);
+            }
         }
     }
 }

@@ -73,7 +73,7 @@ static bool TryDecodeAvifGainMappedLinearRGBA(
 // [Fast Header] AVIF/HEIC dimension probes (implemented later in this file)
 static bool GetAVIFDimensions(LPCWSTR filePath, uint32_t* width, uint32_t* height);
 static bool GetISOBMFFDimensions(LPCWSTR filePath, uint32_t* width, uint32_t* height);
-static void ProbeHdrMetadataNative(LPCWSTR filePath, QuickView::HdrStaticMetadata* pHdr);
+static void ProbeHdrMetadataNative(const uint8_t* data, size_t size, QuickView::HdrStaticMetadata* pHdr);
 
 
 // [v18] Brute force scan for 'nclx' box in HEIF/AVIF streams.
@@ -296,16 +296,14 @@ static void FindHeifGainMapManual(const uint8_t* data, size_t size, uint64_t* ou
 }
 
 // [v18] Fallback Metadata Prober for Native WIC Path
-static void ProbeHdrMetadataNative(LPCWSTR filePath, QuickView::HdrStaticMetadata* pHdr) {
-    if (!filePath || !pHdr) return;
+static void ProbeHdrMetadataNative(const uint8_t* data, size_t size, QuickView::HdrStaticMetadata* pHdr) {
+    if (!data || size == 0 || !pHdr) return;
     
     // 1. Try standard libavif container parsing first
-    QuickView::MappedFile mapping(filePath);
-    if (!mapping.IsValid()) return;
     
     avifDecoder* decoder = avifDecoderCreate();
     if (decoder) {
-        if (avifDecoderSetIOMemory(decoder, mapping.data(), mapping.size()) == AVIF_RESULT_OK) {
+        if (avifDecoderSetIOMemory(decoder, data, size) == AVIF_RESULT_OK) {
             if (avifDecoderParse(decoder) == AVIF_RESULT_OK) {
                 PopulateAvifHdrStaticMetadata(decoder->image, pHdr);
                 avifDecoderDestroy(decoder);
@@ -318,7 +316,7 @@ static void ProbeHdrMetadataNative(LPCWSTR filePath, QuickView::HdrStaticMetadat
     // 2. Brute-force fallback for Canon .hif (Brand='heix') or other unhandled containers
     uint16_t p = 0, t = 0, m = 0;
     size_t offset = 0;
-    if (FindNclx(mapping.data(), mapping.size(), p, t, m, &offset)) {
+    if (FindNclx(data, size, p, t, m, &offset)) {
         pHdr->isHdr = (t == 16 || t == 18); // PQ or HLG
         pHdr->primaries = MapCicpPrimaries(p);
         pHdr->transfer = MapCicpTransfer(t);
@@ -328,9 +326,9 @@ static void ProbeHdrMetadataNative(LPCWSTR filePath, QuickView::HdrStaticMetadat
     // 3. Detect Apple HDR Gain Map (iso:hdrgainmap URN presence)
     const char* appleUrn = "urn:com:apple:photo:2020:aux:hdrgainmap";
     const size_t urnLen = strlen(appleUrn);
-    const size_t urnScanLimit = (mapping.size() > 64000) ? 64000 : mapping.size();
+    const size_t urnScanLimit = (size > 64000) ? 64000 : size;
     for (size_t i = 0; i + urnLen <= urnScanLimit; ++i) {
-        if (memcmp(mapping.data() + i, appleUrn, urnLen) == 0) {
+        if (memcmp(data + i, appleUrn, urnLen) == 0) {
             pHdr->hasGainMap = true;
             pHdr->isValid = true;
             // Default headroom: 1.5 stops (Apple standard when no explicit tag found)
@@ -1127,6 +1125,19 @@ static QuickView::ColorPrimaries GuessPrimariesFromMetadataColorSpace(const CIma
 static bool IsHdrTransferFunction(QuickView::TransferFunction transfer) {
     return transfer == QuickView::TransferFunction::PQ ||
            transfer == QuickView::TransferFunction::HLG;
+}
+
+static bool IsWicFloatOrHalfFormat(const WICPixelFormatGUID& srcFormat) {
+    return IsEqualGUID(srcFormat, GUID_WICPixelFormat128bppRGBAFloat) ||
+           IsEqualGUID(srcFormat, GUID_WICPixelFormat128bppPRGBAFloat) ||
+           IsEqualGUID(srcFormat, GUID_WICPixelFormat128bppRGBFloat) ||
+           IsEqualGUID(srcFormat, GUID_WICPixelFormat64bppRGBAHalf) ||
+           IsEqualGUID(srcFormat, GUID_WICPixelFormat64bppPRGBAHalf) ||
+           IsEqualGUID(srcFormat, GUID_WICPixelFormat64bppRGBHalf) ||
+           IsEqualGUID(srcFormat, GUID_WICPixelFormat48bppRGBHalf) ||
+           IsEqualGUID(srcFormat, GUID_WICPixelFormat32bppRGBE) ||
+           IsEqualGUID(srcFormat, GUID_WICPixelFormat32bppGrayFloat) ||
+           IsEqualGUID(srcFormat, GUID_WICPixelFormat16bppGrayHalf);
 }
 
 static void PopulateHdrInfoFromWicPixelFormat(const WICPixelFormatGUID& pixelFormat,
@@ -2978,6 +2989,51 @@ static void PopulateThumbOriginalInfo(const CImageLoader::ImageHeaderInfo& heade
     }
 }
 
+static void ResizeBilinearFloatScalar(const float* src, int srcW, int srcH, int srcStride,
+                                      float* dst, int dstW, int dstH, int dstStride) {
+    float scaleX = (float)srcW / dstW;
+    float scaleY = (float)srcH / dstH;
+    int srcStrideFloats = srcStride / sizeof(float);
+    int dstStrideFloats = dstStride / sizeof(float);
+
+    for (int y = 0; y < dstH; ++y) {
+        float srcY = y * scaleY;
+        int y1 = (int)srcY;
+        int y2 = (std::min)(y1 + 1, srcH - 1);
+        float dy = srcY - y1;
+        float dy1 = 1.0f - dy;
+
+        const float* row1 = src + y1 * srcStrideFloats;
+        const float* row2 = src + y2 * srcStrideFloats;
+        float* dstRow = dst + y * dstStrideFloats;
+
+        for (int x = 0; x < dstW; ++x) {
+            float srcX = x * scaleX;
+            int x1 = (int)srcX;
+            int x2 = (std::min)(x1 + 1, srcW - 1);
+            float dx = srcX - x1;
+            float dx1 = 1.0f - dx;
+
+            float w1 = dx1 * dy1;
+            float w2 = dx * dy1;
+            float w3 = dx1 * dy;
+            float w4 = dx * dy;
+
+            int px1 = x1 * 4;
+            int px2 = x2 * 4;
+            int dxOut = x * 4;
+
+            for (int c = 0; c < 4; ++c) {
+                dstRow[dxOut + c] = 
+                    row1[px1 + c] * w1 +
+                    row1[px2 + c] * w2 +
+                    row2[px1 + c] * w3 +
+                    row2[px2 + c] * w4;
+            }
+        }
+    }
+}
+
 static HRESULT DownscaleThumbDataIfNeeded(CImageLoader::ThumbData* pData, int targetSize) {
     if (!pData || !pData->isValid || targetSize <= 0) return S_OK;
     if (pData->width <= targetSize && pData->height <= targetSize) return S_OK;
@@ -2989,18 +3045,25 @@ static HRESULT DownscaleThumbDataIfNeeded(CImageLoader::ThumbData* pData, int ta
 
     int finalW = (std::max)(1, static_cast<int>(pData->width * scale + 0.5f));
     int finalH = (std::max)(1, static_cast<int>(pData->height * scale + 0.5f));
-    int finalStride = CalculateAlignedStride(finalW, 4);
+    
+    bool isFloat = (pData->stride >= pData->width * 16);
+    int bytesPerPixel = isFloat ? 16 : 4;
+    int finalStride = CalculateAlignedStride(finalW, bytesPerPixel);
     std::vector<uint8_t> resized(static_cast<size_t>(finalStride) * finalH);
 
-    ImageLoaderSimd::ResizeBilinear(
-        pData->pixels.data(),
-        pData->width,
-        pData->height,
-        pData->stride,
-        resized.data(),
-        finalW,
-        finalH,
-        finalStride);
+    if (isFloat) {
+        ResizeBilinearFloatScalar(
+            reinterpret_cast<const float*>(pData->pixels.data()),
+            pData->width, pData->height, pData->stride,
+            reinterpret_cast<float*>(resized.data()),
+            finalW, finalH, finalStride);
+    } else {
+        ImageLoaderSimd::ResizeBilinear(
+            pData->pixels.data(),
+            pData->width, pData->height, pData->stride,
+            resized.data(),
+            finalW, finalH, finalStride);
+    }
 
     pData->pixels = std::move(resized);
     pData->width = finalW;
@@ -3728,6 +3791,16 @@ HRESULT CImageLoader::LoadThumbnail(LPCWSTR filePath, int targetSize, ThumbData*
         if (newH < 1) newH = 1;
     }
     
+    // For Float/Half formats, WIC Scaler throws WinRT originate error (not supported).
+    WICPixelFormatGUID sourceFormat;
+    source->GetPixelFormat(&sourceFormat);
+    
+    if (IsWicFloatOrHalfFormat(sourceFormat)) {
+        // We cannot natively scale this format in WIC. 
+        // Fail fast so the pipeline falls back to full image load and GPU downscale.
+        return E_FAIL;
+    }
+    
     // WIC Scaler
     ComPtr<IWICBitmapScaler> scaler;
     if (FAILED(m_wicFactory->CreateBitmapScaler(&scaler))) return E_FAIL;
@@ -3737,14 +3810,6 @@ HRESULT CImageLoader::LoadThumbnail(LPCWSTR filePath, int targetSize, ThumbData*
     // Format Converter (Ensure PBGRA/BGRA for D2D)
     ComPtr<IWICFormatConverter> converter;
     if (FAILED(m_wicFactory->CreateFormatConverter(&converter))) return E_FAIL;
-    
-    // D2D prefers PBGRA usually, but we used BGRA for TurboJPEG. 
-    // CreateBitmap functions usually accept both if specified correctly.
-    // Let's use PBGRA (Premultiplied BGRA) which works best with D2D alpha blending.
-    // TurboJPEG TJPF_BGRA is technically straight alpha (not premultiplied).
-    // D2D supports IgnoreAlpha or StraightAlpha via different flags, but PBGRA is standard.
-    // If JPG has no alpha, BGRA == PBGRA. So it's fine.
-    // But PNG might have alpha. WIC converter to PBGRA handles premultiplication.
     
     if (FAILED(converter->Initialize(scaler.Get(), GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr, 0.f, WICBitmapPaletteTypeMedianCut))) return E_FAIL;
 
@@ -4759,6 +4824,19 @@ HRESULT CImageLoader::LoadToMemory(LPCWSTR filePath, IWICBitmap** ppBitmap, std:
     
     // First, try fast native decoder-level scaling (IWICBitmapSourceTransform)
     bool usedNativeScaling = false;
+    
+    WICPixelFormatGUID srcFormat;
+    frame->GetPixelFormat(&srcFormat);
+    bool isFloatFormat = IsWicFloatOrHalfFormat(srcFormat);
+    
+    bool isHdrSource = isFloatFormat || 
+                       IsEqualGUID(srcFormat, GUID_WICPixelFormat64bppRGBA) ||
+                       IsEqualGUID(srcFormat, GUID_WICPixelFormat64bppPRGBA) ||
+                       IsEqualGUID(srcFormat, GUID_WICPixelFormat64bppRGB) ||
+                       IsEqualGUID(srcFormat, GUID_WICPixelFormat48bppRGB);
+
+    bool isScalerUnsupported = isHdrSource;
+
     if (targetWidth > 0 && targetHeight > 0) {
         UINT width, height;
         if (SUCCEEDED(frame->GetSize(&width, &height)) && (width > (UINT)targetWidth || height > (UINT)targetHeight)) {
@@ -4775,18 +4853,46 @@ HRESULT CImageLoader::LoadToMemory(LPCWSTR filePath, IWICBitmap** ppBitmap, std:
             // Try IWICBitmapSourceTransform for ultra-fast codec-level scale (HEVC natively supports this)
             ComPtr<IWICBitmapSourceTransform> pTransform;
             if (SUCCEEDED(frame.As(&pTransform))) {
-                // Not copying here because we need an IWICBitmapSource for the converter.
-                // But wait, IWICBitmapSourceTransform is used via CopyPixels, making it hard to plug into converter pipeline.
-                // WIC's standard IWICBitmapScaler handles requesting native scale from the decoder underneath anyway!
-                // So using Scaler is mathematically optimal.
+                UINT actualW = finalW, actualH = finalH;
+                if (SUCCEEDED(pTransform->GetClosestSize(&actualW, &actualH))) {
+                    finalW = actualW;
+                    finalH = actualH;
+                    
+                    WICPixelFormatGUID requestedFormat = isHdrSource ? GUID_WICPixelFormat64bppRGBA : GUID_WICPixelFormat32bppPBGRA;
+                    WICPixelFormatGUID decodeFormat = requestedFormat;
+                    if (SUCCEEDED(pTransform->GetClosestPixelFormat(&decodeFormat))) {
+                        ComPtr<IWICBitmap> tempBitmap;
+                        if (SUCCEEDED(m_wicFactory->CreateBitmap(finalW, finalH, decodeFormat, WICBitmapCacheOnDemand, &tempBitmap))) {
+                            WICRect rect = { 0, 0, (INT)finalW, (INT)finalH };
+                            ComPtr<IWICBitmapLock> lock;
+                            if (SUCCEEDED(tempBitmap->Lock(&rect, WICBitmapLockWrite, &lock))) {
+                                UINT stride = 0;
+                                UINT cbBufferSize = 0;
+                                BYTE* pv = nullptr;
+                                if (SUCCEEDED(lock->GetStride(&stride)) &&
+                                    SUCCEEDED(lock->GetDataPointer(&cbBufferSize, &pv))) {
+                                    if (SUCCEEDED(pTransform->CopyPixels(nullptr, finalW, finalH, &decodeFormat, WICBitmapTransformRotate0, stride, cbBufferSize, pv))) {
+                                        finalSource = tempBitmap;
+                                        if (pLoaderName) *pLoaderName += L" [WIC Native Transform]";
+                                        usedNativeScaling = true;
+                                        srcFormat = decodeFormat;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
-            ComPtr<IWICBitmapScaler> scaler;
-            if (SUCCEEDED(m_wicFactory->CreateBitmapScaler(&scaler))) {
-                if (SUCCEEDED(scaler->Initialize(frame.Get(), finalW, finalH, WICBitmapInterpolationModeFant))) {
-                    finalSource = scaler;
-                    if (pLoaderName) *pLoaderName += L" [WIC Scaler]";
-                    usedNativeScaling = true;
+            // Skip WIC Scaler for unsupported formats to prevent WinRT originate errors
+            if (!usedNativeScaling && !isScalerUnsupported) {
+                ComPtr<IWICBitmapScaler> scaler;
+                if (SUCCEEDED(m_wicFactory->CreateBitmapScaler(&scaler))) {
+                    if (SUCCEEDED(scaler->Initialize(frame.Get(), finalW, finalH, WICBitmapInterpolationModeFant))) {
+                        finalSource = scaler;
+                        if (pLoaderName) *pLoaderName += L" [WIC Scaler]";
+                        usedNativeScaling = true;
+                    }
                 }
             }
         }
@@ -4797,28 +4903,11 @@ HRESULT CImageLoader::LoadToMemory(LPCWSTR filePath, IWICBitmap** ppBitmap, std:
     hr = m_wicFactory->CreateFormatConverter(&converter);
     if (FAILED(hr)) return hr;
 
-    WICPixelFormatGUID srcFormat;
-    hr = frame->GetPixelFormat(&srcFormat);
+    // Re-evaluate high precision to include 16-bit integers like HEIC (64bppRGBA)
+    // so we retain 10-bit color data by converting them to 128bppRGBAFloat.
+    bool isHighPrecision = isHdrSource;
 
-    // Check if the source format is a high-precision/HDR format
-    bool isHighPrecision = false;
-    if (SUCCEEDED(hr)) {
-        if (IsEqualGUID(srcFormat, GUID_WICPixelFormat128bppRGBAFloat) ||
-            IsEqualGUID(srcFormat, GUID_WICPixelFormat128bppPRGBAFloat) ||
-            IsEqualGUID(srcFormat, GUID_WICPixelFormat128bppRGBFloat) ||
-            IsEqualGUID(srcFormat, GUID_WICPixelFormat64bppRGBAHalf) ||
-            IsEqualGUID(srcFormat, GUID_WICPixelFormat64bppPRGBAHalf) ||
-            IsEqualGUID(srcFormat, GUID_WICPixelFormat64bppRGBHalf) ||
-            IsEqualGUID(srcFormat, GUID_WICPixelFormat64bppRGBA) ||
-            IsEqualGUID(srcFormat, GUID_WICPixelFormat64bppPRGBA) ||
-            IsEqualGUID(srcFormat, GUID_WICPixelFormat64bppRGB) ||
-            IsEqualGUID(srcFormat, GUID_WICPixelFormat48bppRGB) ||
-            IsEqualGUID(srcFormat, GUID_WICPixelFormat48bppRGBHalf) ||
-            IsEqualGUID(srcFormat, GUID_WICPixelFormat32bppRGBE)) {
-            isHighPrecision = true;
-        }
-    }
-
+    // Restore HDR for thumbnails! 
     WICPixelFormatGUID targetFormat = isHighPrecision ? GUID_WICPixelFormat128bppRGBAFloat : GUID_WICPixelFormat32bppPBGRA;
 
     hr = converter->Initialize(
@@ -6982,13 +7071,30 @@ namespace QuickView {
 
     namespace Codec {
         namespace WIC_HEIC {
-            static HRESULT Load(LPCWSTR filePath, const DecodeContext& ctx, DecodeResult& result, IWICImagingFactory* factory) {
+            static HRESULT Load(LPCWSTR filePath, const DecodeContext& ctx, DecodeResult& result, IWICImagingFactory* factory, std::shared_ptr<QuickView::MappedFile> fileMap) {
                 if (!filePath || !factory) return E_INVALIDARG;
 
-                ProbeHdrMetadataNative(filePath, &result.metadata.hdrMetadata);
+                if (fileMap && fileMap->IsValid()) {
+                    ProbeHdrMetadataNative(fileMap->data(), fileMap->size(), &result.metadata.hdrMetadata);
+                } else {
+                    // Fallback (should not happen in Unified path)
+                    QuickView::MappedFile mapping(filePath);
+                    if (mapping.IsValid()) ProbeHdrMetadataNative(mapping.data(), mapping.size(), &result.metadata.hdrMetadata);
+                }
                 
                 ComPtr<IWICBitmapDecoder> decoder;
-                HRESULT hr = factory->CreateDecoderFromFilename(filePath, nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder);
+                HRESULT hr = E_FAIL;
+                if (fileMap && fileMap->IsValid()) {
+                    ComPtr<IStream> stream;
+                    stream.Attach(SHCreateMemStream(fileMap->data(), (UINT)fileMap->size()));
+                    if (stream) {
+                        hr = factory->CreateDecoderFromStream(stream.Get(), nullptr, WICDecodeMetadataCacheOnDemand, &decoder);
+                    }
+                }
+                
+                if (FAILED(hr)) {
+                    hr = factory->CreateDecoderFromFilename(filePath, nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder);
+                }
                 if (FAILED(hr)) return hr;
 
                 ComPtr<IWICBitmapFrameDecode> frame;
@@ -7006,6 +7112,71 @@ namespace QuickView {
 
                 PopulateHdrInfoFromWicPixelFormat(srcFormat, &result.metadata);
 
+                // Get original dimensions (always preserved in metadata)
+                UINT origW, origH;
+                frame->GetSize(&origW, &origH);
+                result.metadata.Width = origW;
+                result.metadata.Height = origH;
+
+                // [Perf] IWICBitmapSourceTransform: HEVC decoder supports native 1/2, 1/4, 1/8 IDCT scaling.
+                // This reduces 12.2MP (195MB@128bppFloat) to screen-fit (~33MB) at the codec level.
+                UINT decodeW = origW, decodeH = origH;
+                bool usedNativeScale = false;
+                ComPtr<IWICBitmapSource> decodeSource;
+
+                if (ctx.targetWidth > 0 && ctx.targetHeight > 0 &&
+                    (origW > (UINT)ctx.targetWidth || origH > (UINT)ctx.targetHeight)) {
+                    // Calculate proportional target size
+                    float scaleW = (float)ctx.targetWidth / origW;
+                    float scaleH = (float)ctx.targetHeight / origH;
+                    float scale = (std::min)(scaleW, scaleH);
+                    UINT wantW = (std::max)(1U, (UINT)(origW * scale + 0.5f));
+                    UINT wantH = (std::max)(1U, (UINT)(origH * scale + 0.5f));
+
+                    // Try IWICBitmapSourceTransform for codec-level downscale
+                    ComPtr<IWICBitmapSourceTransform> pTransform;
+                    if (SUCCEEDED(frame.As(&pTransform))) {
+                        UINT closestW = wantW, closestH = wantH;
+                        if (SUCCEEDED(pTransform->GetClosestSize(&closestW, &closestH))) {
+                            // Only use native scale if it actually reduces size
+                            if (closestW < origW || closestH < origH) {
+                                WICPixelFormatGUID nativeFmt = srcFormat;
+                                pTransform->GetClosestPixelFormat(&nativeFmt);
+
+                                ComPtr<IWICBitmap> tempBitmap;
+                                if (SUCCEEDED(factory->CreateBitmap(closestW, closestH, nativeFmt, WICBitmapCacheOnDemand, &tempBitmap))) {
+                                    WICRect rect = { 0, 0, (INT)closestW, (INT)closestH };
+                                    ComPtr<IWICBitmapLock> lock;
+                                    if (SUCCEEDED(tempBitmap->Lock(&rect, WICBitmapLockWrite, &lock))) {
+                                        UINT lockStride = 0;
+                                        UINT cbBuf = 0;
+                                        BYTE* pv = nullptr;
+                                        if (SUCCEEDED(lock->GetStride(&lockStride)) &&
+                                            SUCCEEDED(lock->GetDataPointer(&cbBuf, &pv))) {
+                                            if (SUCCEEDED(pTransform->CopyPixels(nullptr, closestW, closestH,
+                                                          &nativeFmt, WICBitmapTransformRotate0, lockStride, cbBuf, pv))) {
+                                                lock.Reset(); // Release lock before using bitmap
+                                                decodeSource = tempBitmap;
+                                                decodeW = closestW;
+                                                decodeH = closestH;
+                                                usedNativeScale = true;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // If native scale was not used, fall back to full-size frame
+                if (!decodeSource) {
+                    decodeSource = frame;
+                    decodeW = origW;
+                    decodeH = origH;
+                }
+
+                // Format conversion (HDR-aware)
                 ComPtr<IWICFormatConverter> converter;
                 if (FAILED(factory->CreateFormatConverter(&converter))) return E_FAIL;
 
@@ -7017,26 +7188,24 @@ namespace QuickView {
                     result.format = PixelFormat::BGRA8888;
                 }
 
-                if (FAILED(converter->Initialize(frame.Get(), targetFmt, WICBitmapDitherTypeNone, nullptr, 0.f, WICBitmapPaletteTypeMedianCut))) return E_FAIL;
+                if (FAILED(converter->Initialize(decodeSource.Get(), targetFmt, WICBitmapDitherTypeNone, nullptr, 0.f, WICBitmapPaletteTypeMedianCut))) return E_FAIL;
 
-                UINT w, h;
-                frame->GetSize(&w, &h);
                 int bpp = (isHighBitDepth && !PrefersSdrTarget(ctx)) ? 16 : 4;
-                int stride = CalculateSIMDAlignedStride(w, bpp);
-                size_t bufSize = (size_t)stride * h;
+                int stride = CalculateSIMDAlignedStride(decodeW, bpp);
+                size_t bufSize = (size_t)stride * decodeH;
                 uint8_t* pixels = ctx.allocator(bufSize);
                 if (!pixels) return E_OUTOFMEMORY;
 
                 if (FAILED(converter->CopyPixels(nullptr, stride, (UINT)bufSize, pixels))) return E_FAIL;
 
                 result.pixels = pixels;
-                result.width = w;
-                result.height = h;
+                result.width = decodeW;
+                result.height = decodeH;
                 result.stride = stride;
                 result.success = true;
-                result.metadata.LoaderName = L"WIC HEIF (Native Accelerated)";
-                result.metadata.Width = w;
-                result.metadata.Height = h;
+                result.metadata.LoaderName = usedNativeScale
+                    ? L"WIC HEIF (Native Transform)"
+                    : L"WIC HEIF (Native Accelerated)";
                 
                 if (isHighBitDepth && !PrefersSdrTarget(ctx)) {
                     result.metadata.colorInfo.dataSpace = QuickView::PixelDataSpace::SceneLinearScRgb;
@@ -7101,15 +7270,14 @@ HRESULT CImageLoader::LoadImageUnified(LPCWSTR filePath, const DecodeContext& ct
     bool isBufferCodec = IsUnifiedBufferCodec(fmt) || fmt == L"HEIC";
     
     if (isBufferCodec) {
-        QuickView::MappedFile mapping(filePath);
-        if (!mapping.IsValid()) return E_FAIL;
+        auto fileMap = std::make_shared<QuickView::MappedFile>(filePath);
+        if (!fileMap->IsValid()) return E_FAIL;
         
-        const uint8_t* mappedData = mapping.data();
-        size_t mappedSize = mapping.size();
+        const uint8_t* mappedData = fileMap->data();
+        size_t mappedSize = fileMap->size();
         
         // Dispatch
         if (ShouldProbeAnimatedBufferCodec(fmt)) { // APNG supported by Wuffs
-            std::shared_ptr<QuickView::MappedFile> fileMap = std::make_shared<QuickView::MappedFile>(filePath);
             if (fileMap->IsValid()) {
                 std::unique_ptr<QuickView::IAnimationDecoder> animator;
                 if (fmt == L"WebP") {
@@ -7155,18 +7323,17 @@ HRESULT CImageLoader::LoadImageUnified(LPCWSTR filePath, const DecodeContext& ct
         }
         
         if (fmt == L"HEIC") {
-            HRESULT hr = WIC_HEIC::Load(filePath, ctx, result, m_wicFactory.Get());
+            HRESULT hr = WIC_HEIC::Load(filePath, ctx, result, m_wicFactory.Get(), fileMap);
             if (SUCCEEDED(hr)) {
                 // [v10.3] Async Gain Map Decode for HEIC
                 if (result.metadata.hdrMetadata.hasGainMap && ctx.onAuxLayerReady && !PrefersSdrTarget(ctx)) {
-                    // Copy necessary data to pass to thread
-                    std::vector<uint8_t> threadData(mappedData, mappedData + mappedSize);
                     float headroom = result.metadata.hdrMetadata.gainMapAlternateHeadroom;
                     uint32_t baseWidth = result.width;
                     uint32_t baseHeight = result.height;
                     auto callback = ctx.onAuxLayerReady;
                     
-                    std::thread([threadData = std::move(threadData), headroom, baseWidth, baseHeight, callback]() {
+                    // Capture fileMap shared_ptr to keep memory alive without copying on main thread
+                    std::thread([fileMap, headroom, baseWidth, baseHeight, callback]() {
                         HRESULT hrCo = CoInitializeEx(NULL, COINIT_MULTITHREADED);
                         if (FAILED(hrCo)) return;
 
@@ -7180,16 +7347,18 @@ HRESULT CImageLoader::LoadImageUnified(LPCWSTR filePath, const DecodeContext& ct
                         uint32_t pitmOffset = 0;
                         uint8_t pitmSize = 0;
                         uint32_t gmItemID = 0;
-                        FindHeifGainMapManual(threadData.data(), threadData.size(), &gmOffset, &gmLength, &pitmOffset, &pitmSize, &gmItemID);
+                        FindHeifGainMapManual(fileMap->data(), fileMap->size(), &gmOffset, &gmLength, &pitmOffset, &pitmSize, &gmItemID);
 
                         std::unique_ptr<QuickView::AuxLayer> aux;
                         QuickView::GpuBlendOp op = QuickView::GpuBlendOp::None;
                         QuickView::GpuShaderPayload payload = {};
                         bool success = false;
 
-                        if (gmItemID != 0 && pitmOffset != 0 && pitmSize != 0 && threadData.size() > pitmOffset + pitmSize) {
+                        if (gmItemID != 0 && pitmOffset != 0 && pitmSize != 0 && fileMap->size() > pitmOffset + pitmSize) {
+                            // Copy ONLY when patching is needed
+                            std::vector<uint8_t> threadData(fileMap->data(), fileMap->data() + fileMap->size());
                             // God Mode: Patch the 'pitm' box to point to the gain map item!
-                            std::vector<uint8_t> patchedData = threadData;
+                            std::vector<uint8_t> patchedData = std::move(threadData);
                             
                             // Patch the primary item ID
                             if (pitmSize == 2) {
@@ -7241,7 +7410,7 @@ HRESULT CImageLoader::LoadImageUnified(LPCWSTR filePath, const DecodeContext& ct
                         } else if (gmLength > 0) {
                             // Fallback
                             Microsoft::WRL::ComPtr<IStream> gmStream;
-                            gmStream.Attach(SHCreateMemStream(threadData.data() + gmOffset, (UINT)gmLength));
+                            gmStream.Attach(SHCreateMemStream(fileMap->data() + gmOffset, (UINT)gmLength));
                             if (gmStream) {
                                 Microsoft::WRL::ComPtr<IWICBitmapDecoder> gmDecoder;
                                 if (SUCCEEDED(wicFactory->CreateDecoderFromStream(gmStream.Get(), nullptr, WICDecodeMetadataCacheOnDemand, &gmDecoder))) {
@@ -9193,7 +9362,12 @@ HRESULT CImageLoader::ReadMetadata(LPCWSTR filePath, ImageMetadata* pMetadata, b
 
     // [v6.0] Try Native parsers first (Faster for JXL/AVIF/HEIC)
     // This populates basic HDR metadata if found.
-    ProbeHdrMetadataNative(filePath, &pMetadata->hdrMetadata);
+    {
+        QuickView::MappedFile mapping(filePath);
+        if (mapping.IsValid()) {
+            ProbeHdrMetadataNative(mapping.data(), mapping.size(), &pMetadata->hdrMetadata);
+        }
+    }
     
     // 1. Detect Format (if missing)
 
@@ -9447,8 +9621,15 @@ void CImageLoader::ComputeHistogramFromFrame(const QuickView::RawImageFrame& fra
     uint64_t lapCount = 0;
     
     bool isFloat = (frame.format == PixelFormat::R32G32B32A32_FLOAT);
-    bool hasGainMap = (frame.blendOp == GpuBlendOp::UltraHdrGainMap && frame.auxLayer && frame.auxLayer->pixels);
     
+    // [Bug Fix] Capture auxLayer safely to avoid race conditions during async updates
+    const QuickView::AuxLayer* pAux = frame.auxLayer.get();
+    bool hasGainMap = (frame.blendOp == GpuBlendOp::UltraHdrGainMap && pAux && pAux->pixels);
+    int auxWidth = hasGainMap ? pAux->width : 0;
+    int auxHeight = hasGainMap ? pAux->height : 0;
+    int auxStride = hasGainMap ? pAux->stride : 0;
+    const uint8_t* auxPixels = hasGainMap ? pAux->pixels : nullptr;
+
     for (UINT y = 0; y < frame.height; y += stepY) {
         const uint8_t* row = ptr + (UINT64)y * stride;
         
@@ -9464,8 +9645,10 @@ void CImageLoader::ComputeHistogramFromFrame(const QuickView::RawImageFrame& fra
         } else if (hasGainMap) {
             float mapRange = std::exp2(frame.shaderPayload.targetHeadroom);
             pMetadata->HistMapRange = mapRange;
-            const uint8_t* auxRow = frame.auxLayer->pixels + (UINT64)y * frame.auxLayer->stride;
-            ImageLoaderSimd::ComputeHistogramRowGainMap(row, auxRow, frame.width, mapRange, frame.shaderPayload,
+            UINT auxY = (y * auxHeight) / frame.height;
+            if (auxY >= (UINT)auxHeight) auxY = auxHeight > 0 ? auxHeight - 1 : 0;
+            const uint8_t* auxRow = auxPixels + (UINT64)auxY * auxStride;
+            ImageLoaderSimd::ComputeHistogramRowGainMap(row, auxRow, frame.width, auxWidth, mapRange, frame.shaderPayload,
                 pMetadata->HistR.data(), pMetadata->HistG.data(),
                 pMetadata->HistB.data(), pMetadata->HistL.data());
         } else {
