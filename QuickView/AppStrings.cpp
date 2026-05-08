@@ -279,8 +279,9 @@ const wchar_t *Settings_Label_HdrToneMapping = nullptr;
 const wchar_t *Settings_Tooltip_HdrToneMapping = nullptr;
 const wchar_t *Settings_Label_HdrPeakNitsOverride = nullptr;
 const wchar_t *Settings_Tooltip_HdrPeakNitsOverride = nullptr;
-const wchar_t *Settings_Option_HdrPerceptual = nullptr;
 const wchar_t *Settings_Option_HdrColorimetric = nullptr;
+const wchar_t *Settings_Option_HdrSpline = nullptr;
+const wchar_t *Settings_Option_HdrLegacyReinhard = nullptr;
 const wchar_t *Settings_Label_CmsFallback = nullptr;
 const wchar_t *Settings_Label_CustomProof = nullptr;
 const wchar_t *Context_SoftProofing = nullptr;
@@ -892,8 +893,9 @@ struct EN {
   static constexpr const wchar_t *Settings_Label_HdrToneMapping = L"HDR Tone Mapping";
   static constexpr const wchar_t *Settings_Label_HdrPeakNitsOverride = L"HDR Peak Brightness (Nits)";
   static constexpr const wchar_t *Settings_Tooltip_HdrPeakNitsOverride = L"Set to 0 to use system detected brightness.";
-  static constexpr const wchar_t *Settings_Option_HdrPerceptual = L"Perceptual";
   static constexpr const wchar_t *Settings_Option_HdrColorimetric = L"Colorimetric";
+  static constexpr const wchar_t *Settings_Option_HdrSpline = L"Spline";
+  static constexpr const wchar_t *Settings_Option_HdrLegacyReinhard = L"Legacy Reinhard";
   static constexpr const wchar_t *Settings_Label_CmsFallback = L"Untagged Image Fallback";
   static constexpr const wchar_t *Settings_Label_CustomProof = L"Soft Proof Profile (.icc)";
   static constexpr const wchar_t *Context_SoftProofing = L"Soft Proofing Preview";
@@ -1088,7 +1090,14 @@ struct EN {
   static constexpr const wchar_t *Settings_Tooltip_CMS = L"Enable Color Management System.\nWhen enabled, applies high-precision color space conversion via GPU to restore true colors.\nDisabling it reduces GPU load, but may result in oversaturated colors on wide-gamut displays.";
   static constexpr const wchar_t *Settings_Tooltip_CmsIntent = L"Rendering Intent for color space conversion.\nPerceptual: Compresses out-of-gamut colors to preserve details and gradients (ideal for photos).\nRelative Colorimetric: Preserves in-gamut colors and clips out-of-gamut ones (ideal for UI and icons).\nNote: Visual differences only occur when using advanced ICC profiles containing LUTs (Lookup Tables). Standard matrix profiles will automatically fallback to Relative Colorimetric.";
   static constexpr const wchar_t *Settings_Tooltip_AdvancedColor = L"Enable 16-bit floating-point rendering pipeline (scRGB).\nWhen enabled, perfectly renders photo highlights on HDR-capable displays by breaking the SDR limit.\nDisabling it forces mapping to SDR output.\nNote: Enabling increases VRAM usage.";
-  static constexpr const wchar_t *Settings_Tooltip_HdrToneMapping = L"HDR Tone Mapping strategy:\nDetermines how HDR images are displayed when exceeding monitor capabilities.\nPerceptual: Preserves highlight details by smoothly compressing the luminance curve (softer look).\nColorimetric: Strict luminance mapping; highlights exceeding the monitor limit are clipped.";
+  static constexpr const wchar_t *Settings_Tooltip_HdrToneMapping =
+      L"HDR Tone Mapping strategy:\nDetermines how HDR images are displayed when "
+      L"exceeding monitor capabilities.\nSpline: High-fidelity highlight "
+      L"roll-off using piecewise spline (Recommended).\nColorimetric: Strict "
+      L"luminance mapping; highlights exceeding the monitor limit are "
+      L"clipped.\nLegacy Reinhard: The original extended Reinhard curve (More "
+      L"contrast).";
+
   static constexpr const wchar_t *Settings_Tooltip_ZoomAuto = L"Auto: 100% scale when image is smaller than screen, fit to screen when larger.";
   static constexpr const wchar_t *Settings_Header_Professional = L"Professional Tools";
   static constexpr const wchar_t *Settings_Label_ShowDirtyRect = L"Show update regions button in animation mode";
@@ -1305,8 +1314,9 @@ struct CN {
   static constexpr const wchar_t *Settings_Label_HdrToneMapping = L"HDR 色调映射";
   static constexpr const wchar_t *Settings_Label_HdrPeakNitsOverride = L"HDR 峰值亮度 (Nits)";
   static constexpr const wchar_t *Settings_Tooltip_HdrPeakNitsOverride = L"设为 0 表示通过系统自动检测亮度.";
-  static constexpr const wchar_t *Settings_Option_HdrPerceptual = L"感知";
   static constexpr const wchar_t *Settings_Option_HdrColorimetric = L"色度";
+  static constexpr const wchar_t *Settings_Option_HdrSpline = L"样条映射 (VLC)";
+  static constexpr const wchar_t *Settings_Option_HdrLegacyReinhard = L"经典 Reinhard";
   static constexpr const wchar_t *Settings_Label_CmsFallback = L"无配置图片的默认回退";
   static constexpr const wchar_t *Settings_Label_CustomProof = L"自定义软打样配置 (.icc)";
   static constexpr const wchar_t *Context_SoftProofing = L"软打样预览";
@@ -1652,7 +1662,11 @@ struct CN {
   static constexpr const wchar_t *Settings_Tooltip_CMS = L"启用色彩管理 (Color Management System)。\n开启后，将通过 GPU 进行高精度色彩空间转换以还原真实色彩。\n关闭可降低性能消耗，但在广色域屏幕上可能导致颜色过饱和。";
   static constexpr const wchar_t *Settings_Tooltip_CmsIntent = L"色彩空间转换策略 (Rendering Intent)。\n感知模式 (Perceptual)：压缩超出色域的颜色，保留细节和渐变，适合照片。\n相对比色 (Relative Colorimetric)：保留在色域内的颜色，超出部分裁剪，适合 UI 和图标。\n注意：仅当图像或显示器使用包含 LUT（查找表）的高级 ICC 配置文件时，切换此选项才会有视觉差异。普通矩阵型配置文件会自动回退至相对色度。";
   static constexpr const wchar_t *Settings_Tooltip_AdvancedColor = L"启用 16-bit 浮点渲染管线 (scRGB)。\n开启后，在支持 HDR 的显示器上能突破 SDR 亮度限制，完美呈现照片高光。\n关闭将强制降级映射至 SDR 输出。\n注意：开启会增加显存占用。";
-  static constexpr const wchar_t *Settings_Tooltip_HdrToneMapping = L"HDR 降级策略 (Tone Mapping)：\n当 HDR 图片超出显示器极限时的映射方式。\n感知模式：保留高光细节，平滑压缩亮度曲线，观感柔和。\n色度模式：保持严格亮度映射，超出显示器极限的亮度将被直接裁剪。";
+  static constexpr const wchar_t *Settings_Tooltip_HdrToneMapping =
+      L"HDR 降级策略 (Tone Mapping)：\n当 HDR 图片超出显示器极限时的映射方式。\n"
+      L"Spline 样条映射：采用分段样条曲线，实现高保真的高光细节还原（推荐）。\n"
+      L"色度模式：保持严格亮度映射，超出显示器极限的亮度将被直接裁剪。\n"
+      L"Legacy Reinhard：经典的 Reinhard 扩展曲线，对比度更高。";
   static constexpr const wchar_t *Settings_Tooltip_ZoomAuto = L"自动：图片小于屏幕尺寸时 100% 缩放，图片大于屏幕尺寸时适应屏幕尺寸缩放。";
   static constexpr const wchar_t *Settings_Header_Professional = L"专业工具";
   static constexpr const wchar_t *Settings_Label_ShowDirtyRect = L"动画模式下显示重绘区域预览按钮";
@@ -1964,8 +1978,9 @@ struct TW {
   static constexpr const wchar_t *Settings_Label_HdrToneMapping = L"HDR 色調映射";
   static constexpr const wchar_t *Settings_Label_HdrPeakNitsOverride = L"HDR 峰值亮度 (Nits)";
   static constexpr const wchar_t *Settings_Tooltip_HdrPeakNitsOverride = L"設為 0 表示通過系統自動檢測亮度.";
-  static constexpr const wchar_t *Settings_Option_HdrPerceptual = L"感知";
   static constexpr const wchar_t *Settings_Option_HdrColorimetric = L"色度";
+  static constexpr const wchar_t *Settings_Option_HdrSpline = L"樣條映射 (VLC)";
+  static constexpr const wchar_t *Settings_Option_HdrLegacyReinhard = L"經典 Reinhard";
   static constexpr const wchar_t *Settings_Label_CmsFallback = L"無配置圖片的預設回退";
   static constexpr const wchar_t *Settings_Label_CustomProof = L"自訂軟打樣配置 (.icc)";
   static constexpr const wchar_t *Context_SoftProofing = L"軟打樣預覽";
@@ -2156,7 +2171,11 @@ struct TW {
   static constexpr const wchar_t *Settings_Tooltip_CMS = L"啟用色彩管理 (Color Management System)。\n開啟後，將透過 GPU 進行高精度色彩空間轉換以還原真實色彩。\n關閉可降低效能消耗，但在廣色域螢幕上可能導致顏色過飽和。";
   static constexpr const wchar_t *Settings_Tooltip_CmsIntent = L"色彩空間轉換策略 (Rendering Intent)。\n感知模式 (Perceptual)：壓縮超出色域的顏色，保留細節和漸變，適合照片。\n相對比色 (Relative Colorimetric)：保留在色域內的顏色，超出部分裁剪，適合 UI 和圖示。\n注意：僅當圖像或顯示器使用包含 LUT（查找表）的高級 ICC 配置文件時，切換此選項才會有視覺差異。普通矩陣型配置文件會自動回退至相對色度。";
   static constexpr const wchar_t *Settings_Tooltip_AdvancedColor = L"啟用 16-bit 浮點渲染管線 (scRGB)。\n開啟後，在支援 HDR 的顯示器上能突破 SDR 亮度限制，完美呈現照片高光。\n關閉將強制降級對映至 SDR 輸出。\n注意：開啟會增加顯示卡記憶體佔用。";
-  static constexpr const wchar_t *Settings_Tooltip_HdrToneMapping = L"HDR 降級策略 (Tone Mapping)：\n當 HDR 圖片超出顯示器極限時的對映方式。\n感知模式：保留高光細節，平滑壓縮亮度曲線，觀感柔和。\n色度模式：保持嚴格亮度對映，超出顯示器極限的亮度將被直接裁剪。";
+  static constexpr const wchar_t *Settings_Tooltip_HdrToneMapping =
+      L"HDR 降級策略 (Tone Mapping)：\n當 HDR 圖片超出顯示器極限時的對映方式。\n"
+      L"Spline 樣條對映：採用分段樣條曲線，實現高保真的高光細節還原（推薦）。\n"
+      L"色度模式：保持嚴格亮度對映，超出顯示器極限的亮度將被直接裁剪。\n"
+      L"Legacy Reinhard：經典的 Reinhard 擴充曲線，對比度更高。";
   static constexpr const wchar_t *Settings_Tooltip_ZoomAuto = L"自動：圖片小於螢幕尺寸時 100% 縮放，圖片大於螢幕尺寸時適應螢幕尺寸縮放。";
   static constexpr const wchar_t *Settings_Header_VectorAssets = L"邊緣";
   static constexpr const wchar_t *Settings_Label_VectorStrokeWeight = L"線框粗细";
@@ -2538,8 +2557,9 @@ struct JA {
   static constexpr const wchar_t *Settings_Label_HdrToneMapping = L"HDR トーンマッピング";
   static constexpr const wchar_t *Settings_Label_HdrPeakNitsOverride = L"HDR ピーク輝度 (Nits)";
   static constexpr const wchar_t *Settings_Tooltip_HdrPeakNitsOverride = L"システム検出輝度を使用する場合は0に設定します。";
-  static constexpr const wchar_t *Settings_Option_HdrPerceptual = L"知覚的";
   static constexpr const wchar_t *Settings_Option_HdrColorimetric = L"測色";
+  static constexpr const wchar_t *Settings_Option_HdrSpline = L"スプライン (VLC)";
+  static constexpr const wchar_t *Settings_Option_HdrLegacyReinhard = L"レガシー Reinhard";
   static constexpr const wchar_t *Settings_Label_CmsFallback = L"プロファイルなし画像のフォールバック";
   static constexpr const wchar_t *Settings_Label_CustomProof = L"ソフトプルーフプロファイル (.icc)";
   static constexpr const wchar_t *Context_SoftProofing = L"ソフトプルーフプレビュー";
@@ -2733,7 +2753,11 @@ struct JA {
   static constexpr const wchar_t *Settings_Tooltip_CMS = L"カラーマネジメントシステム (CMS) を有効にする。\n有効にすると、GPUによる高精度な色空間変換が適用され、正しい色を再現します。\n無効にするとGPUの負荷を減らせますが、広色域ディスプレイでは色が過飽和になる場合があります。";
   static constexpr const wchar_t *Settings_Tooltip_CmsIntent = L"色空間の変換方法 (レンダリングインテント)。\n知覚的 (Perceptual)：色域外の色を圧縮し、階調とディテールを保持します (写真向け)。\n相対的な色域を維持 (Relative Colorimetric)：色域内の色はそのまま維持し、色域外の色はクリップします (UIやアイコン向け)。\n注意：LUT（ルックアップテーブル）を含む高度なICCプロファイルを使用している場合にのみ視覚的な違いが生じます。標準的なマトリックス型プロファイルでは自動的に相対的な色域を維持にフォールバックされます。";
   static constexpr const wchar_t *Settings_Tooltip_AdvancedColor = L"16-bit浮動小数点レンダリングパイプライン (scRGB) を有効にする。\n有効にすると、HDR対応ディスプレイでSDRの制限を超え、写真のハイライトを完璧に表現します。\n無効にするとSDR出力に強制的にマッピングされます。\n注意: 有効にするとVRAMの使用量が増加します。";
-  static constexpr const wchar_t *Settings_Tooltip_HdrToneMapping = L"HDR トーンマッピング戦略:\nモニターの限界を超えるHDR画像の表示方法を決定します。\n知覚的：輝度カーブを滑らかに圧縮してハイライトのディテールを保持します（ソフトな見た目）。\n測色：厳密な輝度マッピング。モニターの限界を超えるハイライトはクリップされます。";
+  static constexpr const wchar_t *Settings_Tooltip_HdrToneMapping =
+      L"HDR トーンマッピング戦略:\nモニターの限界を超えるHDR画像の表示方法を決定します。\n"
+      L"スプライン:区分スプライン曲線を使用した高忠実度のハイライトロールオフ（推奨）。\n"
+      L"測色: 厳密な輝度マッピング。モニターの限界を超えるハイライトはクリップされます。\n"
+      L"レガシー Reinhard: 従来の拡張 Reinhard 曲線（より高いコントラスト）。";
   static constexpr const wchar_t *Settings_Tooltip_ZoomAuto = L"自動：画像が画面サイズより小さい場合は100%に拡大縮小し、大きい場合は画面サイズに合わせて拡大縮小します。";
   static constexpr const wchar_t *Settings_Header_VectorAssets = L"エッジ";
   static constexpr const wchar_t *Settings_Label_VectorStrokeWeight = L"線幅";
@@ -3194,8 +3218,9 @@ struct RU {
   static constexpr const wchar_t *Settings_Label_HdrToneMapping = L"Тональная компрессия HDR";
   static constexpr const wchar_t *Settings_Label_HdrPeakNitsOverride = L"Пиковая яркость HDR (ниты)";
   static constexpr const wchar_t *Settings_Tooltip_HdrPeakNitsOverride = L"Установите 0 для системной яркости.";
-  static constexpr const wchar_t *Settings_Option_HdrPerceptual = L"Перцептивная";
   static constexpr const wchar_t *Settings_Option_HdrColorimetric = L"Колориметрическая";
+  static constexpr const wchar_t *Settings_Option_HdrSpline = L"Сплайн (VLC)";
+  static constexpr const wchar_t *Settings_Option_HdrLegacyReinhard = L"Классический Reinhard";
   static constexpr const wchar_t *Settings_Label_CmsFallback = L"Запасной профиль без тегов";
   static constexpr const wchar_t *Settings_Label_CustomProof = L"Профиль цветопробы (.icc)";
   static constexpr const wchar_t *Context_SoftProofing = L"Предпросмотр цветопробы";
@@ -3389,7 +3414,13 @@ struct RU {
   static constexpr const wchar_t *Settings_Tooltip_CMS = L"Использовать систему управления цветом (CMS).\nЕсли включено, применяется высокоточное преобразование цветового пространства через ГП для восстановления истинных цветов.\nЕсли отключено, снижается нагрузка на ГП, но возможно перенасыщение цветов на дисплеях с широким цветовым охватом.";
   static constexpr const wchar_t *Settings_Tooltip_CmsIntent = L"Метод преобразования цветового пространства (Rendering Intent).\nПерцептивная сжимает цвета вне охвата для сохранения деталей и градиентов (идеально для фото).\nОтносительная колориметрическая сохраняет цвета в пределах охвата и обрезает выходящие за его пределы (идеально для интерфейса и значков).\nПримечание: Визуальные различия проявляются только при использовании продвинутых профилей ICC, содержащих LUT (таблицы поиска). Стандартные матричные профили автоматически возвращаются к относительной колориметрии.";
   static constexpr const wchar_t *Settings_Tooltip_AdvancedColor = L"Использовать 16-разрядный конвейер рендеринга с плавающей запятой (scRGB).\nЕсли включено, идеально отображаются яркие участки фотографий на HDR-дисплеях, не ограничиваясь SDR.\nЕсли отключено, изображение принудительно отображается в SDR.\n* При включении увеличивается потребление видеопамяти.";
-  static constexpr const wchar_t *Settings_Tooltip_HdrToneMapping = L"Стратегия тональной компрессии HDR:\nОпределяет, как отображаются HDR-изображения, превышающие возможности монитора.\nПерцептивная сохраняет детали в светах за счёт плавного сжатия кривой яркости (более мягкий вид).\nКолориметрическая строго отображает яркость, светлые участки, превышающие предел монитора, обрезаются.";
+  static constexpr const wchar_t *Settings_Tooltip_HdrToneMapping =
+      L"Стратегия тональной компрессии HDR:\nОпределяет, как отображаются "
+      L"HDR-изображения, превышающие возможности монитора.\nSpline: "
+      L"Высокоточное сжатие светов с использованием сплайнов (Рекомендуется).\n"
+      L"Колориметрическая: Строгое отображение яркости; светлые участки, "
+      L"превышающие предел монитора, обрезаются.\nLegacy Reinhard: Классическая "
+      L"расширенная кривая Рейнхарда (Более контрастная).";
   static constexpr const wchar_t *Settings_Tooltip_ZoomAuto = L"Авто: масштаб 100%, если изображение меньше экрана, и вписывание в экран, если больше.";
   static constexpr const wchar_t *Settings_Header_Professional = L"Профессиональные инструменты";
   static constexpr const wchar_t *Settings_Label_ShowDirtyRect = L"Показывать кнопку отображаемой области в режиме анимации";
@@ -3788,8 +3819,9 @@ struct DE {
   static constexpr const wchar_t *Settings_Label_HdrToneMapping = L"HDR-Tonzuordnung";
   static constexpr const wchar_t *Settings_Label_HdrPeakNitsOverride = L"HDR Spitzenhelligkeit (Nits)";
   static constexpr const wchar_t *Settings_Tooltip_HdrPeakNitsOverride = L"Auf 0 setzen, um erkannte Helligkeit zu verwenden.";
-  static constexpr const wchar_t *Settings_Option_HdrPerceptual = L"Perzeptiv";
   static constexpr const wchar_t *Settings_Option_HdrColorimetric = L"Farbmetrisch";
+  static constexpr const wchar_t *Settings_Option_HdrSpline = L"Spline";
+  static constexpr const wchar_t *Settings_Option_HdrLegacyReinhard = L"Klassischer Reinhard";
   static constexpr const wchar_t *Settings_Label_CmsFallback = L"Fallback für Bilder ohne Tags";
   static constexpr const wchar_t *Settings_Label_CustomProof = L"Softproof-Profil (.icc)";
   static constexpr const wchar_t *Context_SoftProofing = L"Softproof-Vorschau";
@@ -3984,7 +4016,13 @@ struct DE {
   static constexpr const wchar_t *Settings_Tooltip_CMS = L"Farbmanagementsystem (CMS) aktivieren.\nWenn aktiviert, wird eine hochpräzise Farbraumkonvertierung über die GPU angewendet, um echte Farben wiederherzustellen.\nDeaktivieren verringert die GPU-Auslastung, kann aber auf Displays mit großem Farbraum zu übersättigten Farben führen.";
   static constexpr const wchar_t *Settings_Tooltip_CmsIntent = L"Rendering-Intent für die Farbraumkonvertierung.\nPerzeptiv: Komprimiert Farben außerhalb des Farbraums, um Details und Farbverläufe zu erhalten (ideal für Fotos).\nRelativ farbmetrisch: Behält Farben im Farbraum bei und schneidet die anderen ab (ideal für UI und Symbole).\nHinweis: Visuelle Unterschiede treten nur bei Verwendung fortgeschrittener ICC-Profile mit LUTs (Lookup Tables) auf. Standard-Matrix-Profile fallen automatisch auf 'Relativ farbmetrisch' zurück.";
   static constexpr const wchar_t *Settings_Tooltip_AdvancedColor = L"16-Bit-Gleitkomma-Rendering-Pipeline (scRGB) aktivieren.\nWenn aktiviert, werden die Lichter von Fotos auf HDR-fähigen Displays perfekt gerendert, indem das SDR-Limit überschritten wird.\nDeaktivieren erzwingt die Zuordnung zur SDR-Ausgabe.\nHinweis: Aktivieren erhöht die VRAM-Nutzung.";
-  static constexpr const wchar_t *Settings_Tooltip_HdrToneMapping = L"HDR Tonzuordnungsstrategie:\nLegt fest, wie HDR-Bilder angezeigt werden, wenn sie die Fähigkeiten des Monitors überschreiten.\nPerzeptiv: Erhält Highlight-Details durch sanfte Komprimierung der Luminanzkurve (weicherer Look).\nFarbmetrisch: Strikte Luminanzzuordnung; Highlights, die das Monitorlimit überschreiten, werden abgeschnitten.";
+  static constexpr const wchar_t *Settings_Tooltip_HdrToneMapping =
+      L"HDR Tonzuordnungsstrategie:\nLegt fest, wie HDR-Bilder angezeigt werden, "
+      L"wenn sie die Fähigkeiten des Monitors überschreiten.\nSpline: "
+      L"Hochpräzises Highlight-Roll-off mittels stückweiser Splines "
+      L"(Empfohlen).\nFarbmetrisch: Strikte Luminanzzuordnung; Highlights, die "
+      L"das Monitorlimit überschreiten, werden abgeschnitten.\nLegacy "
+      L"Reinhard: Die ursprüngliche erweiterte Reinhard-Kurve (Mehr Kontrast).";
   static constexpr const wchar_t *Settings_Tooltip_ZoomAuto = L"Auto: 100 % Skalierung, wenn das Bild kleiner als der Bildschirm ist, und an den Bildschirm anpassen, wenn es größer ist.";
   static constexpr const wchar_t *Settings_Header_Professional = L"Profi-Werkzeuge";
   static constexpr const wchar_t *Settings_Label_ShowDirtyRect = L"Schaltfläche \"Dirty Rect\" im Animationsmodus anzeigen";
@@ -4395,8 +4433,9 @@ struct ES {
   static constexpr const wchar_t *Settings_Label_HdrToneMapping = L"Mapeo de tonos HDR";
   static constexpr const wchar_t *Settings_Label_HdrPeakNitsOverride = L"Brillo Máximo HDR (Nits)";
   static constexpr const wchar_t *Settings_Tooltip_HdrPeakNitsOverride = L"Ajustar en 0 para usar el brillo detectado por el sistema.";
-  static constexpr const wchar_t *Settings_Option_HdrPerceptual = L"Perceptual";
   static constexpr const wchar_t *Settings_Option_HdrColorimetric = L"Colorimétrico";
+  static constexpr const wchar_t *Settings_Option_HdrSpline = L"Spline";
+  static constexpr const wchar_t *Settings_Option_HdrLegacyReinhard = L"Reinhard clásico";
   static constexpr const wchar_t *Settings_Label_CmsFallback = L"Perfil alternativo sin etiquetas";
   static constexpr const wchar_t *Settings_Label_CustomProof = L"Perfil de prueba en pantalla (.icc)";
   static constexpr const wchar_t *Context_SoftProofing = L"Vista previa de prueba en pantalla";
@@ -4595,7 +4634,13 @@ struct ES {
   static constexpr const wchar_t *Settings_Tooltip_CMS = L"Habilitar el Sistema de Gestión de Color (CMS).\nCuando se habilita, aplica una conversión de espacio de color de alta precisión a través de la GPU para restaurar los colores reales.\nDeshabilitarlo reduce la carga de la GPU, pero puede provocar colores sobresaturados en pantallas de amplia gama.";
   static constexpr const wchar_t *Settings_Tooltip_CmsIntent = L"Propósito de representación (Rendering Intent) para la conversión del espacio de color.\nPerceptual: Comprime los colores fuera de gama para preservar los detalles y degradados (ideal para fotos).\nColorimétrico relativo: Preserva los colores dentro de la gama y recorta los que quedan fuera (ideal para UI e íconos).\nNota: Las diferencias visuales solo ocurren cuando se usan perfiles ICC avanzados que contienen LUT (tablas de búsqueda). Los perfiles de matriz estándar volverán automáticamente a Colorimétrico relativo.";
   static constexpr const wchar_t *Settings_Tooltip_AdvancedColor = L"Habilitar el pipeline de renderizado de punto flotante de 16 bits (scRGB).\nCuando se habilita, renderiza perfectamente las luces de las fotos en pantallas compatibles con HDR rompiendo el límite SDR.\nDeshabilitarlo fuerza el mapeo a salida SDR.\nNota: Habilitarlo aumenta el uso de VRAM.";
-  static constexpr const wchar_t *Settings_Tooltip_HdrToneMapping = L"Estrategia de mapeo de tonos (Tone Mapping) de HDR:\nDetermina cómo se muestran las imágenes HDR cuando exceden las capacidades del monitor.\nPerceptual: Preserva los detalles de las luces comprimiendo suavemente la curva de luminancia (aspecto más suave).\nColorimétrico: Mapeo de luminancia estricto; las luces que exceden el límite del monitor se recortan.";
+  static constexpr const wchar_t *Settings_Tooltip_HdrToneMapping =
+      L"Estrategia de mapeo de tonos (Tone Mapping) de HDR:\nDetermina cómo se "
+      L"muestran las imágenes HDR cuando exceden las capacidades del monitor.\n"
+      L"Spline: Roll-off de luces de alta fidelidad mediante splines por tramos "
+      L"(Recomendado).\nColorimétrico: Mapeo de luminancia estricto; las luces "
+      L"que exceden el límite del monitor se recortan.\nLegacy Reinhard: La "
+      L"curva Reinhard extendida original (Más contraste).";
   static constexpr const wchar_t *Settings_Tooltip_ZoomAuto = L"Automático: Escala al 100% cuando la imagen es más pequeña que la pantalla, se ajusta a la pantalla cuando es más grande.";
   static constexpr const wchar_t *Settings_Header_Professional = L"Herramientas profesionales";
   static constexpr const wchar_t *Settings_Label_ShowDirtyRect = L"Mostrar el botón de rectángulo sucio en el modo de animación";
@@ -4923,8 +4968,9 @@ template <typename T> void ApplyT() {
   Settings_Tooltip_HdrToneMapping = T::Settings_Tooltip_HdrToneMapping;
   Settings_Label_HdrPeakNitsOverride = T::Settings_Label_HdrPeakNitsOverride;
   Settings_Tooltip_HdrPeakNitsOverride = T::Settings_Tooltip_HdrPeakNitsOverride;
-  Settings_Option_HdrPerceptual = T::Settings_Option_HdrPerceptual;
   Settings_Option_HdrColorimetric = T::Settings_Option_HdrColorimetric;
+  Settings_Option_HdrSpline = T::Settings_Option_HdrSpline;
+  Settings_Option_HdrLegacyReinhard = T::Settings_Option_HdrLegacyReinhard;
   Settings_Label_CmsFallback = T::Settings_Label_CmsFallback;
   Settings_Label_CustomProof = T::Settings_Label_CustomProof;
   Context_SoftProofing = T::Context_SoftProofing;
@@ -5486,8 +5532,9 @@ struct FR {
   static constexpr const wchar_t *Settings_Label_HdrToneMapping = L"HDR Tone Mapping";
   static constexpr const wchar_t *Settings_Label_HdrPeakNitsOverride = L"HDR Peak Brightness (Nits)";
   static constexpr const wchar_t *Settings_Tooltip_HdrPeakNitsOverride = L"Set to 0 to use system detected brightness.";
-  static constexpr const wchar_t *Settings_Option_HdrPerceptual = L"Perceptual";
-  static constexpr const wchar_t *Settings_Option_HdrColorimetric = L"Colorimetric";
+  static constexpr const wchar_t *Settings_Option_HdrColorimetric = L"Colorimétrique";
+  static constexpr const wchar_t *Settings_Option_HdrSpline = L"Spline";
+  static constexpr const wchar_t *Settings_Option_HdrLegacyReinhard = L"Reinhard classique";
   static constexpr const wchar_t *Settings_Label_CmsFallback = L"Untagged Image Fallback";
   static constexpr const wchar_t *Settings_Label_CustomProof = L"Soft Proof Profile (.icc)";
   static constexpr const wchar_t *Context_SoftProofing = L"Soft Proofing Preview";
@@ -5680,7 +5727,14 @@ struct FR {
   static constexpr const wchar_t *Settings_Tooltip_CMS = L"Enable Color Management System.\nWhen enabled, applies high-precision color space conversion via GPU to restore true colors.\nDisabling it reduces GPU load, but may result in oversaturated colors on wide-gamut displays.";
   static constexpr const wchar_t *Settings_Tooltip_CmsIntent = L"Mode de rendu pour la conversion de l'espace colorimétrique (Rendering Intent).\nPerceptuel : Compresse les couleurs hors gamme pour préserver les détails et les dégradés (idéal pour les photos).\nColorimétrique relatif : Préserve les couleurs dans la gamme et coupe celles qui sont en dehors (idéal pour l'interface et les icônes).\nNote : Des différences visuelles n'apparaissent que lors de l'utilisation de profils ICC avancés contenant des LUT (tables de correspondance). Les profils matriciels standard reviendront automatiquement au colorimétrique relatif.";
   static constexpr const wchar_t *Settings_Tooltip_AdvancedColor = L"Enable 16-bit floating-point rendering pipeline (scRGB).\nWhen enabled, perfectly renders photo highlights on HDR-capable displays by breaking the SDR limit.\nDisabling it forces mapping to SDR output.\nNote: Enabling increases VRAM usage.";
-  static constexpr const wchar_t *Settings_Tooltip_HdrToneMapping = L"HDR Tone Mapping strategy:\nDetermines how HDR images are displayed when exceeding monitor capabilities.\nPerceptual: Preserves highlight details by smoothly compressing the luminance curve (softer look).\nColorimetric: Strict luminance mapping; highlights exceeding the monitor limit are clipped.";
+  static constexpr const wchar_t *Settings_Tooltip_HdrToneMapping =
+      L"Stratégie de mappage de tons HDR (Tone Mapping) :\nDétermine comment les "
+      L"images HDR sont affichées lorsqu'elles dépassent les capacités du "
+      L"moniteur.\nSpline : Atténuation des hautes lumières haute fidélité "
+      L"utilisant une spline par morceaux (Recommandé).\nColorimétrique : "
+      L"Mappage de luminance strict ; les hautes lumières dépassant la limite "
+      L"du moniteur sont tronquées.\nLegacy Reinhard : La courbe Reinhard "
+      L"étendue originale (Plus de contraste).";
   static constexpr const wchar_t *Settings_Tooltip_ZoomAuto = L"Auto: 100% scale when image is smaller than screen, fit to screen when larger.";
   static constexpr const wchar_t *Settings_Header_Professional = L"Professional Tools";
   static constexpr const wchar_t *Settings_Label_ShowDirtyRect = L"Show update regions button in animation mode";

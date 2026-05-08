@@ -221,7 +221,7 @@ struct AppConfig {
     bool EnableSmoothScaling = false;    // New: Smooth Zoom toggle
     bool ColorManagement = true;         // Master toggle for Color Management System
     int CmsRenderingIntent = 1;          // 0=Perceptual, 1=Relative Colorimetric
-    int HdrToneMappingMode = 0;          // 0=Perceptual, 1=Colorimetric
+    int HdrToneMappingMode = 0;          // 0=Spline, 1=Colorimetric, 2=Legacy Reinhard
     float HdrPeakNitsOverride = 0.0f;    // 0 = Auto. >0 overrides display peak luminance.
     int AdvancedColorMode = 2;           // 0=Off, 1=On, 2=Auto (HDR / FP16 scRGB pipeline)
     int CmsDefaultFallback = 0;          // Fallback for untagged images: 0=sRGB, 1=P3, 2=AdobeRGB, 3=ProPhoto

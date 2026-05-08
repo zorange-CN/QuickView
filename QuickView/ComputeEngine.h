@@ -15,10 +15,21 @@ struct alignas(16) ToneMapSettings {
     float displayPeakScRgb = 1.0f;
     float paperWhiteScRgb = 1.0f;
     float exposure = 1.0f;
-    int toneMappingMode = 0;
-    float _pad0[3] = {};
+
+    uint32_t mode = 0; // 0=Spline, 1=Colorimetric, 2=Reinhard
+    float splineSrcPivot = 0.0f;
+    float splineDstPivot = 0.0f;
+    float splinePa = 0.0f;
+
+    float splinePb = 0.0f;
+    float splineQa = 0.0f;
+    float splineQb = 0.0f;
+    float splineQc = 0.0f;
+
+    float _pad0[4] = { 0 }; 
 };
 static_assert(sizeof(ToneMapSettings) % 16 == 0, "CB size must be multiple of 16 bytes");
+
 
 struct GamutMaskReadback {
     int width = 0;
