@@ -880,14 +880,27 @@ BuildToneMapSettings(const QuickView::RawImageFrame &frame,
   settings.paperWhiteScRgb = paperWhiteScRgb;
   settings.mode = g_config.HdrToneMappingMode;
 
+  // Phase 2: Dual Track Physics Reference (HDR-to-SDR vs HDR-to-HDR)
+  float exposureGain = 1.0f;
+  if (!displayState.advancedColorActive || peakNits < 750.0f) {
+      // HDR -> SDR Path: Map 203 nits (BT.2408 SDR reference white) to 80 nits
+      // This aligns the midtone brightness with standard BT.2408 viewing conditions.
+      exposureGain = 203.0f / 80.0f;
+  } else {
+      // HDR -> HDR Path: Strict physical light transmission
+      exposureGain = 1.0f;
+  }
+  settings.exposureGain = exposureGain;
+
   if (settings.mode == 0) { // Spline
     const float spline_contrast = 0.5f;
     const float slope_tuning = 1.5f;
     const float slope_offset = 0.2f;
 
     const float pq_black = LinearToPQ(0.0f);
-    float src_max = LinearToPQ(settings.contentPeakScRgb);
-    float src_avg = (contentAverageScRgb > 0.0f) ? LinearToPQ(contentAverageScRgb) : 0.0f;
+    // Apply exposureGain to content peaks for PQ space mapping
+    float src_max = LinearToPQ(settings.contentPeakScRgb * exposureGain);
+    float src_avg = (contentAverageScRgb > 0.0f) ? LinearToPQ(contentAverageScRgb * exposureGain) : 0.0f;
     float dst_max = LinearToPQ(settings.displayPeakScRgb);
 
     float src_pivot, dst_pivot;
@@ -2094,9 +2107,9 @@ CRenderEngine::UploadRawFrameToGPU(const QuickView::RawImageFrame &frame,
                   const float *srcRow = reinterpret_cast<const float *>(uploadPixels + static_cast<size_t>(y) * uploadStride);
                   uint8_t *dstRow = sdrPixels.data() + static_cast<size_t>(y) * frame.width * 4;
                   for (int x = 0; x < frame.width; ++x) {
-                      const float r = std::max(0.0f, srcRow[x * 4 + 0] * exposure);
-                      const float g = std::max(0.0f, srcRow[x * 4 + 1] * exposure);
-                      const float b = std::max(0.0f, srcRow[x * 4 + 2] * exposure);
+                      const float r = std::max(0.0f, srcRow[x * 4 + 0] * exposure * toneMapSettings.exposureGain);
+                      const float g = std::max(0.0f, srcRow[x * 4 + 1] * exposure * toneMapSettings.exposureGain);
+                      const float b = std::max(0.0f, srcRow[x * 4 + 2] * exposure * toneMapSettings.exposureGain);
                       const float a = std::clamp(srcRow[x * 4 + 3], 0.0f, 1.0f);
                       float premulR, premulG, premulB;
                       if (toneMapSettings.mode == 1) { // Colorimetric
@@ -2114,16 +2127,32 @@ CRenderEngine::UploadRawFrameToGPU(const QuickView::RawImageFrame &frame,
                               mappedPqL = (toneMapSettings.splinePa * x + toneMapSettings.splinePb) * x + toneMapSettings.splineDstPivot;
                           }
                           float targetL = PQToLinear(mappedPqL);
-                          float ratio = (targetL / std::max(1e-6f, L)) / toneMapSettings.displayPeakScRgb;
-                          premulR = r * ratio * a; premulG = g * ratio * a; premulB = b * ratio * a;
+
+                          // Highlight Desaturation (CPU)
+                          float desat = std::clamp((targetL - toneMapSettings.displayPeakScRgb * 0.7f) / (std::max(1e-6f, toneMapSettings.displayPeakScRgb * 0.3f)), 0.0f, 1.0f);
+                          float ratio = (targetL / std::max(1e-6f, L));
+                          
+                          float outR = r * ratio;
+                          float outG = g * ratio;
+                          float outB = b * ratio;
+
+                          if (desat > 0.0f) {
+                              outR = outR * (1.0f - desat) + targetL * desat;
+                              outG = outG * (1.0f - desat) + targetL * desat;
+                              outB = outB * (1.0f - desat) + targetL * desat;
+                          }
+                          
+                          premulR = (outR / toneMapSettings.displayPeakScRgb) * a;
+                          premulG = (outG / toneMapSettings.displayPeakScRgb) * a;
+                          premulB = (outB / toneMapSettings.displayPeakScRgb) * a;
                       } else { // Reinhard Extended (index 2)
                           float mapR, mapG, mapB;
+                          float Lwhite = toneMapSettings.displayPeakScRgb * exposure * toneMapSettings.exposureGain;
                           ReinhardExtendedRGB(r, g, b, Lwhite, mapR, mapG, mapB);
                           premulR = (mapR / toneMapSettings.displayPeakScRgb) * a;
                           premulG = (mapG / toneMapSettings.displayPeakScRgb) * a;
                           premulB = (mapB / toneMapSettings.displayPeakScRgb) * a;
                       }
-
 
                       dstRow[x * 4 + 0] = EncodeLinearToSdr8(premulB);
                       dstRow[x * 4 + 1] = EncodeLinearToSdr8(premulG);

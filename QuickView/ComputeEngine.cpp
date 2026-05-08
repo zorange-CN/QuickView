@@ -53,6 +53,7 @@ cbuffer ToneMapParams : register(b0)
     float DisplayPeakScRgb;
     float PaperWhiteScRgb;
     float Exposure;
+    float ExposureGain;
 
     uint Mode;
     float SplineSrcPivot;
@@ -132,7 +133,7 @@ void CSToneMap(uint3 id : SV_DispatchThreadID)
 
     if (Mode == 0) {
         // Spline Mode
-        float3 exposed = color.rgb * Exposure;
+        float3 exposed = color.rgb * Exposure * ExposureGain;
         float L = max(exposed.r, max(exposed.g, exposed.b));
         float pqL = LinearToPQ(L);
         float x = pqL - SplineSrcPivot;
@@ -146,6 +147,14 @@ void CSToneMap(uint3 id : SV_DispatchThreadID)
         }
         float targetL = PQToLinear(mappedPqL);
         float3 mapped = exposed * (targetL / max(1e-6, L));
+
+        // Highlight Desaturation: smoothly lerp to grayscale near display peak
+        float desat = saturate((targetL - displayPeak * 0.7) / (max(1e-6, displayPeak * 0.3)));
+        if (desat > 0.0) {
+            float3 grayscale = targetL.xxx;
+            mapped = lerp(mapped, grayscale, desat);
+        }
+
         float3 normalized = mapped / DisplayPeakScRgb;
         float3 encoded = LinearToSrgb(normalized) * color.a;
         DstTex[id.xy] = float4(encoded.r, encoded.g, encoded.b, color.a);
@@ -156,8 +165,8 @@ void CSToneMap(uint3 id : SV_DispatchThreadID)
         DstTex[id.xy] = float4(encoded.r, encoded.g, encoded.b, color.a);
     } else {
         // Reinhard Mode (index 2)
-        float3 exposed = color.rgb * Exposure;
-        float Lwhite = DisplayPeakScRgb * Exposure;
+        float3 exposed = color.rgb * Exposure * ExposureGain;
+        float Lwhite = DisplayPeakScRgb * Exposure * ExposureGain;
         float3 mapped = ReinhardExtended(exposed, Lwhite);
         float3 normalized = mapped / DisplayPeakScRgb;
         float3 encoded = LinearToSrgb(normalized) * color.a;
@@ -178,6 +187,7 @@ cbuffer ToneMapParams : register(b0)
     float DisplayPeakScRgb;
     float PaperWhiteScRgb;
     float Exposure;
+    float ExposureGain;
 
     uint Mode;
     float SplineSrcPivot;
@@ -223,7 +233,15 @@ float3 ToneMapHDR(float3 color, float displayPeak, float paperWhite, uint mode)
             mappedPqL = (SplinePa * x + SplinePb) * x + SplineDstPivot;
         }
         float targetL = PQToLinear(mappedPqL);
-        return color * (targetL / L);
+        
+        // Highlight Desaturation: smoothly lerp to grayscale near display peak
+        float3 mapped = color.rgb * (targetL / L);
+        float desat = saturate((targetL - displayPeak * 0.7) / (max(1e-6, displayPeak * 0.3)));
+        if (desat > 0.0) {
+            float3 grayscale = targetL.xxx;
+            mapped = lerp(mapped, grayscale, desat);
+        }
+        return mapped;
     }
 
     // Colorimetric Mode (1): Strict clipping
@@ -270,14 +288,13 @@ void CSToneMapHDR(uint3 id : SV_DispatchThreadID)
     float displayPeak = max(DisplayPeakScRgb, 1.0);
 
     // Fast Path: content fits within display range, no user exposure override
-    // Just pass through the linear ScRGB values directly (zero-cost on GPU)
-    if (contentPeak <= displayPeak && Exposure >= 0.999 && Exposure <= 1.001) {
+    if (contentPeak <= displayPeak && Exposure >= 0.999 && Exposure <= 1.001 && ExposureGain >= 0.999 && ExposureGain <= 1.001) {
         DstTex[id.xy] = color;
         return;
     }
 
     // Apply exposure
-    color.rgb *= Exposure;
+    color.rgb *= Exposure * ExposureGain;
 
     // Tone Map high dynamic range into display's actual peak
     color.rgb = ToneMapHDR(color.rgb, displayPeak, PaperWhiteScRgb, Mode);
