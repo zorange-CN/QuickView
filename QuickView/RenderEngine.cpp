@@ -2100,7 +2100,7 @@ CRenderEngine::UploadRawFrameToGPU(const QuickView::RawImageFrame &frame,
                   ComPtr<IDXGISurface> dxgiSurface;
                   if (SUCCEEDED(pTex.As(&dxgiSurface))) {
                       D2D1_BITMAP_PROPERTIES1 sdrProps = GetDefaultBitmapProps(
-                          DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED);
+                          DXGI_FORMAT_R8G8B8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED);
                       m_d2dContext->CreateBitmapFromDxgiSurface(
                           dxgiSurface.Get(), &sdrProps, &rawBitmap);
                   }
