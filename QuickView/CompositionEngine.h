@@ -212,6 +212,9 @@ private:
     // Shared D2D context for image rendering
     ComPtr<ID2D1DeviceContext> m_pendingContext;
 
+    // Cached scRGB color context for HDR surfaces
+    ComPtr<ID2D1ColorContext> m_scRgbContext;
+
     // Gamut warning image-space overlay
     ComPtr<IDCompositionSurface> m_imageOverlaySurface;
     ComPtr<ID2D1DeviceContext> m_imageOverlayContext;

@@ -295,6 +295,9 @@ HRESULT CompositionEngine::UpdateVirtualTiles(QuickView::TileManager* tileManage
             D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
             D2D1::PixelFormat(pLayer->surfaceFormat, D2D1_ALPHA_MODE_PREMULTIPLIED)
         );
+        if (pLayer->surfaceFormat == DXGI_FORMAT_R16G16B16A16_FLOAT && m_scRgbContext) {
+            props.colorContext = m_scRgbContext.Get();
+        }
         
         ComPtr<ID2D1Bitmap1> target;
         HRESULT hrTarget = m_pendingContext->CreateBitmapFromDxgiSurface(dxgiSurf.Get(), &props, &target);
@@ -514,6 +517,12 @@ HRESULT CompositionEngine::Initialize(HWND hwnd, ID3D11Device* d3dDevice, ID2D1D
     hr = m_d2dDevice->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &m_pendingContext);
     if (FAILED(hr)) return hr;
 
+    // Cache scRGB color context
+    hr = m_pendingContext->CreateColorContext(D2D1_COLOR_SPACE_SCRGB, nullptr, 0, &m_scRgbContext);
+    if (FAILED(hr)) {
+        QV_LOG("CompositionEngine_Error", TraceLoggingString("Failed to create scRGB color context", "Message"));
+    }
+
     hr = m_d2dDevice->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &m_imageOverlayContext);
     if (FAILED(hr)) return hr;
     m_imageOverlayContext->SetDpi(96.0f, 96.0f);
@@ -715,6 +724,9 @@ ID2D1DeviceContext* CompositionEngine::BeginDrawHelper(IDCompositionSurface* sur
         D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
         D2D1::PixelFormat(surfaceFormat, D2D1_ALPHA_MODE_PREMULTIPLIED)
     );
+    if (surfaceFormat == DXGI_FORMAT_R16G16B16A16_FLOAT && m_scRgbContext) {
+        props.colorContext = m_scRgbContext.Get();
+    }
     
     if (!m_pendingContext) {
          m_d2dDevice->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &m_pendingContext);
