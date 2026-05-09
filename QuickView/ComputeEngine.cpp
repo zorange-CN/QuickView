@@ -279,24 +279,19 @@ void CSToneMapHDR(uint3 id : SV_DispatchThreadID)
     }
 
     float4 color = SrcTex[id.xy];
-    color.rgb = max(color.rgb, 0.0.xxx);
+    color.rgb = max(color.rgb, float3(0.0f, 0.0f, 0.0f));
     color.a = saturate(color.a);
 
-    float contentPeak = max(ContentPeakScRgb, 1.0);
-    float displayPeak = max(DisplayPeakScRgb, 1.0);
+    float contentPeak = max(ContentPeakScRgb, 1.0f);
+    float displayPeak = max(DisplayPeakScRgb, 1.0f);
 
-    // Fast Path: content fits within display range, no user exposure override
-    if (contentPeak <= displayPeak && Exposure >= 0.999 && Exposure <= 1.001 && ExposureGain >= 0.999 && ExposureGain <= 1.001) {
+    if (contentPeak <= displayPeak && Exposure >= 0.999f && Exposure <= 1.001f && ExposureGain >= 0.999f && ExposureGain <= 1.001f) {
         DstTex[id.xy] = color;
         return;
     }
 
-    // Apply exposure
     color.rgb *= Exposure * ExposureGain;
-
-    // Tone Map high dynamic range into display's actual peak
     color.rgb = ToneMapHDR(color.rgb, displayPeak, PaperWhiteScRgb, Mode);
-
 
     DstTex[id.xy] = color;
 }
