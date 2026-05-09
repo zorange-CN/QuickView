@@ -982,6 +982,11 @@ BuildToneMapSettings(const QuickView::RawImageFrame &frame,
 
   settings.exposure = (settings.exposure < 0.18f) ? 0.18f : ((settings.exposure > 1.0f) ? 1.0f : settings.exposure);
 
+  // Knife 1: Populate aligned fields
+  settings.isHdrOutput = g_runtime.ForceHdrSimulation ? 1 : (displayState.advancedColorActive ? 1 : 0);
+  settings.realHardwarePeakScRgb = displayState.maxLuminanceNits / 80.0f;
+  settings.padding1 = 0.0f;
+
   return settings;
 }
 
@@ -1709,8 +1714,11 @@ HRESULT CRenderEngine::ResolveDestinationColorContext(
 
 bool CRenderEngine::ShouldUseHdrOutputForFrame(
     const QuickView::RawImageFrame &frame) const {
-  if (!IsHdrLikeFrame(frame)) return false;
-  if (!m_isAdvancedColor) return false;
+    // Knife 3: VIP Simulation Path Priority
+    if (g_runtime.ForceHdrSimulation) return true;
+
+    if (!IsHdrLikeFrame(frame)) return false;
+    if (!m_isAdvancedColor) return false;
 
   // [Fix] When HDR simulation is active on a physically-SDR display,
   // route through HdrToSdr so the output (BGRA8) is actually visible.
@@ -1970,7 +1978,7 @@ CRenderEngine::UploadRawFrameToGPU(const QuickView::RawImageFrame &frame,
 
   case QuickView::PixelFormat::R32G32B32A32_FLOAT:
     dxgiFormat = DXGI_FORMAT_R32G32B32A32_FLOAT;
-    alphaMode = D2D1_ALPHA_MODE_STRAIGHT;
+    alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
     break;
 
   default:
@@ -2041,7 +2049,7 @@ CRenderEngine::UploadRawFrameToGPU(const QuickView::RawImageFrame &frame,
                   ComPtr<IDXGISurface> dxgiSurface;
                   if (SUCCEEDED(pTex.As(&dxgiSurface))) {
                       D2D1_BITMAP_PROPERTIES1 hdrProps = GetDefaultBitmapProps(
-                          DXGI_FORMAT_R16G16B16A16_FLOAT, D2D1_ALPHA_MODE_STRAIGHT);
+                          DXGI_FORMAT_R16G16B16A16_FLOAT, D2D1_ALPHA_MODE_PREMULTIPLIED);
                       hdrProps.colorContext = scRgbContext.Get();
                       HRESULT hrBitmap = m_d2dContext->CreateBitmapFromDxgiSurface(
                           dxgiSurface.Get(), &hdrProps, &rawBitmap);
@@ -2065,7 +2073,7 @@ CRenderEngine::UploadRawFrameToGPU(const QuickView::RawImageFrame &frame,
                   TraceLoggingFloat32(toneMapSettings.contentPeakScRgb, "ContentPeak"),
                   TraceLoggingBool(m_computeEngine && m_computeEngine->IsAvailable(), "ComputeAvailable"));
               D2D1_BITMAP_PROPERTIES1 hdrProps = GetDefaultBitmapProps(
-                  DXGI_FORMAT_R32G32B32A32_FLOAT, D2D1_ALPHA_MODE_STRAIGHT);
+                  DXGI_FORMAT_R32G32B32A32_FLOAT, D2D1_ALPHA_MODE_PREMULTIPLIED);
               hdrProps.colorContext = scRgbContext.Get();
               m_d2dContext->CreateBitmap(
                   D2D1::SizeU(static_cast<UINT32>(frame.width),

@@ -11,23 +11,25 @@ using Microsoft::WRL::ComPtr;
 namespace QuickView {
 
 struct alignas(16) ToneMapSettings {
-    float contentPeakScRgb = 1.0f;
-    float displayPeakScRgb = 1.0f;
-    float paperWhiteScRgb = 1.0f;
-    float exposure = 1.0f;
-    float exposureGain = 1.0f;
+    float contentPeakScRgb;
+    float displayPeakScRgb;
+    float paperWhiteScRgb;
+    float exposure;
 
-    uint32_t mode = 0; // 0=Spline, 1=Colorimetric, 2=Reinhard
-    float splineSrcPivot = 0.0f;
-    float splineDstPivot = 0.0f;
-    float splinePa = 0.0f;
+    float exposureGain;
+    uint32_t mode;
+    float splineSrcPivot;
+    float splineDstPivot;
 
-    float splinePb = 0.0f;
-    float splineQa = 0.0f;
-    float splineQb = 0.0f;
-    float splineQc = 0.0f;
+    float splinePa;
+    float splinePb;
+    float splineQa;
+    float splineQb;
 
-    float _pad0[3] = { 0 }; 
+    float splineQc;
+    uint32_t isHdrOutput;           // 1: HDR/Sim, 0: SDR
+    float realHardwarePeakScRgb;    // Actual display peak in ScRGB
+    float padding1;                 // 16-byte alignment
 };
 static_assert(sizeof(ToneMapSettings) % 16 == 0, "CB size must be multiple of 16 bytes");
 

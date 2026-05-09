@@ -53,17 +53,21 @@ cbuffer ToneMapParams : register(b0)
     float DisplayPeakScRgb;
     float PaperWhiteScRgb;
     float Exposure;
-    float ExposureGain;
 
-    uint Mode;
+    float ExposureGain;
+    uint  Mode;
     float SplineSrcPivot;
     float SplineDstPivot;
-    float SplinePa;
 
+    float SplinePa;
     float SplinePb;
     float SplineQa;
     float SplineQb;
+
     float SplineQc;
+    uint  IsHdrOutput;
+    float RealHardwarePeakScRgb;
+    float Padding1;
 };
 
 float LinearToPQ(float L)
@@ -125,33 +129,29 @@ void CSToneMap(uint3 id : SV_DispatchThreadID)
     }
 
     float4 color = SrcTex[id.xy];
-    color.rgb = max(color.rgb, 0.0.xxx);
+    color.rgb = max(color.rgb, float3(0.0f, 0.0f, 0.0f));
     color.a = saturate(color.a);
 
     float paperWhite = max(PaperWhiteScRgb, 1.0);
     float displayPeak = max(DisplayPeakScRgb, paperWhite);
 
     if (Mode == 0) {
-        // Spline Mode
         float3 exposed = color.rgb * Exposure * ExposureGain;
         float L = max(exposed.r, max(exposed.g, exposed.b));
         float pqL = LinearToPQ(L);
         float x = pqL - SplineSrcPivot;
         float mappedPqL;
-        if (x > 0) {
-            // Cubic Q: FMA structure (Horner's method)
+        if (x > 0.0f) {
             mappedPqL = ((SplineQa * x + SplineQb) * x + SplineQc) * x + SplineDstPivot;
         } else {
-            // Quadratic P: FMA structure
             mappedPqL = (SplinePa * x + SplinePb) * x + SplineDstPivot;
         }
         float targetL = PQToLinear(mappedPqL);
-        float3 mapped = exposed * (targetL / max(1e-6, L));
+        float3 mapped = exposed * (targetL / max(1e-6f, L));
 
-        // Highlight Desaturation: smoothly lerp to grayscale near display peak
-        float desat = saturate((targetL - displayPeak * 0.7) / (max(1e-6, displayPeak * 0.3)));
-        if (desat > 0.0) {
-            float3 grayscale = targetL.xxx;
+        float desat = saturate((targetL - displayPeak * 0.7f) / (max(1e-6f, displayPeak * 0.3f)));
+        if (desat > 0.0f) {
+            float3 grayscale = float3(targetL, targetL, targetL);
             mapped = lerp(mapped, grayscale, desat);
         }
 
@@ -159,12 +159,10 @@ void CSToneMap(uint3 id : SV_DispatchThreadID)
         float3 encoded = LinearToSrgb(normalized) * color.a;
         DstTex[id.xy] = float4(encoded.r, encoded.g, encoded.b, color.a);
     } else if (Mode == 1) {
-        // Colorimetric Mode
-        float3 mapped = clamp(color.rgb / DisplayPeakScRgb, 0.0, 1.0);
+        float3 mapped = clamp(color.rgb / DisplayPeakScRgb, 0.0f, 1.0f);
         float3 encoded = LinearToSrgb(mapped) * color.a;
         DstTex[id.xy] = float4(encoded.r, encoded.g, encoded.b, color.a);
     } else {
-        // Reinhard Mode (index 2)
         float3 exposed = color.rgb * Exposure * ExposureGain;
         float Lwhite = DisplayPeakScRgb * Exposure * ExposureGain;
         float3 mapped = ReinhardExtended(exposed, Lwhite);
@@ -187,17 +185,21 @@ cbuffer ToneMapParams : register(b0)
     float DisplayPeakScRgb;
     float PaperWhiteScRgb;
     float Exposure;
-    float ExposureGain;
 
-    uint Mode;
+    float ExposureGain;
+    uint  Mode;
     float SplineSrcPivot;
     float SplineDstPivot;
-    float SplinePa;
 
+    float SplinePa;
     float SplinePb;
     float SplineQa;
     float SplineQb;
+
     float SplineQc;
+    uint  IsHdrOutput;
+    float RealHardwarePeakScRgb;
+    float Padding1;
 };
 
 float LinearToPQ(float L)
@@ -223,46 +225,42 @@ float3 ToneMapHDR(float3 color, float displayPeak, float paperWhite, uint mode)
     if (L <= 0.0) return color;
 
     if (mode == 0) {
-        // Spline Mode
         float pqL = LinearToPQ(L);
         float x = pqL - SplineSrcPivot;
         float mappedPqL;
-        if (x > 0) {
+        if (x > 0.0f) {
             mappedPqL = ((SplineQa * x + SplineQb) * x + SplineQc) * x + SplineDstPivot;
         } else {
             mappedPqL = (SplinePa * x + SplinePb) * x + SplineDstPivot;
         }
         float targetL = PQToLinear(mappedPqL);
         
-        // Highlight Desaturation: smoothly lerp to grayscale near display peak
         float3 mapped = color.rgb * (targetL / L);
-        float desat = saturate((targetL - displayPeak * 0.7) / (max(1e-6, displayPeak * 0.3)));
-        if (desat > 0.0) {
-            float3 grayscale = targetL.xxx;
+        float desat = saturate((targetL - displayPeak * 0.7f) / (max(1e-6f, displayPeak * 0.3f)));
+        if (desat > 0.0f) {
+            float3 grayscale = float3(targetL, targetL, targetL);
             mapped = lerp(mapped, grayscale, desat);
         }
         return mapped;
     }
 
-    // Colorimetric Mode (1): Strict clipping
     if (mode == 1) {
         if (L <= displayPeak) return color;
         return color * (displayPeak / L);
     }
 
-    // Legacy Reinhard-like Perceptual Mode (2)
     float normL = L / paperWhite;
     float normDisplayPeak = displayPeak / paperWhite;
-    float toe = pow(min(normL, 1.0), 0.85);
+    float toe = pow(min(normL, 1.0f), 0.85f);
     float compressedL = toe;
-    if (normL > 1.0) {
-        float overbright = normL - 1.0;
-        float headroom = normDisplayPeak - 1.0;
-        if (headroom > 0.0) {
+    if (normL > 1.0f) {
+        float overbright = normL - 1.0f;
+        float headroom = normDisplayPeak - 1.0f;
+        if (headroom > 0.0f) {
             float t = overbright / headroom;
-            compressedL = 1.0 + headroom * t / (1.0 + t);
+            compressedL = 1.0f + headroom * t / (1.0f + t);
         } else {
-            compressedL = 1.0;
+            compressedL = 1.0f;
         }
     }
     float targetL = compressedL * paperWhite;
@@ -552,7 +550,7 @@ HRESULT ComputeEngine::UploadAndConvert(const uint8_t* srcPixels, int width, int
     D3D11_TEXTURE2D_DESC dstDesc = srcDesc;
     dstDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
     dstDesc.Usage = D3D11_USAGE_DEFAULT;
-    dstDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
+    dstDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
     
     ComPtr<ID3D11Texture2D> pDst;
     hr = m_d3dDevice->CreateTexture2D(&dstDesc, nullptr, &pDst);
