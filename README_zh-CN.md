@@ -219,6 +219,31 @@ QuickView 的核心设计理念是 **绿色与便携**。
 
 ---
 
+## 🛠️ 从源码编译
+
+> ⚠️ **架构说明**：本项目已全面迁移至 `CMake + Ninja + vcpkg` 构建系统，采用 **Clang-cl** 编译器和 **Full LTO** 链接时优化以实现极限体积压缩。旧版的 `.sln` 和 `.vcxproj` 已被弃用。
+
+### 前置要求
+1. **Visual Studio 2022** (安装 "使用 C++ 的桌面开发" 工作负载)。
+2. **LLVM / Clang 工具链** (确保 `clang-cl.exe` 和 `lld-link.exe` 已添加至系统环境变量 `PATH` 中)。
+3. **CMake** 和 **Ninja** (可由 VS 自带或单独安装)。
+4. **Git**。
+
+### 一键编译指令
+克隆项目后，在根目录下依次执行以下两条咒语：
+
+```powershell
+# 1. 自动调用 vcpkg 拉取依赖并配置 Release-LTO 构建矩阵
+cmake --preset Release-LTO
+
+# 2. 启动 Ninja 后端进行多核极限编译与 LTO 链接
+cmake --build out/build/Release-LTO
+```
+
+编译产物将位于 `out/build/Release-LTO/` 目录下。
+
+---
+
 ## ⚖️ 致谢鸣谢
 
 > [!NOTE]

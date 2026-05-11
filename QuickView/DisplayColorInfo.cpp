@@ -1,6 +1,11 @@
 #include "pch.h"
 #include "DisplayColorInfo.h"
+#include <dxgi1_6.h>
+#include <cmath>
 #include "EditState.h"
+
+extern AppConfig g_config;
+
 #include "QuickViewETW.h"
 #include <icm.h>
 #include <cstdlib>
@@ -195,8 +200,7 @@ bool DisplayColorInfo::Refresh(HWND hwnd, bool forceHdrSimulation) {
         nextState.colorSpace = DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;
 
         // Use the manual override from settings if available, otherwise default to a 400 nit simulation.
-        extern AppConfig g_config;
-        float simulatedPeak = g_config.HdrPeakNitsOverride > 0.0f ? g_config.HdrPeakNitsOverride : (nextState.sdrWhiteLevelNits * 5.0f);
+        float simulatedPeak = ::g_config.HdrPeakNitsOverride > 0.0f ? ::g_config.HdrPeakNitsOverride : (nextState.sdrWhiteLevelNits * 5.0f);
         
         nextState.maxLuminanceNits = simulatedPeak;
         nextState.maxFullFrameLuminanceNits = simulatedPeak;

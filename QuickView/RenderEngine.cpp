@@ -86,14 +86,14 @@ float ToneMapAces(float value) {
 
 // CPU-side Reinhard Extended: matches GPU ReinhardExtended.
 // Per-channel version for CPU fallback path.
-static inline float ReinhardExtendedScalar(float L, float Lwhite) {
+static __forceinline float ReinhardExtendedScalar(float L, float Lwhite) {
   if (L <= 0.0f) return 0.0f;
   const float LwSq = Lwhite * Lwhite;
   return L * (1.0f + L / LwSq) / (1.0f + L);
 }
 
 // Apply Reinhard Extended tone mapping preserving chrominance (max-channel luminance).
-static inline void ReinhardExtendedRGB(float r, float g, float b, float Lwhite,
+static __forceinline void ReinhardExtendedRGB(float r, float g, float b, float Lwhite,
                                        float& outR, float& outG, float& outB) {
   float L = (r > g) ? (r > b ? r : b) : (g > b ? g : b); // max channel
   if (L <= 0.0f) { outR = outG = outB = 0.0f; return; }
@@ -104,7 +104,7 @@ static inline void ReinhardExtendedRGB(float r, float g, float b, float Lwhite,
   outB = b * scale;
 }
 
-uint8_t EncodeLinearToSdr8(float value) {
+static __forceinline uint8_t EncodeLinearToSdr8(float value) {
   value = powf((value > 0.0f ? value : 0.0f), 1.0f / 2.2f);
   value = (value < 0.0f) ? 0.0f : (value > 1.0f ? 1.0f : value);
   return static_cast<uint8_t>(value * 255.0f + 0.5f);
@@ -702,8 +702,8 @@ constexpr float PQ_C2 = (2413.0f / 4096.0f) * 32.0f;
 constexpr float PQ_C3 = (2392.0f / 4096.0f) * 32.0f;
 
 // Maps ScRGB (1.0 = 80 nits) to PQ [0, 1] (1.0 = 10000 nits)
-static inline float PL_MIX(float a, float b, float x) { return x * b + (1.0f - x) * a; }
-static inline float pl_smoothstep(float edge0, float edge1, float x) {
+static __forceinline float PL_MIX(float a, float b, float x) { return x * b + (1.0f - x) * a; }
+static __forceinline float pl_smoothstep(float edge0, float edge1, float x) {
     if (edge0 == edge1) return x >= edge0 ? 1.0f : 0.0f;
     x = (x - edge0) / (edge1 - edge0);
     x = std::clamp(x, 0.0f, 1.0f);

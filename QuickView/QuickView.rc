@@ -43,3 +43,8 @@ END
 IDR_ICC_P3          ICC                     "ICC\\DisplayP3.icc"
 IDR_ICC_ADOBERGB    ICC                     "ICC\\AdobeRGB.icc"
 IDR_ICC_PROPHOTO    ICC                     "ICC\\ProPhoto.icc"
+
+// ============================================================================
+// Manifest
+// ============================================================================
+1 RT_MANIFEST "QuickView.manifest"

@@ -244,6 +244,31 @@ If you prefer a standard Windows installation (includes a deep uninstallation to
 
 ---
 
+## 🛠️ Build from Source
+
+> ⚠️ **Architecture Note**: The project has fully migrated to a `CMake + Ninja + vcpkg` build system. It uses the **Clang-cl** compiler and **Full LTO** (Link-Time Optimization) to achieve extreme binary size compression. The legacy `.sln` and `.vcxproj` files have been deprecated and removed.
+
+### Prerequisites
+1. **Visual Studio 2022** (with the "Desktop development with C++" workload installed).
+2. **LLVM / Clang Toolchain** (Ensure `clang-cl.exe` and `lld-link.exe` are added to your system's `PATH`).
+3. **CMake** and **Ninja** (Bundled with VS or installed separately).
+4. **Git**.
+
+### One-Click Build
+After cloning the repository, run the following two commands in the root directory:
+
+```powershell
+# 1. Automatically fetch dependencies via vcpkg and configure the Release-LTO build matrix
+cmake --preset Release-LTO
+
+# 2. Launch the Ninja backend for multi-core compilation and LTO linking
+cmake --build out/build/Release-LTO
+```
+
+The final executable will be located in the `out/build/Release-LTO/` directory.
+
+---
+
 ## ⚖️ Credits
 
 > [!NOTE]

@@ -9,8 +9,12 @@
 // Platform-specific target configuration (before any Highway headers)
 // ============================================================================
 #if defined(_M_X64) || defined(__x86_64__)
-// x64: SSE4 baseline, AVX2 mainstream, AVX-512 high-end
-#define HWY_TARGETS (HWY_SSE4 | HWY_AVX2 | HWY_AVX3)
+#include <hwy/detect_targets.h>
+// x64: Force SSE4 baseline, AVX2 mainstream, AVX-512 (AVX3/DL/ZEN4)
+#undef HWY_BASELINE_TARGETS
+#define HWY_BASELINE_TARGETS (HWY_SSE4)
+#undef HWY_TARGETS
+#define HWY_TARGETS (HWY_SSE4 | HWY_AVX2 | HWY_AVX3 | HWY_AVX3_ZEN4)
 #elif defined(_M_ARM64) || defined(__aarch64__)
 // ARM64: Native NEON
 #define HWY_TARGETS (HWY_NEON)
@@ -31,6 +35,11 @@
 #include <cstring>
 #include <vector>
 #include <vector>
+
+// Locally enable peak optimization and Fast Math
+#if defined(__clang__)
+#pragma float_control(precise, off, push)
+#endif
 
 HWY_BEFORE_NAMESPACE();
 namespace ImageLoaderSimd {
@@ -764,3 +773,7 @@ const char* GetActiveTargetName() {
 } // namespace ImageLoaderSimd
 
 #endif // HWY_ONCE
+
+#if defined(__clang__)
+#pragma float_control(pop)
+#endif
