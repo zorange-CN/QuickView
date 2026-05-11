@@ -62,7 +62,7 @@ jobs:
           $archUpper = if ("${{ matrix.platform }}" -eq "x64") { "X64" } else { "ARM64" }
           
           # Path for CMake build artifact (Ninja puts it in root)
-          $exePath = "out/build/${{ matrix.preset }}/QuickView.exe"
+          $exePath = "${{ github.workspace }}/out/build/${{ matrix.preset }}/QuickView.exe"
           if (-not (Test-Path $exePath)) { Write-Error "EXE not found at $exePath"; exit 1 }
           
           # Extract version
@@ -89,9 +89,10 @@ jobs:
           $tag = "${{ env.DETECTED_TAG }}"
           $version = $tag.TrimStart('v')
           
-          # Invoke ISCC with correct ExePath
+          # CRITICAL FIX: Use absolute path for ExePath to prevent Inno Setup relative path confusion
+          $absExePath = "${{ github.workspace }}/out/build/${{ matrix.preset }}/QuickView.exe"
           $outputName = "QuickView_Installer_${tag}_${archUpper}"
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=$version /DAppArch=$arch /DOutputName=$outputName /DExePath="out/build/${{ matrix.preset }}/QuickView.exe" /O"Release\dist" installer\QuickView.iss
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=$version /DAppArch=$arch /DOutputName=$outputName /DExePath="$absExePath" /O"Release\dist" installer\QuickView.iss
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
