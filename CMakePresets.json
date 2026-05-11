@@ -58,9 +58,36 @@
         "ENABLE_ASAN": "OFF",
         "ENABLE_LTO": "OFF"
       }
+    },
+    {
+      "name": "base-arm64",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "arm64-windows-static-clang",
+        "CMAKE_SYSTEM_NAME": "Windows",
+        "CMAKE_SYSTEM_PROCESSOR": "ARM64"
+      }
+    },
+    {
+      "name": "ARM64-Release-LTO",
+      "displayName": "ARM64-Release-LTO",
+      "description": "ARM64 Build with Full LTO.",
+      "inherits": "base-arm64",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ENABLE_ASAN": "OFF",
+        "ENABLE_LTO": "ON",
+        "CMAKE_C_FLAGS": "--target=arm64-pc-windows-msvc",
+        "CMAKE_CXX_FLAGS": "--target=arm64-pc-windows-msvc"
+      }
     }
   ],
   "buildPresets": [
+    {
+      "name": "ARM64-Release-LTO",
+      "configurePreset": "ARM64-Release-LTO"
+    },
     {
       "name": "Debug-ASan",
       "configurePreset": "Debug-ASan"

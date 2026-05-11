@@ -83,8 +83,14 @@ set(QUICKVIEW_SOURCES
 # ============================================================================
 add_executable(QuickView WIN32 ${QUICKVIEW_SOURCES})
 
-# Explicitly set the subsystem to Windows to prevent console window and ensure correct entry point
-set_target_properties(QuickView PROPERTIES LINK_FLAGS "/SUBSYSTEM:WINDOWS")
+# Explicitly set the subsystem and machine type
+set(QUICKVIEW_LINK_FLAGS "/SUBSYSTEM:WINDOWS")
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|ARM64")
+    set(QUICKVIEW_LINK_FLAGS "${QUICKVIEW_LINK_FLAGS} /machine:ARM64")
+else()
+    set(QUICKVIEW_LINK_FLAGS "${QUICKVIEW_LINK_FLAGS} /machine:x64")
+endif()
+set_target_properties(QuickView PROPERTIES LINK_FLAGS "${QUICKVIEW_LINK_FLAGS}")
 
 # Include paths
 target_include_directories(QuickView PRIVATE QuickView third_party/yyjson)
