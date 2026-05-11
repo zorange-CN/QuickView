@@ -8010,18 +8010,42 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
                 iniPath = exeDir + L"\\QuickView.ini";
             }
 
+            const bool maximized = IsZoomed(hwnd) != 0;
             WritePrivateProfileStringW(L"View", L"LastWindowWasFullscreen", g_isFullScreen ? L"1" : L"0", iniPath.c_str());
-            WritePrivateProfileStringW(L"View", L"LastWindowWasMaximized", IsZoomed(hwnd) ? L"1" : L"0", iniPath.c_str());
+            WritePrivateProfileStringW(L"View", L"LastWindowWasMaximized", maximized ? L"1" : L"0", iniPath.c_str());
 
             if (!g_isFullScreen) {
-                WINDOWPLACEMENT wp = { sizeof(WINDOWPLACEMENT) };
-                if (GetWindowPlacement(hwnd, &wp)) {
-                    int w = wp.rcNormalPosition.right - wp.rcNormalPosition.left;
-                    int h = wp.rcNormalPosition.bottom - wp.rcNormalPosition.top;
-                    WritePrivateProfileStringW(L"View", L"LastWindowW", std::to_wstring(w).c_str(), iniPath.c_str());
-                    WritePrivateProfileStringW(L"View", L"LastWindowH", std::to_wstring(h).c_str(), iniPath.c_str());
-                    WritePrivateProfileStringW(L"View", L"LastWindowX", std::to_wstring(wp.rcNormalPosition.left).c_str(), iniPath.c_str());
-                    WritePrivateProfileStringW(L"View", L"LastWindowY", std::to_wstring(wp.rcNormalPosition.top).c_str(), iniPath.c_str());
+                if (maximized) {
+                    // For maximized window, we save its RESTORE position so it knows where to return.
+                    // Workspace coordinates from GetWindowPlacement are converted to screen coordinates
+                    // to handle custom taskbar positions (top/left) correctly.
+                    WINDOWPLACEMENT wp = { sizeof(WINDOWPLACEMENT) };
+                    if (GetWindowPlacement(hwnd, &wp)) {
+                        MONITORINFO mi = { sizeof(mi) };
+                        if (GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY), &mi)) {
+                            int w = wp.rcNormalPosition.right - wp.rcNormalPosition.left;
+                            int h = wp.rcNormalPosition.bottom - wp.rcNormalPosition.top;
+                            int x = wp.rcNormalPosition.left + mi.rcWork.left;
+                            int y = wp.rcNormalPosition.top + mi.rcWork.top;
+                            
+                            WritePrivateProfileStringW(L"View", L"LastWindowW", std::to_wstring(w).c_str(), iniPath.c_str());
+                            WritePrivateProfileStringW(L"View", L"LastWindowH", std::to_wstring(h).c_str(), iniPath.c_str());
+                            WritePrivateProfileStringW(L"View", L"LastWindowX", std::to_wstring(x).c_str(), iniPath.c_str());
+                            WritePrivateProfileStringW(L"View", L"LastWindowY", std::to_wstring(y).c_str(), iniPath.c_str());
+                        }
+                    }
+                } else {
+                    // For normal or snapped window, we save its CURRENT position using GetWindowRect.
+                    // This correctly captures the actual snapped bounds in screen coordinates.
+                    RECT rc;
+                    if (GetWindowRect(hwnd, &rc)) {
+                        int w = rc.right - rc.left;
+                        int h = rc.bottom - rc.top;
+                        WritePrivateProfileStringW(L"View", L"LastWindowW", std::to_wstring(w).c_str(), iniPath.c_str());
+                        WritePrivateProfileStringW(L"View", L"LastWindowH", std::to_wstring(h).c_str(), iniPath.c_str());
+                        WritePrivateProfileStringW(L"View", L"LastWindowX", std::to_wstring(rc.left).c_str(), iniPath.c_str());
+                        WritePrivateProfileStringW(L"View", L"LastWindowY", std::to_wstring(rc.top).c_str(), iniPath.c_str());
+                    }
                 }
             }
         }

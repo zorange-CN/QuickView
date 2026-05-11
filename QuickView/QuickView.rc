@@ -10,8 +10,8 @@
 
 // Version Information - This sets the display name in Windows
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION 6,0,0,7
-PRODUCTVERSION 6,0,0,7
+FILEVERSION 6,0,1,8
+PRODUCTVERSION 6,0,1,8
 FILEFLAGSMASK 0x3fL
 FILEFLAGS 0x0L
 FILEOS VOS_NT_WINDOWS32
@@ -24,11 +24,11 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "QuickView"
             VALUE "FileDescription", "QuickView"
-            VALUE "FileVersion", "6.0.0.7"
+            VALUE "FileVersion", "6.0.1.8"
             VALUE "InternalName", "QuickView"
             VALUE "OriginalFilename", "QuickView.exe"
             VALUE "ProductName", "QuickView"
-            VALUE "ProductVersion", "6.0.0.7"
+            VALUE "ProductVersion", "6.0.1.8"
         END
     END
     BLOCK "VarFileInfo"
@@ -37,14 +37,7 @@ BEGIN
     END
 END
 
-// Cursor
-IDC_CURSOR_ZOOM_IN     CURSOR                  "Cursor\\zoom_in.cur"
-IDC_CURSOR_ZOOM_OUT    CURSOR                  "Cursor\\zoom_out.cur"
-IDC_CURSOR_GRAB        CURSOR                  "Cursor\\grab.cur"
-IDC_CURSOR_GRABBING    CURSOR                  "Cursor\\grabbing.cur"
-
-// ICC Profiles
-IDR_ICC_SRGB        ICC                     "ICC\\sRGB_v4_ICC_preference.icc"
+// ICC Profiles (Only existing files)
 IDR_ICC_P3          ICC                     "ICC\\DisplayP3.icc"
 IDR_ICC_ADOBERGB    ICC                     "ICC\\AdobeRGB.icc"
 IDR_ICC_PROPHOTO    ICC                     "ICC\\ProPhoto.icc"
