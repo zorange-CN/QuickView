@@ -23,18 +23,23 @@
 #define HWY_TARGETS HWY_SCALAR
 #endif
 
+#ifndef IMAGE_LOADER_SIMD_ONCE
+#define IMAGE_LOADER_SIMD_ONCE
+#ifdef __clang__
+struct __clangd_preamble_stop_struct {};
+#endif
+#endif // IMAGE_LOADER_SIMD_ONCE
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "ImageLoaderSimd.cpp"
 #include <hwy/foreach_target.h>
+#include "ImageTypes.h" // For GpuShaderPayload
 #include <hwy/highway.h>
 
-#include "ImageTypes.h"
 #include "ImageLoaderSimd.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
-#include <vector>
-#include <vector>
 
 // Locally enable peak optimization and Fast Math
 #if defined(__clang__)
@@ -56,7 +61,7 @@ void PremultiplyAlphaImpl(uint8_t* data, int width, int height, int stride) {
         uint8_t* row = data + static_cast<size_t>(y) * stride;
 
         for (int x = 0; x < width; ++x) {
-            uint8_t* px = row + x * 4;
+            uint8_t* px = row + static_cast<size_t>(x) * 4;
             const uint32_t a = px[3];
             if (a == 0) {
                 px[0] = px[1] = px[2] = 0;
@@ -75,14 +80,13 @@ void PremultiplyAlphaImpl(uint8_t* data, int width, int height, int stride) {
 void SwizzleRGBAToBGRAImpl(uint8_t* data, size_t pixelCount) {
     const hn::ScalableTag<uint8_t> d8;
     const size_t N = hn::Lanes(d8);
-    const int pixelsPerVec = static_cast<int>(N / 4);
+    const size_t pixelsPerVec = N / 4;
     size_t i = 0;
 
     // Vector loop
     for (; i + pixelsPerVec <= pixelCount; i += pixelsPerVec) {
         uint8_t* p = data + i * 4;
-        const int count = pixelsPerVec;
-        for (int k = 0; k < count; ++k) {
+        for (size_t k = 0; k < pixelsPerVec; ++k) {
             uint8_t* px = p + k * 4;
             const uint8_t r = px[0];
             const uint8_t g = px[1];
@@ -182,7 +186,7 @@ void ComputeHistogramRowImpl(const uint8_t* row, int width,
     const hn::ScalableTag<uint32_t> d32;
     const size_t N = hn::Lanes(d32);
 
-    int x = 0;
+    size_t x = 0;
 
     // Process pixels: extract channels, scatter to histograms,
     // compute luminance via SIMD
@@ -199,10 +203,10 @@ void ComputeHistogramRowImpl(const uint8_t* row, int width,
         HWY_ALIGN uint32_t bBuf[HWY_MAX_LANES_D(hn::ScalableTag<uint32_t>)];
         HWY_ALIGN uint32_t lBuf[HWY_MAX_LANES_D(hn::ScalableTag<uint32_t>)];
 
-        const int step = static_cast<int>(N);
-        for (; x + step <= width; x += step) {
+        const size_t step = N;
+        for (; x + step <= static_cast<size_t>(width); x += step) {
             // Load and scatter R/G/B to histograms, build vectors for luma
-            for (int k = 0; k < step; ++k) {
+            for (size_t k = 0; k < step; ++k) {
                 const uint8_t* px = row + (x + k) * 4;
                 const uint32_t b = px[0];
                 const uint32_t g = px[1];
@@ -231,14 +235,14 @@ void ComputeHistogramRowImpl(const uint8_t* row, int width,
             auto vLuma = hn::ShiftRight<23>(hn::Mul(vSum, vMul));
 
             hn::Store(vLuma, d32, lBuf);
-            for (int k = 0; k < step; ++k) {
+            for (size_t k = 0; k < step; ++k) {
                 histL[lBuf[k]]++;
             }
         }
     }
 
     // Scalar tail
-    for (; x < width; ++x) {
+    for (; x < static_cast<size_t>(width); ++x) {
         const uint8_t* px = row + x * 4;
         const uint32_t b = px[0];
         const uint32_t g = px[1];
@@ -271,7 +275,7 @@ void ComputeHistogramRowFloatImpl(const float* row, int width, float mapRange,
     const auto vLumaG = hn::Set(df, 0.6780f);
     const auto vLumaB = hn::Set(df, 0.0593f);
 
-    int x = 0;
+    size_t x = 0;
 
     if (N >= 4) {
         HWY_ALIGN uint32_t rBuf[HWY_MAX_LANES_D(hn::ScalableTag<uint32_t>)];
@@ -279,8 +283,8 @@ void ComputeHistogramRowFloatImpl(const float* row, int width, float mapRange,
         HWY_ALIGN uint32_t bBuf[HWY_MAX_LANES_D(hn::ScalableTag<uint32_t>)];
         HWY_ALIGN uint32_t lBuf[HWY_MAX_LANES_D(hn::ScalableTag<uint32_t>)];
 
-        const int step = static_cast<int>(N);
-        for (; x + step <= width; x += step) {
+        const size_t step = N;
+        for (; x + step <= static_cast<size_t>(width); x += step) {
             const float* ptr = row + x * 4;
             hn::Vec<decltype(df)> vR, vG, vB, vA;
             hn::LoadInterleaved4(df, ptr, vR, vG, vB, vA);
@@ -312,7 +316,7 @@ void ComputeHistogramRowFloatImpl(const float* row, int width, float mapRange,
             hn::Store(vIntB, du32, bBuf);
             hn::Store(vIntLuma, du32, lBuf);
 
-            for (int k = 0; k < step; ++k) {
+            for (size_t k = 0; k < step; ++k) {
                 histR[rBuf[k]]++;
                 histG[gBuf[k]]++;
                 histB[bBuf[k]]++;
@@ -322,7 +326,7 @@ void ComputeHistogramRowFloatImpl(const float* row, int width, float mapRange,
     }
 
     // Scalar tail processing
-    for (; x < width; ++x) {
+    for (; x < static_cast<size_t>(width); ++x) {
         const float* px = row + x * 4;
         float r = px[0] * scale;
         float g = px[1] * scale;
@@ -379,7 +383,7 @@ void ComputeHistogramRowGainMapImpl(const uint8_t* sdrRow, const uint8_t* gainMa
     uint32_t auxX_fp = 0;
     
     for (int x = 0; x < width; ++x) {
-        const uint8_t* px = sdrRow + x * 4;
+        const uint8_t* px = sdrRow + (size_t)x * 4;
         uint32_t auxX = auxX_fp >> 16;
         if (auxX >= (uint32_t)auxWidth) auxX = auxWidth > 0 ? auxWidth - 1 : 0;
         uint8_t gmIdx = gainMapRow[auxX]; 
@@ -406,9 +410,10 @@ uint64_t SumLuminance8BitRangeImpl(const uint8_t* row, int x0, int x1, bool isRg
 
     const hn::ScalableTag<uint8_t> d8;
     const size_t lanes = hn::Lanes(d8);
-    const int pixelsPerVec = static_cast<int>(lanes / 4);
+    const size_t pixelsPerVec = lanes / 4;
     uint64_t total = 0;
-    int x = x0;
+    size_t x = static_cast<size_t>(x0);
+    size_t end = static_cast<size_t>(x1);
 
     if (pixelsPerVec >= 1) {
         HWY_ALIGN uint8_t c0Buf[HWY_MAX_LANES_D(hn::ScalableTag<uint8_t>)];
@@ -416,8 +421,8 @@ uint64_t SumLuminance8BitRangeImpl(const uint8_t* row, int x0, int x1, bool isRg
         HWY_ALIGN uint8_t c2Buf[HWY_MAX_LANES_D(hn::ScalableTag<uint8_t>)];
         HWY_ALIGN uint8_t c3Buf[HWY_MAX_LANES_D(hn::ScalableTag<uint8_t>)];
 
-        for (; x + pixelsPerVec <= x1; x += pixelsPerVec) {
-            const uint8_t* ptr = row + static_cast<size_t>(x) * 4;
+        for (; x + pixelsPerVec <= end; x += pixelsPerVec) {
+            const uint8_t* ptr = row + x * 4;
             hn::Vec<decltype(d8)> c0, c1, c2, c3;
             hn::LoadInterleaved4(d8, ptr, c0, c1, c2, c3);
             hn::Store(c0, d8, c0Buf);
@@ -425,7 +430,7 @@ uint64_t SumLuminance8BitRangeImpl(const uint8_t* row, int x0, int x1, bool isRg
             hn::Store(c2, d8, c2Buf);
             hn::Store(c3, d8, c3Buf);
 
-            for (int i = 0; i < pixelsPerVec; ++i) {
+            for (size_t i = 0; i < pixelsPerVec; ++i) {
                 const uint32_t r = isRgbaOrder ? c0Buf[i] : c2Buf[i];
                 const uint32_t g = c1Buf[i];
                 const uint32_t b = isRgbaOrder ? c2Buf[i] : c0Buf[i];
@@ -434,8 +439,8 @@ uint64_t SumLuminance8BitRangeImpl(const uint8_t* row, int x0, int x1, bool isRg
         }
     }
 
-    for (; x < x1; ++x) {
-        const uint8_t* px = row + static_cast<size_t>(x) * 4;
+    for (; x < end; ++x) {
+        const uint8_t* px = row + x * 4;
         const uint32_t r = isRgbaOrder ? px[0] : px[2];
         const uint32_t g = px[1];
         const uint32_t b = isRgbaOrder ? px[2] : px[0];
@@ -452,7 +457,8 @@ float SumLuminanceFloatRangeImpl(const float* row, int x0, int x1) {
     const size_t N = hn::Lanes(df);
     const size_t pixelsPerIter = N / 4;
     float total = 0.0f;
-    int x = x0;
+    size_t x = static_cast<size_t>(x0);
+    size_t end = static_cast<size_t>(x1);
 
     if (pixelsPerIter >= 1) {
         HWY_ALIGN float maskArr[HWY_MAX_LANES_D(hn::ScalableTag<float>)];
@@ -463,8 +469,8 @@ float SumLuminanceFloatRangeImpl(const float* row, int x0, int x1) {
         const auto vZero = hn::Zero(df);
         auto vAccum = vZero;
 
-        for (; x + static_cast<int>(pixelsPerIter) <= x1; x += static_cast<int>(pixelsPerIter)) {
-            auto v = hn::LoadU(df, row + static_cast<size_t>(x) * 4);
+        for (; x + pixelsPerIter <= end; x += pixelsPerIter) {
+            auto v = hn::LoadU(df, row + x * 4);
             v = hn::Mul(v, vMask);
             vAccum = hn::Add(vAccum, v);
         }
@@ -473,8 +479,8 @@ float SumLuminanceFloatRangeImpl(const float* row, int x0, int x1) {
         total += partial;
     }
 
-    for (; x < x1; ++x) {
-        const float* px = row + static_cast<size_t>(x) * 4;
+    for (; x < end; ++x) {
+        const float* px = row + x * 4;
         // Updated to BT.2020 luminance weights for better HDR accuracy
         total += (std::max)(0.0f, px[0] * 0.2627f + px[1] * 0.6780f + px[2] * 0.0593f);
     }
@@ -490,24 +496,14 @@ void TransformColorMatrix3x3Impl(float* pixels, int width, int height,
     for (int y = 0; y < height; ++y) {
         float* row = reinterpret_cast<float*>(
             reinterpret_cast<uint8_t*>(pixels) + static_cast<size_t>(y) * stride);
-        int x = 0;
-
-        // Process N/4 pixels per vector iteration (each pixel = 4 floats)
-        // For a clean implementation, process 1 pixel at a time with scalar,
-        // but batch channel loading for SIMD:
-        // We load N floats, extract R/G/B channels, transform, store back.
-
-        // For simplicity and correctness with interleaved RGBA layout,
-        // process pixel by pixel but use SIMD for the multiply-add:
-        for (; x < width; ++x) {
-            float* px = row + x * 4;
+        for (int x = 0; x < width; ++x) {
+            float* px = row + static_cast<size_t>(x) * 4;
             const float r = px[0];
             const float g = px[1];
             const float b = px[2];
             px[0] = matrix[0] * r + matrix[1] * g + matrix[2] * b;
             px[1] = matrix[3] * r + matrix[4] * g + matrix[5] * b;
             px[2] = matrix[6] * r + matrix[7] * g + matrix[8] * b;
-            // px[3] (alpha) unchanged
         }
     }
 }
@@ -533,27 +529,25 @@ static inline uint8_t LinearToSdr8(float v) {
 void ToneMapAcesBatchImpl(const float* src, int srcStride,
                           uint8_t* dst, int dstStride,
                           int width, int height, float exposure) {
-    // Per-pixel ACES with gamma encode. The pow() call limits SIMD gains,
-    // but the loop structure benefits from cache optimization.
     for (int y = 0; y < height; ++y) {
         const float* srcRow = reinterpret_cast<const float*>(
             reinterpret_cast<const uint8_t*>(src) + static_cast<size_t>(y) * srcStride);
         uint8_t* dstRow = dst + static_cast<size_t>(y) * dstStride;
 
         for (int x = 0; x < width; ++x) {
-            const float r = srcRow[x * 4 + 0] * exposure;
-            const float g = srcRow[x * 4 + 1] * exposure;
-            const float b = srcRow[x * 4 + 2] * exposure;
-            const float a = std::clamp(srcRow[x * 4 + 3], 0.0f, 1.0f);
+            const float r = srcRow[static_cast<size_t>(x) * 4 + 0] * exposure;
+            const float g = srcRow[static_cast<size_t>(x) * 4 + 1] * exposure;
+            const float b = srcRow[static_cast<size_t>(x) * 4 + 2] * exposure;
+            const float a = std::clamp(srcRow[static_cast<size_t>(x) * 4 + 3], 0.0f, 1.0f);
 
             const float tmR = AcesToneMap(r) * a;
             const float tmG = AcesToneMap(g) * a;
             const float tmB = AcesToneMap(b) * a;
 
-            dstRow[x * 4 + 0] = LinearToSdr8(tmB); // B
-            dstRow[x * 4 + 1] = LinearToSdr8(tmG); // G
-            dstRow[x * 4 + 2] = LinearToSdr8(tmR); // R
-            dstRow[x * 4 + 3] = static_cast<uint8_t>(a * 255.0f + 0.5f);
+            dstRow[static_cast<size_t>(x) * 4 + 0] = LinearToSdr8(tmB);
+            dstRow[static_cast<size_t>(x) * 4 + 1] = LinearToSdr8(tmG);
+            dstRow[static_cast<size_t>(x) * 4 + 2] = LinearToSdr8(tmR);
+            dstRow[static_cast<size_t>(x) * 4 + 3] = static_cast<uint8_t>(a * 255.0f + 0.5f);
         }
     }
 }
@@ -567,15 +561,15 @@ void ToneMapClipBatchImpl(const float* src, int srcStride,
         uint8_t* dstRow = dst + static_cast<size_t>(y) * dstStride;
 
         for (int x = 0; x < width; ++x) {
-            const float r = srcRow[x * 4 + 0] * exposure;
-            const float g = srcRow[x * 4 + 1] * exposure;
-            const float b = srcRow[x * 4 + 2] * exposure;
-            const float a = std::clamp(srcRow[x * 4 + 3], 0.0f, 1.0f);
+            const float r = srcRow[static_cast<size_t>(x) * 4 + 0] * exposure;
+            const float g = srcRow[static_cast<size_t>(x) * 4 + 1] * exposure;
+            const float b = srcRow[static_cast<size_t>(x) * 4 + 2] * exposure;
+            const float a = std::clamp(srcRow[static_cast<size_t>(x) * 4 + 3], 0.0f, 1.0f);
 
-            dstRow[x * 4 + 0] = LinearToSdr8(b * a); // B
-            dstRow[x * 4 + 1] = LinearToSdr8(g * a); // G
-            dstRow[x * 4 + 2] = LinearToSdr8(r * a); // R
-            dstRow[x * 4 + 3] = static_cast<uint8_t>(a * 255.0f + 0.5f);
+            dstRow[static_cast<size_t>(x) * 4 + 0] = LinearToSdr8(b * a);
+            dstRow[static_cast<size_t>(x) * 4 + 1] = LinearToSdr8(g * a);
+            dstRow[static_cast<size_t>(x) * 4 + 2] = LinearToSdr8(r * a);
+            dstRow[static_cast<size_t>(x) * 4 + 3] = static_cast<uint8_t>(a * 255.0f + 0.5f);
         }
     }
 }
@@ -623,13 +617,12 @@ void ResizeBilinearImpl(const uint8_t* src, int srcW, int srcH, int srcStride,
     if (dstStride == 0) dstStride = dstW * 4;
 
     constexpr int kBits = 11;
-    constexpr int kShift = kBits * 2;       // 22
+    constexpr int kShift = kBits * 2;
     constexpr int kRound = 1 << (kShift - 1);
 
     std::vector<AxisCoeff> xCoeff, yCoeff;
     BuildAxisCoeffs(srcW, dstW, xCoeff);
     BuildAxisCoeffs(srcH, dstH, yCoeff);
-
 
     for (int y = 0; y < dstH; ++y) {
         const auto& yc = yCoeff[y];
@@ -637,15 +630,7 @@ void ResizeBilinearImpl(const uint8_t* src, int srcW, int srcH, int srcStride,
         const uint8_t* row1 = src + static_cast<size_t>(yc.idx1) * srcStride;
         uint8_t* pd = dst + static_cast<size_t>(y) * dstStride;
 
-        int x = 0;
-
-        // SIMD: process N/4 pixels at a time (each pixel produces 4 i32 channels)
-        // For simplicity and correctness with gather patterns, process 1 pixel/iter
-        // using scalar. Highway's ResizeBilinear benefit is marginal vs memory-bound.
-        // The original AVX2 version was also essentially scalar per-pixel with
-        // only luma/pack in SIMD.
-
-        for (; x < dstW; ++x) {
+        for (int x = 0; x < dstW; ++x) {
             const auto& xc = xCoeff[x];
             const uint8_t* s00 = row0 + static_cast<size_t>(xc.idx0) * 4;
             const uint8_t* s01 = row0 + static_cast<size_t>(xc.idx1) * 4;
@@ -761,12 +746,8 @@ void ToneMapClipBatch(const float* src, int srcStride,
 }
 
 const char* GetActiveTargetName() {
-    // Returns the name of the highest priority target that Highway will dispatch to.
-    // hwy::SupportedTargets() returns a bitmask; the lowest set bit is the best target
-    // (Highway uses inverted priority: lower bit value = higher performance).
     const int64_t supported = hwy::SupportedTargets();
-    // The best target is the one with the smallest bit value in the mask
-    const int64_t best = supported & (-supported); // isolate lowest set bit
+    const int64_t best = supported & (-supported);
     return hwy::TargetName(best);
 }
 

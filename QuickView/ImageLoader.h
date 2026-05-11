@@ -79,8 +79,8 @@ public:
     bool IsFullMetadataLoaded = false;
 
     // [v5.3] File Timestamps (for Sorting/Details)
-    FILETIME CreationTime = {0};
-    FILETIME LastWriteTime = {0};
+    FILETIME CreationTime = {};
+    FILETIME LastWriteTime = {};
 
     // True if this image was decoded from a RAW file using the 'Full Decode'
     // logic
@@ -439,7 +439,6 @@ public:
   static HRESULT LoadThumbJXL_DC(const uint8_t *data, size_t size,
                                  ThumbData *pData,
                                  ImageMetadata *pMetadata = nullptr,
-                                 bool forceRenderFull = false,
                                  bool allowFakeBase = true);
   static HRESULT LoadThumbAVIF_Proxy(const uint8_t *data, size_t size,
                                      int targetSize, ThumbData *pData,

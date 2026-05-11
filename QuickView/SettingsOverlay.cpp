@@ -1,4 +1,3 @@
-#include "pch.h"
 #include "SettingsOverlay.h"
 #include "ThemeSystem.h"
 #include "HelpOverlay.h"
@@ -133,6 +132,7 @@ SettingsThemePalette GetSettingsThemePalette() {
     };
 }
 
+/*
 AppStrings::Language GetResolvedSettingsLanguage() {
     if (g_config.Language != (int)AppStrings::Language::Auto) {
         return static_cast<AppStrings::Language>(g_config.Language);
@@ -154,7 +154,9 @@ AppStrings::Language GetResolvedSettingsLanguage() {
             return AppStrings::Language::English;
     }
 }
+*/
 
+/*
 const wchar_t* GetThemeSettingLabel() {
     switch (GetResolvedSettingsLanguage()) {
         case AppStrings::Language::ChineseSimplified: return L"主题";
@@ -190,6 +192,7 @@ const wchar_t* GetLightThemeLabel() {
         default: return L"Light";
     }
 }
+*/
 }
 
 
@@ -223,7 +226,7 @@ std::wstring SettingsOverlay::GetRealWindowsVersion() {
     if (hMod) {
         RtlGetVersionPtr fx = (RtlGetVersionPtr)GetProcAddress(hMod, "RtlGetVersion");
         if (fx) {
-            RTL_OSVERSIONINFOW rovi = { 0 };
+            RTL_OSVERSIONINFOW rovi = {};
             rovi.dwOSVersionInfoSize = sizeof(rovi);
             if (fx(&rovi) == 0) {
                  // Format: Windows 10/11 | Build X
@@ -249,7 +252,7 @@ static bool IsWindows11() {
         typedef LONG (WINAPI *RtlGetVersionPtr)(PRTL_OSVERSIONINFOW);
         RtlGetVersionPtr fx = (RtlGetVersionPtr)GetProcAddress(hMod, "RtlGetVersion");
         if (fx) {
-            RTL_OSVERSIONINFOW rovi = { 0 };
+            RTL_OSVERSIONINFOW rovi = {};
             rovi.dwOSVersionInfoSize = sizeof(rovi);
             if (fx(&rovi) == 0) {
                 if (rovi.dwMajorVersion == 10 && rovi.dwBuildNumber >= 22000) {
@@ -275,7 +278,7 @@ std::wstring GetSystemInfo() {
         typedef LONG (WINAPI *RtlGetVersionPtr)(PRTL_OSVERSIONINFOW);
         RtlGetVersionPtr fx = (RtlGetVersionPtr)GetProcAddress(hMod, "RtlGetVersion");
         if (fx) {
-            RTL_OSVERSIONINFOW rovi = { 0 };
+            RTL_OSVERSIONINFOW rovi = {};
             rovi.dwOSVersionInfoSize = sizeof(rovi);
             if (fx(&rovi) == 0) {
                 if (rovi.dwMajorVersion == 10 && rovi.dwBuildNumber >= 22000) osVer = L"Windows 11";
@@ -301,8 +304,6 @@ std::wstring GetSystemInfo() {
 
     return osVer + L" | " + arch + L" | " + simd;
 }
-
-// --- File Associations (HKCU, no admin required) ---
 
 // Read registered EXE path from registry
 static std::wstring ReadRegisteredExePath() {
@@ -621,7 +622,7 @@ static ToastLayout GetToastLayout(float winW, float winH) {
 
 
 
-void SettingsOverlay::RenderUpdateToast(ID2D1DeviceContext* pRT, float hudX, float hudY, float hudW, float hudH) {
+void SettingsOverlay::RenderUpdateToast(ID2D1DeviceContext* pRT, float /*hudX*/, float /*hudY*/, float /*hudW*/, float /*hudH*/) {
     if (!m_showUpdateToast) return;
 
     ToastLayout l = GetToastLayout(m_windowWidth, m_windowHeight);
@@ -804,7 +805,7 @@ void SettingsOverlay::CreateResources(ID2D1DeviceContext* pRT) {
     }
 
     // Get System Message Font (e.g. Microsoft YaHei UI on CN, Segoe UI on EN)
-    NONCLIENTMETRICSW ncm = { sizeof(NONCLIENTMETRICSW) };
+    NONCLIENTMETRICSW ncm = {}; ncm.cbSize = sizeof(NONCLIENTMETRICSW);
     SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0);
     // Use the system font face
     const wchar_t* fontFace = ncm.lfMessageFont.lfFaceName;
@@ -930,12 +931,21 @@ static LinkRects GetLinkButtonRects(const D2D1_RECT_F& itemRect, float s = 1.0f)
     return r;
 }
 
+/*
+static D2D1_RECT_F GetUpdateButtonRect(const D2D1_RECT_F& cardRect) {
+    float w = 120.0f;
+    float h = 32.0f;
+    return D2D1::RectF(cardRect.right - w - 16, cardRect.top + 16, cardRect.right - 16, cardRect.top + 16 + h);
+}
+*/
+/*
 static D2D1_RECT_F GetUpdateButtonRect(const D2D1_RECT_F& cardRect) {
     // Full Width Button inside the "Action Row"
     // We treat cardRect as the container row
     // Mockup: Blue Button is wide.
     return cardRect; // The item itself IS the button now
 }
+*/
 
 #include "EditState.h"
 
@@ -1036,8 +1046,8 @@ void SettingsOverlay::BuildMenu() {
     
     // [Phase 2] Cross-Monitor
     SettingsItem itemCrossMon = { AppStrings::Settings_Label_SpanDisplays, OptionType::Toggle, &g_config.EnableCrossMonitor };
-    itemCrossMon.onChange = [this]() {
-         g_runtime.CrossMonitorMode = g_config.EnableCrossMonitor;
+    itemCrossMon.onChange = []() {
+        g_runtime.CrossMonitorMode = g_config.EnableCrossMonitor;
     };
     tabGeneral.items.push_back(itemCrossMon);
     
@@ -1151,12 +1161,12 @@ void SettingsOverlay::BuildMenu() {
     };
     tabTheme.items.push_back(itemThemeMode);
 
-    SettingsItem itemDimmer = { AppStrings::Settings_Label_AmbientDimmer, OptionType::Toggle, &g_config.EnableAmbientDimmer };
+    SettingsItem itemDimmer = { AppStrings::Settings_Label_AmbientDimmer, OptionType::Toggle, &g_config.EnableAmbientDimmer, {} };
     itemDimmer.tooltipText = AppStrings::Settings_Tooltip_AmbientDimmer;
     tabTheme.items.push_back(itemDimmer);
 
     // Rounded Corners
-    SettingsItem itemRounded = { AppStrings::Settings_Label_RoundedCorners, OptionType::Toggle, &g_config.RoundedCorners };
+    SettingsItem itemRounded = { AppStrings::Settings_Label_RoundedCorners, OptionType::Toggle, &g_config.RoundedCorners, {} };
     itemRounded.onChange = []() {
         bool enable = g_config.RoundedCorners;
         DWM_WINDOW_CORNER_PREFERENCE preference = enable ? DWMWCP_ROUND : DWMWCP_DONOTROUND;
@@ -1171,12 +1181,12 @@ void SettingsOverlay::BuildMenu() {
 
     if (g_config.ThemeMode == 3) {
         // Custom Theme Mode options
-        SettingsItem itemAccentColor = { AppStrings::Settings_Label_AccentColor, OptionType::CustomColorRow };
+        SettingsItem itemAccentColor = { AppStrings::Settings_Label_AccentColor, OptionType::CustomColorRow, nullptr, {} };
         itemAccentColor.pFloatVal = &g_config.ThemeCustomAccentR;
         itemAccentColor.onChange = [this]() {
             HWND hwnd = GetActiveWindow();
             static COLORREF acrCustClr[16]; 
-            CHOOSECOLOR cc = { sizeof(CHOOSECOLOR) };
+            CHOOSECOLOR cc{}; cc.lStructSize = sizeof(cc);
             cc.hwndOwner = hwnd;
             cc.lpCustColors = acrCustClr;
             cc.rgbResult = RGB((int)(g_config.ThemeCustomAccentR * 255.0f), (int)(g_config.ThemeCustomAccentG * 255.0f), (int)(g_config.ThemeCustomAccentB * 255.0f));
@@ -1197,7 +1207,8 @@ void SettingsOverlay::BuildMenu() {
         itemTextColor.onChange = [this]() {
             HWND hwnd = GetActiveWindow();
             static COLORREF acrCustClr[16]; 
-            CHOOSECOLOR cc = { sizeof(CHOOSECOLOR) };
+            CHOOSECOLOR cc{};
+            cc.lStructSize = sizeof(CHOOSECOLOR);
             cc.hwndOwner = hwnd;
             cc.lpCustColors = acrCustClr;
             cc.rgbResult = RGB((int)(g_config.ThemeCustomTextR * 255.0f), (int)(g_config.ThemeCustomTextG * 255.0f), (int)(g_config.ThemeCustomTextB * 255.0f));
@@ -1256,7 +1267,7 @@ void SettingsOverlay::BuildMenu() {
     tabTheme.items.push_back(itemEnableGlass);
 
     SettingsItem itemAnimations = { AppStrings::Settings_Label_GlassUIAnimations, OptionType::Toggle, &g_config.GlassUIAnimations };
-    itemAnimations.onChange = [this]() { SaveConfig(); };
+    itemAnimations.onChange = []() { SaveConfig(); };
     tabTheme.items.push_back(itemAnimations);
     
     // --- Core Material Parameters ---
@@ -1264,7 +1275,6 @@ void SettingsOverlay::BuildMenu() {
     
     bool glassDisabled = !g_config.EnableGeekGlass;
     static float fZero = 0.0f;
-    static float fOne = 1.0f;
  
     // Auto-switch to Custom lambda (shared by all material sliders)
     auto autoSwitchToCustom = [this]() {
@@ -1354,10 +1364,11 @@ void SettingsOverlay::BuildMenu() {
     if (g_config.GlassTintProfile == 1) {
         SettingsItem itemTintColor = { AppStrings::Settings_Label_GlassCustomColor, OptionType::CustomColorRow };
         itemTintColor.pFloatVal = &g_config.GlassCustomTintR;
-        itemTintColor.onChange = [this, autoSwitchToCustom]() {
+        itemTintColor.onChange = [autoSwitchToCustom]() {
             HWND hwnd = GetActiveWindow();
             static COLORREF acrCustClr[16]; 
-            CHOOSECOLOR cc = { sizeof(CHOOSECOLOR) };
+            CHOOSECOLOR cc{};
+            cc.lStructSize = sizeof(CHOOSECOLOR);
             cc.hwndOwner = hwnd;
             cc.lpCustColors = acrCustClr;
             cc.rgbResult = RGB((int)(g_config.GlassCustomTintR * 255.0f), (int)(g_config.GlassCustomTintG * 255.0f), (int)(g_config.GlassCustomTintB * 255.0f));
@@ -1441,7 +1452,8 @@ void SettingsOverlay::BuildMenu() {
         itemRow.onChange = []() {
              HWND hwnd = GetActiveWindow();
             static COLORREF acrCustClr[16]; 
-            CHOOSECOLOR cc = { sizeof(CHOOSECOLOR) };
+            CHOOSECOLOR cc{};
+            cc.lStructSize = sizeof(CHOOSECOLOR);
             cc.hwndOwner = hwnd;
             cc.lpCustColors = acrCustClr;
             cc.rgbResult = RGB((int)(g_config.CanvasCustomR * 255), (int)(g_config.CanvasCustomG * 255), (int)(g_config.CanvasCustomB * 255));
@@ -1600,7 +1612,7 @@ void SettingsOverlay::BuildMenu() {
     tabVisuals.items.push_back({ AppStrings::Settings_Header_Professional, OptionType::Header });
     SettingsItem itemShowDirtyRect = { AppStrings::Settings_Label_ShowDirtyRect, OptionType::Toggle, &g_config.ShowDirtyRectButton };
     itemShowDirtyRect.tooltipText = AppStrings::Settings_Tooltip_ShowDirtyRect;
-    itemShowDirtyRect.onChange = [this]() { SaveConfig(); };
+    itemShowDirtyRect.onChange = []() { SaveConfig(); };
     tabVisuals.items.push_back(itemShowDirtyRect);
 
 
@@ -1626,7 +1638,7 @@ void SettingsOverlay::BuildMenu() {
     // Left Drag: {Window=0, Pan=1} -> {WindowDrag=1, PanImage=2}
     // Using g_config.LeftDragIndex helper (0=Window, 1=Pan)
     SettingsItem itemLeftDrag = { AppStrings::Settings_Label_LeftDrag, OptionType::Segment, nullptr, nullptr, &g_config.LeftDragIndex, nullptr, 0, 0, {AppStrings::Settings_Option_Window, AppStrings::Settings_Option_Pan} };
-    itemLeftDrag.onChange = [this]() {
+    itemLeftDrag.onChange = []() {
         // Convert index to enum and set interlock
         if (g_config.LeftDragIndex == 0) {
             g_config.LeftDragAction = MouseAction::WindowDrag;
@@ -1642,7 +1654,7 @@ void SettingsOverlay::BuildMenu() {
     
     // Middle Drag: {Window=0, Pan=1} -> {WindowDrag=1, PanImage=2}
     SettingsItem itemMiddleDrag = { AppStrings::Settings_Label_MiddleDrag, OptionType::Segment, nullptr, nullptr, &g_config.MiddleDragIndex, nullptr, 0, 0, {AppStrings::Settings_Option_Window, AppStrings::Settings_Option_Pan} };
-    itemMiddleDrag.onChange = [this]() {
+    itemMiddleDrag.onChange = []() {
         // Convert index to enum and set interlock
         if (g_config.MiddleDragIndex == 0) {
             g_config.MiddleDragAction = MouseAction::WindowDrag;
@@ -1749,7 +1761,8 @@ void SettingsOverlay::BuildMenu() {
     itemGamutColor.pFloatVal = &g_config.GamutWarningColorR;
     itemGamutColor.onChange = []() {
         extern HWND g_mainHwnd;
-        CHOOSECOLORW cc = { sizeof(CHOOSECOLORW) };
+        CHOOSECOLORW cc{};
+        cc.lStructSize = sizeof(CHOOSECOLORW);
         COLORREF customColors[16] = {};
         cc.hwndOwner = g_mainHwnd;
         cc.lpCustColors = customColors;
@@ -1865,7 +1878,7 @@ void SettingsOverlay::BuildMenu() {
         itemFileAssoc.isDisabled = true;
         itemFileAssoc.disabledText = AppStrings::Settings_Status_DisabledInPortable;
     } else {
-        itemFileAssoc.onChange = [this]() {
+        itemFileAssoc.onChange = []() {
             SettingsOverlay::RegisterAssociations();
         };
     }
@@ -2326,6 +2339,7 @@ void SettingsOverlay::Render(ID2D1DeviceContext* pRT, float winW, float winH) {
         pRT->DrawText(L"Back", 4, m_textFormatItem.Get(), backTextRect, m_brushText.Get(), D2D1_DRAW_TEXT_OPTIONS_NONE, DWRITE_MEASURING_MODE_NATURAL);
 
         // Sidebar Tabs Loop
+        [[maybe_unused]] float totalW = 0.0f;
         float tabY = hudY + 50.0f * s;
         for (int i = 0; i < (int)m_tabs.size(); ++i) {
             const auto& tab = m_tabs[i];
@@ -2653,7 +2667,7 @@ void SettingsOverlay::Render(ID2D1DeviceContext* pRT, float winW, float winH) {
                 contentY = badgeY + badgeH + 26.0f * s;
                 continue;
             }
-             else if (item.type == OptionType::AboutSystemInfo) {
+            else if (item.type == OptionType::AboutSystemInfo) {
                 // Absolute positioning from bottom
                 float bottomY = hudY + hudH;
                 float sysY = bottomY - 110.0f * s; // System info line
@@ -2678,7 +2692,7 @@ void SettingsOverlay::Render(ID2D1DeviceContext* pRT, float winW, float winH) {
                  contentY = sysY; // Sync flow just in case
                  continue;
              }
-             else if (item.type == OptionType::CopyrightLabel) {
+            else if (item.type == OptionType::CopyrightLabel) {
                  // Copyright Absolute Bottom (Pinned)
                  float bottomY = hudY + hudH;
                  float copyY = bottomY - 60.0f * s; 
@@ -2690,7 +2704,7 @@ void SettingsOverlay::Render(ID2D1DeviceContext* pRT, float winW, float winH) {
                  m_textFormatItem->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
                  continue;
              }
-             else if (item.type == OptionType::InfoLabel) {
+            else if (item.type == OptionType::InfoLabel) {
                  // Flow Text (e.g. Release Notes)
                  ComPtr<IDWriteTextLayout> textLayout;
                  HRESULT hr = m_dwriteFactory->CreateTextLayout(
@@ -2747,7 +2761,7 @@ void SettingsOverlay::Render(ID2D1DeviceContext* pRT, float winW, float winH) {
                 infoIconRect = D2D1::RectF(icx - iside * 0.5f, icy - iside * 0.5f, icx + iside * 0.5f, icy + iside * 0.5f);
                 QuickView::UI::GeekIconRenderer::DrawVectorIcon(pRT, *Icons::Info, infoIconRect, iconBrush.Get());
             } else {
-                item.tooltipIconRect = {0};
+                item.tooltipIconRect = {};
             }
 
             // Control Area
@@ -3333,7 +3347,7 @@ SettingsAction SettingsOverlay::OnMouseMove(float x, float y) {
     if (m_pActiveSlider && m_pActiveSlider->pFloatVal) {
         float w = 150.0f * m_uiScale;
         float sliderLeft = m_pActiveSlider->rect.right - w;
-        float sliderRight = m_pActiveSlider->rect.right;
+        [[maybe_unused]] float sliderRight = m_pActiveSlider->rect.right;
         
         float t = (x - sliderLeft) / w;
         if (t < 0.0f) t = 0.0f;
@@ -3504,7 +3518,7 @@ SettingsAction SettingsOverlay::OnLButtonDown(float x, float y) {
                  if (m_pActiveCombo->pIntVal) {
                      if (*m_pActiveCombo->pIntVal != idx) {
                          *m_pActiveCombo->pIntVal = idx;
-                         int effectiveCmsMode = g_runtime.GetEffectiveCmsMode(g_config.ColorManagement);
+                         [[maybe_unused]] int effectiveCmsMode = g_runtime.GetEffectiveCmsMode(g_config.ColorManagement);
                          if (m_pActiveCombo->onChange) m_pActiveCombo->onChange();
                      }
                  }
@@ -3514,7 +3528,7 @@ SettingsAction SettingsOverlay::OnLButtonDown(float x, float y) {
         }
         
         // Click inside the Button itself? (Toggle Close)
-        float btnHeight = m_pActiveCombo->rect.bottom - m_pActiveCombo->rect.top - 10; // Approx
+        [[maybe_unused]] float btnHeight = m_pActiveCombo->rect.bottom - m_pActiveCombo->rect.top - 10; // Approx
         // Actually we can reuse HitTest logic below, but we need to intercept Before closing.
         // If we click on the Active Combo Item again -> Toggle Close.
         if (x >= m_pActiveCombo->rect.left && x <= m_pActiveCombo->rect.right && 
@@ -3525,7 +3539,7 @@ SettingsAction SettingsOverlay::OnLButtonDown(float x, float y) {
 
         // Click outside -> Close
         m_pActiveCombo = nullptr;
-        SettingsAction extraAction = SettingsAction::None;
+        [[maybe_unused]] SettingsAction extraAction = SettingsAction::None;
         
         // Check if we clicked another item immediately?
         // Fallthrough to standard logic to pick up new click?
@@ -3670,7 +3684,7 @@ SettingsAction SettingsOverlay::OnLButtonDown(float x, float y) {
     return (m_pActiveCombo) ? SettingsAction::RepaintAll : SettingsAction::DragWindow;
 }
 
-SettingsAction SettingsOverlay::OnLButtonUp(float x, float y) {
+SettingsAction SettingsOverlay::OnLButtonUp([[maybe_unused]] float x, [[maybe_unused]] float y) {
     if (m_pActiveSlider) {
         m_pActiveSlider = nullptr;
         
@@ -3712,9 +3726,7 @@ void SettingsOverlay::OpenTab(int index) {
     }
 }
 
-void SettingsOverlay::DrawComboBox(ID2D1DeviceContext* pRT, const D2D1_RECT_F& rect, int selectedIdx, const std::vector<std::wstring>& options, bool isOpen) {
-    float w = rect.right - rect.left;
-    float h = rect.bottom - rect.top;
+void SettingsOverlay::DrawComboBox(ID2D1DeviceContext* pRT, const D2D1_RECT_F& rect, [[maybe_unused]] int selectedIdx, const std::vector<std::wstring>& options, bool isOpen) {
     
     D2D1_RECT_F boxRect = rect;
     

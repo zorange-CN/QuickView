@@ -20,7 +20,7 @@ public:
         if (m_accumulationBuffer) _aligned_free(m_accumulationBuffer);
     }
 
-    bool Initialize(std::shared_ptr<QuickView::MappedFile> file, QuickView::PixelFormat preferredFormat) override {
+    bool Initialize(std::shared_ptr<QuickView::MappedFile> file, QuickView::PixelFormat /*preferredFormat*/) override {
         m_mappedFile = file;
         return ResetAndParseBasicInfo();
     }

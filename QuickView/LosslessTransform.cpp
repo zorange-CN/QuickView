@@ -217,7 +217,7 @@ TransformResult CLosslessTransform::TransformJPEG(
     }
     
     // Set up transformation
-    tjtransform transform = { 0 };
+    tjtransform transform = {};
     transform.op = TransformTypeToTJOp(type);
     
     // First try PERFECT transformation (lossless)

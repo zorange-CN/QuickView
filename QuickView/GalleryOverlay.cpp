@@ -53,13 +53,11 @@ void GalleryOverlay::Update(float deltaTime) {
 void GalleryOverlay::EnsureVisible(int index) {
     if (index < 0 || m_cellHeight <= 0) return;
     
-    int row = index / m_cols;
-    float itemTop = PADDING + row * (m_cellHeight + GAP);
-    float itemBottom = itemTop + m_cellHeight;
+    int row = index / m_cols; (void)row;
+    // float itemTop = PADDING + row * (m_cellHeight + GAP);
     
     // Current Viewport
-    float viewTop = m_scrollTop;
-    float viewBottom = m_scrollTop + m_totalHeight; // Wait, m_totalHeight is content height. ViewHeight is screen height.
+    // float viewBottom = m_scrollTop + m_totalHeight; // Wait, m_totalHeight is content height. ViewHeight is screen height.
     // We need screen height.
     // Let's rely on Render to clamp. 
     // Here we just adjust m_scrollTop.
@@ -147,7 +145,7 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size) {
     m_maxScroll = std::max(0.0f, m_totalHeight - size.height);
     
     // Smart Reveal (First Frame Logic)
-    static bool firstFrame = true; // Use member if re-opening needs this. m_opacity < 0.1f implies just opened.
+    static bool firstFrame = true; (void)firstFrame; // Use member if re-opening needs this. m_opacity < 0.1f implies just opened.
     if (m_opacity < 0.2f && m_selectedIndex >= 0) { // Approx first few frames
         int row = m_selectedIndex / m_cols;
         float targetY = PADDING + row * (m_cellHeight + GAP);
@@ -326,9 +324,9 @@ bool GalleryOverlay::OnKeyDown(UINT key) {
     
     // Auto-scroll to selection
     if (m_selectedIndex >= 0) {
-        int row = m_selectedIndex / m_cols;
-        float itemTop = PADDING + row * (m_cellHeight + GAP);
-        float itemBottom = itemTop + m_cellHeight;
+        // int row = m_selectedIndex / m_cols;
+        // // float itemTop = PADDING + row * (m_cellHeight + GAP);
+        // float itemBottom = itemTop + m_cellHeight;
         
         // Assume screen height (need to track it or guess)
         // Best effort: we need to persist viewHeight to do this logic here. 
@@ -378,8 +376,8 @@ int GalleryOverlay::HitTest(float x, float y) {
     int c = (int)colF;
     
     // Check gaps (fractional part)
-    float rowFrac = rowF - r;
-    float colFrac = colF - c;
+    // float rowFrac = rowF - r;
+    // float colFrac = colF - c;
     
     // If in gap (GAP is small, but strictly speaking)
     // Just ignore gap precision for easier clicking? Or be strict.

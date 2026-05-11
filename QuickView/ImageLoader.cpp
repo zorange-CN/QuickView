@@ -49,7 +49,7 @@ static std::string GetSvgRootAttrVal(const std::string& xml, const char* attr);
 static bool ReadFileToPMR(LPCWSTR filePath, std::pmr::vector<uint8_t>& buffer, std::pmr::memory_resource* mr = nullptr);
 
 // [v6.3] Forward Declaration for JXL Helper
-static std::wstring ParseJXLColorEncoding(const JxlColorEncoding& c);
+
 static QuickView::TransferFunction MapJxlTransferFunction(JxlTransferFunction tf);
 static QuickView::ColorPrimaries MapJxlPrimaries(JxlPrimaries primaries);
 static QuickView::TransferFunction MapAvifTransferFunction(uint8_t tf);
@@ -441,9 +441,7 @@ namespace QuickView {
             return bytesRead;
         }
 
-        static bool ReadAll(LPCWSTR filePath, std::vector<uint8_t>& buffer) {
-            return ReadFileToVector(filePath, buffer);
-        }
+
 
         // Forward declarations for integrated unified decoders
         namespace Wuffs {
@@ -706,7 +704,7 @@ HRESULT LoadBufferUnified(const uint8_t* mappedData,
         if (ctx.isTitanMode && (ctx.targetWidth > 0 || ctx.targetHeight > 0 || ctx.forceRenderFull)) {
             CImageLoader::ThumbData tmp;
             HRESULT hr = CImageLoader::LoadThumbJXL_DC(
-                mappedData, mappedSize, &tmp, ctx.pMetadata, ctx.forceRenderFull, ctx.allowFakeBase);
+                mappedData, mappedSize, &tmp, ctx.pMetadata, ctx.allowFakeBase);
             if (hr == E_ABORT) {
                 if (ctx.targetWidth < 1000 && ctx.targetHeight < 1000) {
                     return E_ABORT;
@@ -1343,7 +1341,7 @@ HRESULT CImageLoader::LoadFromFile(LPCWSTR filePath, IWICBitmapSource** bitmap) 
     if (!filePath || !bitmap) return E_INVALIDARG;
 
     // Delegate to the new architecture (Detected Logic + Specialized Loaders + WIC Fallback)
-    IWICBitmap* pBitmap = nullptr;
+
     std::wstring loaderName; // Optional, or ignore
     
     // We cast IWICBitmap** to IWICBitmapSource**? 
@@ -1552,7 +1550,7 @@ bool ReadFileToVector(LPCWSTR filePath, std::vector<uint8_t>& buffer) {
 }
 
 // [CMS/PMR] PMR-aware file reader
-static bool ReadFileToPMR(LPCWSTR filePath, std::pmr::vector<uint8_t>& buffer, std::pmr::memory_resource* mr) {
+static bool ReadFileToPMR(LPCWSTR filePath, std::pmr::vector<uint8_t>& buffer, [[maybe_unused]] std::pmr::memory_resource* mr) {
     HANDLE hFile = CreateFileW(filePath, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (hFile == INVALID_HANDLE_VALUE) return false;
 
@@ -1996,7 +1994,7 @@ HRESULT CImageLoader::FullDecodeFromMemory(const uint8_t* data, size_t size,
 HRESULT CImageLoader::FullDecodeToMMF(const uint8_t* data, size_t size,
                                        uint8_t* mmfBuf, size_t mmfBufSize,
                                        int* outW, int* outH, int* outStride,
-                                       std::function<void()> dcReadyCallback,
+                                       [[maybe_unused]] std::function<void()> dcReadyCallback,
                                        CancelPredicate checkCancel) {
     if (!data || size < 4 || !mmfBuf || !outW || !outH || !outStride) return E_INVALIDARG;
 
@@ -2519,7 +2517,7 @@ HRESULT CImageLoader::LoadJxlRegionToFrame(LPCWSTR filePath, QuickView::RegionRe
     uint8_t* tempBuf = nullptr;
     int tempStride = 0;
     
-    JxlCropCtx ctx = {0};
+    JxlCropCtx ctx = {};
 
     for (;;) {
         if (checkCancel && checkCancel()) {
@@ -2671,7 +2669,7 @@ HRESULT CImageLoader::LoadJPEG(LPCWSTR filePath, IWICBitmap** ppBitmap) {
         int width = tj3Get(tjInstance, TJPARAM_JPEGWIDTH);
         int height = tj3Get(tjInstance, TJPARAM_JPEGHEIGHT);
         int jpegSubsamp = tj3Get(tjInstance, TJPARAM_SUBSAMP);
-        int jpegColorspace = tj3Get(tjInstance, TJPARAM_COLORSPACE);
+
 
         if (width > 0 && height > 0) {
             // Decompress to BGRX (compatible with PBGRA/BGRA)
@@ -2932,11 +2930,7 @@ HRESULT CImageLoader::LoadShellThumbnail(LPCWSTR filePath, int targetSize, Thumb
     UINT stride = QuickView::CalculateAlignedStride(w, 4);
     size_t byteCount = static_cast<size_t>(stride) * h;
     
-    try {
-        pData->pixels.resize(byteCount);
-    } catch (...) {
-        return E_OUTOFMEMORY;
-    }
+    pData->pixels.resize(byteCount);
     
     hr = sourceToCopy->CopyPixels(nullptr, stride, static_cast<UINT>(byteCount), pData->pixels.data());
     if (FAILED(hr)) {
@@ -3488,7 +3482,7 @@ HRESULT CImageLoader::LoadThumbnail(LPCWSTR filePath, int targetSize, ThumbData*
         // Gallery thumbnails must never use Titan's transparent fake base.
         // If a cheap real thumbnail is unavailable, we fall through to the
         // normal decode path instead of returning an empty/transparent result.
-        HRESULT hr = LoadThumbJXL_DC(mappedData, mappedSize, pData, &meta, false, false);
+        HRESULT hr = LoadThumbJXL_DC(mappedData, mappedSize, pData, &meta, false);
         if (SUCCEEDED(hr) && pData->isValid) {
             const bool isFakeThumb =
                 pData->width <= 1 &&
@@ -3524,8 +3518,10 @@ HRESULT CImageLoader::LoadThumbnail(LPCWSTR filePath, int targetSize, ThumbData*
 
     if (format == L"SVG") {
         using namespace QuickView;
-        RawImageFrame* pFrame = new RawImageFrame();
-        HRESULT hr = LoadToFrame(filePath, pFrame, nullptr, targetSize, targetSize, &pData->loaderName, nullptr, nullptr);
+        std::unique_ptr<RawImageFrame> pFrame(new (std::nothrow) RawImageFrame());
+        if (!pFrame) return E_OUTOFMEMORY;
+
+        HRESULT hr = LoadToFrame(filePath, pFrame.get(), nullptr, targetSize, targetSize, &pData->loaderName, nullptr, nullptr);
         if (SUCCEEDED(hr) && pFrame->IsSvg() && pFrame->svg) {
             hr = RasterizeSvgThumbnail(pFrame->svg->xmlData, pFrame->svg->viewBoxW, pFrame->svg->viewBoxH, targetSize, pData);
         } else if (SUCCEEDED(hr) && pFrame->pixels && pFrame->width > 0 && pFrame->height > 0) {
@@ -3539,13 +3535,7 @@ HRESULT CImageLoader::LoadThumbnail(LPCWSTR filePath, int targetSize, ThumbData*
         }
         if (SUCCEEDED(hr) && pData->isValid) {
             PopulateThumbOriginalInfo(headerInfo, fallbackFileSize, pData);
-            pFrame->Release();
-            delete pFrame;
             return S_OK;
-        }
-        if (pFrame) {
-            pFrame->Release();
-            delete pFrame;
         }
     }
 
@@ -3554,9 +3544,8 @@ HRESULT CImageLoader::LoadThumbnail(LPCWSTR filePath, int targetSize, ThumbData*
     ctx.forcePreview = true;
     ctx.targetWidth = targetSize;
     ctx.targetHeight = targetSize;
-    ctx.allocator = [&](size_t s) { 
-        try { pData->pixels.resize(s); return pData->pixels.data(); }
-        catch(...) { return (uint8_t*)nullptr; }
+    ctx.allocator = [&](size_t s) -> uint8_t* { 
+        pData->pixels.resize(s); return pData->pixels.data(); 
     };
     ctx.freeFunc = [&](uint8_t*) { pData->pixels.clear(); };
     std::wstring loaderName;
@@ -3627,7 +3616,8 @@ HRESULT CImageLoader::LoadThumbnail(LPCWSTR filePath, int targetSize, ThumbData*
     
     // Check IO Cost FIRST
     uintmax_t fsize = 0;
-    try { fsize = std::filesystem::file_size(filePath); } catch(...) {}
+    std::error_code ec;
+    fsize = std::filesystem::file_size(filePath, ec);
 
     // [STE] Universal Scout Lane Hard Limit
     // If Scout Lane (!allowSlow) AND file > 10MB, ABORT immediately.
@@ -3654,8 +3644,7 @@ HRESULT CImageLoader::LoadThumbnail(LPCWSTR filePath, int targetSize, ThumbData*
     ctx.targetWidth = targetSize;
     ctx.targetHeight = targetSize;
     ctx.allocator = [&](size_t s) -> uint8_t* {
-        try { pData->pixels.resize(s); return pData->pixels.data(); }
-        catch(...) { return nullptr; }
+        pData->pixels.resize(s); return pData->pixels.data(); 
     };
     ctx.freeFunc = [&](uint8_t*) { pData->pixels.clear(); };
     ctx.pLoaderName = nullptr; 
@@ -3780,7 +3769,6 @@ HRESULT CImageLoader::LoadThumbnail(LPCWSTR filePath, int targetSize, ThumbData*
         // Image is smaller than thumbnail slot? Keep original (don't upscale bloat)
         // Or upscale if needed? Let's just keep original effectively.
         // Actually WIC Scaler handles upscaling too.
-        // For thumbnails, usually we are downscaling.
         // If image is tiny, maybe just use it.
         newW = origW; 
         newH = origH;
@@ -4468,7 +4456,7 @@ HRESULT CImageLoader::LoadJXL(LPCWSTR filePath, IWICBitmap** ppBitmap, ImageMeta
 // ----------------------------------------------------------------------------
 // RAW (LibRaw)
 // ----------------------------------------------------------------------------
-HRESULT CImageLoader::LoadRaw(LPCWSTR filePath, IWICBitmap** ppBitmap, bool forceFullDecode, ImageMetadata* pMetadata) { 
+HRESULT CImageLoader::LoadRaw(LPCWSTR filePath, IWICBitmap** ppBitmap, bool forceFullDecode, [[maybe_unused]] ImageMetadata* pMetadata) { 
     // Optimization: Try to load embedded JPEG preview first (FAST)
     // Fallback: Full RAW decode (SLOW)
 
@@ -4951,44 +4939,7 @@ HRESULT CImageLoader::LoadToMemory(LPCWSTR filePath, IWICBitmap** ppBitmap, std:
 
 // ============================================================================
 // Helper: Chunked Read with Cancel Check
-static bool ReadFileToPMR(LPCWSTR filePath, std::pmr::vector<uint8_t>& buffer, std::stop_token st) {
-    HANDLE hFile = CreateFileW(filePath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hFile == INVALID_HANDLE_VALUE) return false;
 
-    LARGE_INTEGER size;
-    if (!GetFileSizeEx(hFile, &size)) { CloseHandle(hFile); return false; }
-    
-    // Deep Regicide: Check before allocation
-    if (st.stop_requested()) { CloseHandle(hFile); return false; }
-
-    try {
-        buffer.clear();
-        buffer.resize(size.QuadPart);
-    } catch (...) {
-        CloseHandle(hFile); return false;
-    }
-    
-    // Chunk size: 256KB (Small enough for responsiveness, large enough for throughput)
-    const DWORD CHUNK_SIZE = 256 * 1024;
-    size_t totalRead = 0;
-    DWORD bytesRead = 0;
-    uint8_t* ptr = buffer.data();
-
-    while (totalRead < size.QuadPart) {
-        // Deep Regicide: Check every chunk
-        if (st.stop_requested()) { CloseHandle(hFile); return false; }
-        
-        DWORD toRead = (DWORD)std::min((uint64_t)CHUNK_SIZE, (uint64_t)(size.QuadPart - totalRead));
-        if (!ReadFile(hFile, ptr + totalRead, toRead, &bytesRead, NULL) || bytesRead == 0) {
-            CloseHandle(hFile);
-            return false;
-        }
-        totalRead += bytesRead;
-    }
-
-    CloseHandle(hFile);
-    return true;
-}
 
 // ============================================================================
 // LibJpeg Deep Implementation (Scanline Cancellation)
@@ -5736,12 +5687,12 @@ namespace QuickView {
                 if (offset >= size) JxlDecoderCloseInput(dec);
 
                 uint8_t* pixels = nullptr;
-                int stride = 0;
+
                 // [v6.2] Buffer for EXIF data
                 std::vector<uint8_t> jxlExifBuffer;
 
                 int finalW = 0, finalH = 0;
-                bool headerRead = false;
+
                 bool wantPreview = ctx.forcePreview;
                 
                 // [v6.2] Metadata Details (Lossy/Lossless, Bit Depth)
@@ -6147,7 +6098,7 @@ namespace QuickView {
                     if (scale > 0.0 && scale < 1.0) {
                         const uint32_t scaledW = (std::max)(1u, static_cast<uint32_t>(origW * scale + 0.5));
                         const uint32_t scaledH = (std::max)(1u, static_cast<uint32_t>(origH * scale + 0.5));
-                        avifImageScale(decoder->image, scaledW, scaledH, &decoder->diag);
+                        (void)avifImageScale(decoder->image, scaledW, scaledH, &decoder->diag);
                     }
                 }
 
@@ -7516,10 +7467,8 @@ HRESULT CImageLoader::LoadToMemoryPMR(LPCWSTR filePath, DecodedImage* pOutput, s
     // 1. Unified Dispatch (Primary Path)
     DecodeContext ctx;
     ctx.allocator = [&](size_t s) -> uint8_t* {
-        try {
-            pOutput->pixels.resize(s);
-            return pOutput->pixels.data();
-        } catch (...) { return nullptr; }
+        pOutput->pixels.resize(s);
+        return pOutput->pixels.data();
     };
     ctx.freeFunc = [&](uint8_t*) { pOutput->pixels.clear(); };
     ctx.checkCancel = ShouldCancel;
@@ -7580,9 +7529,7 @@ HRESULT CImageLoader::LoadToMemoryPMR(LPCWSTR filePath, DecodedImage* pOutput, s
     UINT stride = w * bpp;
     size_t bufSize = (size_t)stride * h;
     
-    try {
-        pOutput->pixels.resize(bufSize);
-    } catch (...) { return E_OUTOFMEMORY; }
+    pOutput->pixels.resize(bufSize);
 
     pOutput->width = w;
     pOutput->height = h;
@@ -7622,11 +7569,9 @@ HRESULT CImageLoader::GetImageInfoFast(LPCWSTR filePath, ImageInfo* pInfo) {
     *pInfo = ImageInfo{}; // Reset
 
     // 1. Get file size (cheap filesystem call)
-    try {
-        pInfo->fileSize = std::filesystem::file_size(filePath);
-    } catch (...) {
-        return E_FAIL;
-    }
+    std::error_code ec_size;
+    pInfo->fileSize = std::filesystem::file_size(filePath, ec_size);
+    if (ec_size) return E_FAIL;
 
     // 2. Read first 64KB for initial detection
     size_t chunkStep = 64 * 1024;
@@ -8175,7 +8120,7 @@ HRESULT CImageLoader::GetImageInfoFast(LPCWSTR filePath, ImageInfo* pInfo) {
         // Parse Dimensions (approximate from first 64KB)
         std::string xml(data, data + size);
         
-        try {
+        {
             float pw = 0, ph = 0;
             std::string wStr = GetSvgRootAttrVal(xml, "width");
             std::string hStr = GetSvgRootAttrVal(xml, "height");
@@ -8194,7 +8139,7 @@ HRESULT CImageLoader::GetImageInfoFast(LPCWSTR filePath, ImageInfo* pInfo) {
                     pInfo->height = (int)std::lround(vbH);
                 }
             }
-        } catch (...) {}
+        }
         return S_OK;
     }
 
@@ -8706,14 +8651,14 @@ static HRESULT ReadMetadataLibRaw(LPCWSTR filePath, CImageLoader::ImageMetadata*
     
     // Conversion helper for LibRaw::open_file
     std::string pathUtf8;
-    try {
+    {
         int len = WideCharToMultiByte(CP_UTF8, 0, filePath, -1, NULL, 0, NULL, NULL);
         if (len > 0) {
             pathUtf8.resize(len);
             WideCharToMultiByte(CP_UTF8, 0, filePath, -1, &pathUtf8[0], len, NULL, NULL);
             pathUtf8.pop_back(); // Remove null terminator from string size
         }
-    } catch(...) { return E_INVALIDARG; }
+    }
 
     if (RawProcessor.open_file(pathUtf8.c_str()) != LIBRAW_SUCCESS) return E_FAIL;
     
@@ -9078,281 +9023,6 @@ static void PopulateFileStats(LPCWSTR filePath, CImageLoader::ImageMetadata* met
 }
 
 
-
-
-
-// [v6.0] Async Native Helper (Header-Only, No Pixel Decode)
-static bool TryReadMetadataNative(LPCWSTR filePath, CImageLoader::ImageMetadata* pMetadata) {
-    if (!filePath || !pMetadata) return false;
-    
-    // Read Header (256KB should cover most Exif)
-    std::vector<uint8_t> header(256 * 1024); 
-    size_t actualSize = PeekHeader(filePath, header.data(), header.size());
-    if (actualSize == 0) return false;
-    header.resize(actualSize);
-    
-    // 1. JPEG
-    // 1. JPEG
-    if (header.size() > 2 && header[0] == 0xFF && header[1] == 0xD8) {
-        // [Safety] Use setjmp to catch libjpeg errors (defaults to exit())
-        struct my_error_mgr { struct jpeg_error_mgr pub; jmp_buf setjmp_buffer; };
-        auto my_error_exit = [](j_common_ptr cinfo) {
-            my_error_mgr* myerr = (my_error_mgr*)cinfo->err;
-            longjmp(myerr->setjmp_buffer, 1);
-        };
-        
-        struct jpeg_decompress_struct cinfo;
-        struct my_error_mgr jerr;
-        
-        cinfo.err = jpeg_std_error(&jerr.pub);
-        jerr.pub.error_exit = my_error_exit;
-        
-        if (setjmp(jerr.setjmp_buffer)) {
-            jpeg_destroy_decompress(&cinfo);
-            return false;
-        }
-        
-        jpeg_create_decompress(&cinfo);
-        
-        // [v6.3] Enable Marker Saving for APP1 (Exif) and APP2 (ICC)
-        jpeg_save_markers(&cinfo, JPEG_APP0 + 1, 0xFFFF); 
-        jpeg_save_markers(&cinfo, JPEG_APP0 + 2, 0xFFFF); // ICC Profile
-        
-        jpeg_mem_src(&cinfo, header.data(), (unsigned long)header.size());
-        
-        bool success = false;
-        if (jpeg_read_header(&cinfo, TRUE) == JPEG_HEADER_OK) {
-             pMetadata->Format = L"JPEG";
-             // [v10.0] Fix: Always extract dimensions natively to prevent WIC 2633px preview regression
-             pMetadata->Width = cinfo.image_width;
-             pMetadata->Height = cinfo.image_height;
-
-             // Fill JPEG format details even when there is no EXIF, so the Info Panel can show chroma/Q/progressive.
-             {
-                 int q = GetJpegQualityFromBuffer(header.data(), header.size());
-
-                 std::wstring sub;
-                 if (cinfo.num_components == 3) {
-                     int h0 = cinfo.comp_info[0].h_samp_factor;
-                     int v0 = cinfo.comp_info[0].v_samp_factor;
-                     int h1 = cinfo.comp_info[1].h_samp_factor;
-                     int v1 = cinfo.comp_info[1].v_samp_factor;
-                     int h2 = cinfo.comp_info[2].h_samp_factor;
-                     int v2 = cinfo.comp_info[2].v_samp_factor;
-
-                     if (h0 == 2 && v0 == 2 && h1 == 1 && v1 == 1 && h2 == 1 && v2 == 1) sub = L"4:2:0";
-                     else if (h0 == 2 && v0 == 1 && h1 == 1 && v1 == 1 && h2 == 1 && v2 == 1) sub = L"4:2:2";
-                     else if (h0 == 1 && v0 == 1 && h1 == 1 && v1 == 1 && h2 == 1 && v2 == 1) sub = L"4:4:4";
-                     else sub = L"4:4:0";
-                 } else if (cinfo.num_components == 1) {
-                     sub = L"Gray";
-                 }
-
-                 wchar_t fmtBuf[64]{};
-                 if (q > 0 && !sub.empty()) swprintf_s(fmtBuf, L"%s Q=%d", sub.c_str(), q);
-                 else if (q > 0) swprintf_s(fmtBuf, L"Q=%d", q);
-                 else if (!sub.empty()) swprintf_s(fmtBuf, L"%s", sub.c_str());
-
-                 pMetadata->FormatDetails = fmtBuf;
-                 if (jpeg_has_multiple_scans(&cinfo)) {
-                     if (!pMetadata->FormatDetails.empty()) pMetadata->FormatDetails += L" ";
-                     pMetadata->FormatDetails += L"Prog";
-                 }
-             }
-
-             std::vector<uint8_t> iccData;
-             
-             for (jpeg_saved_marker_ptr marker = cinfo.marker_list; marker; marker = marker->next) {
-                 // Exif (APP1)
-                 if (marker->marker == JPEG_APP0 + 1 && marker->data_length >= 6 && memcmp(marker->data, "Exif\0\0", 6) == 0) {
-                     easyexif::EXIFInfo exif;
-                     if (exif.parseFromEXIFSegment(marker->data, marker->data_length) == 0) {
-                         PopulateMetadataFromEasyExif_Refined(exif, *pMetadata);
-                         success = true;
-                     }
-                 }
-                 // ICC (APP2)
-                 else if (marker->marker == JPEG_APP0 + 2 && marker->data_length > 14 && memcmp(marker->data, "ICC_PROFILE\0", 12) == 0) {
-                     iccData.insert(iccData.end(), marker->data + 14, marker->data + marker->data_length);
-                 }
-             }
-             
-             if (!iccData.empty()) {
-                 pMetadata->HasEmbeddedColorProfile = true;
-                 std::wstring desc = CImageLoader::ParseICCProfileName(iccData.data(), iccData.size());
-                 if (!desc.empty()) pMetadata->ColorSpace = desc;
-             }
-        }
-        jpeg_destroy_decompress(&cinfo);
-        return success || !pMetadata->FormatDetails.empty() || pMetadata->Width > 0;
-    }
-    
-    // 2. WebP
-    else if (header.size() > 12 && memcmp(header.data(), "RIFF", 4) == 0 && memcmp(header.data() + 8, "WEBP", 4) == 0) {
-        WebPData webpData = { header.data(), header.size() };
-        WebPDemuxer* demux = WebPDemux(&webpData);
-        bool success = false;
-        if (demux) {
-            WebPChunkIterator chunk;
-            // EXIF
-            if (WebPDemuxGetChunk(demux, "EXIF", 1, &chunk)) {
-                 easyexif::EXIFInfo exif;
-                 if (exif.parseFromEXIFSegment(chunk.chunk.bytes, static_cast<unsigned>(chunk.chunk.size)) == 0) {
-                     QuickView::PopulateMetadataFromEasyExif(exif, *pMetadata); success = true;
-                 } else {
-                     std::vector<unsigned char> t(chunk.chunk.size + 6);
-                     memcpy(t.data(), "Exif\0\0", 6); memcpy(t.data() + 6, chunk.chunk.bytes, chunk.chunk.size);
-                     if (exif.parseFromEXIFSegment(t.data(), static_cast<unsigned>(t.size())) == 0) { QuickView::PopulateMetadataFromEasyExif(exif, *pMetadata); success = true; }
-                 }
-                 WebPDemuxReleaseChunkIterator(&chunk);
-            }
-            // ICC
-            if (WebPDemuxGetChunk(demux, "ICCP", 1, &chunk)) {
-                pMetadata->HasEmbeddedColorProfile = true;
-                std::wstring desc = CImageLoader::ParseICCProfileName(chunk.chunk.bytes, chunk.chunk.size);
-                if (!desc.empty()) pMetadata->ColorSpace = desc;
-                WebPDemuxReleaseChunkIterator(&chunk);
-            }
-            WebPDemuxDelete(demux);
-        }
-        return success;
-    }
-    
-    // 3. AVIF (ftyp avif/heic) - libavif header parse
-    else if (header.size() > 12 && memcmp(header.data() + 4, "ftyp", 4) == 0) {
-        avifDecoder* decoder = avifDecoderCreate();
-        if (decoder) {
-            bool success = false;
-            // Note: avifDecoderSetIOMemory uses reader which might try to read more than available?
-            // If we only provide 256KB, parser might fail if file is larger and boxes are far?
-            // "rodata.size" is buffer size. AVIF parser respects it. 
-            // If it returns AVIF_RESULT_TRUNCATED_DATA, we fail gracefully.
-            if (avifDecoderSetIOMemory(decoder, header.data(), header.size()) == AVIF_RESULT_OK) {
-                decoder->ignoreXMP = AVIF_TRUE;
-                if (avifDecoderParse(decoder) == AVIF_RESULT_OK) {
-                    if (decoder->image->exif.size > 0 && decoder->image->exif.data) {
-                        easyexif::EXIFInfo exif;
-                        if (exif.parseFromEXIFSegment(decoder->image->exif.data, static_cast<unsigned>(decoder->image->exif.size)) == 0) {
-                            QuickView::PopulateMetadataFromEasyExif(exif, *pMetadata); success = true;
-                        } else {
-                            std::vector<unsigned char> t(decoder->image->exif.size + 6);
-                            memcpy(t.data(), "Exif\0\0", 6); memcpy(t.data() + 6, decoder->image->exif.data, decoder->image->exif.size);
-                            if (exif.parseFromEXIFSegment(t.data(), static_cast<unsigned>(t.size())) == 0) { QuickView::PopulateMetadataFromEasyExif(exif, *pMetadata); success = true; }
-                        }
-                    }
-                    
-                    // ICC
-                   if (decoder->image->icc.size > 0) {
-                       pMetadata->HasEmbeddedColorProfile = true;
-                       std::wstring desc = CImageLoader::ParseICCProfileName(decoder->image->icc.data, decoder->image->icc.size);
-                       if (!desc.empty()) pMetadata->ColorSpace = desc;
-                   }
-                }
-            }
-            avifDecoderDestroy(decoder);
-            return success;
-        }
-    }
-    
-    // 4. JXL (Signature check FF 0A or 00 00 00 0C JXL)
-    else if (header.size() > 12 && ((header[0]==0xFF && header[1]==0x0A) || (header.size()>12 && memcmp(header.data()+4, "JXL ", 4)==0))) {
-        JxlDecoder* dec = JxlDecoderCreate(NULL);
-        if (!dec) return false;
-        
-        bool success = false;
-        auto runner = CImageLoader::GetJxlRunner();
-        JxlDecoderSetParallelRunner(dec, JxlThreadParallelRunner, runner);
-        
-        if (JXL_DEC_SUCCESS == JxlDecoderSubscribeEvents(dec, JXL_DEC_BASIC_INFO | JXL_DEC_BOX | JXL_DEC_COLOR_ENCODING)) {
-            if (JXL_DEC_SUCCESS == JxlDecoderSetInput(dec, header.data(), header.size())) {
-                std::vector<uint8_t> ex;
-                bool reading = false;
-                for (;;) {
-                    JxlDecoderStatus status = JxlDecoderProcessInput(dec);
-                    if (status == JXL_DEC_ERROR || status == JXL_DEC_SUCCESS) break;
-                    if (status == JXL_DEC_NEED_MORE_INPUT) break; // 256KB exhausted
-                    
-                    if (status == JXL_DEC_BASIC_INFO) {
-                        JxlBasicInfo info = {};
-                        if (JXL_DEC_SUCCESS == JxlDecoderGetBasicInfo(dec, &info)) {
-                             // Debug logging
-                             QV_LOG("JXL_Metadata",
-                                 TraceLoggingUInt32(info.xsize, "Width"),
-                                 TraceLoggingUInt32(info.ysize, "Height"),
-                                 TraceLoggingUInt32(info.bits_per_sample, "Bits"),
-                                 TraceLoggingUInt32(info.num_extra_channels, "ExtraChannels"),
-                                 TraceLoggingBool(info.uses_original_profile, "UsesOrigProfile"));
-                             pMetadata->Width = info.xsize;
-                             pMetadata->Height = info.ysize;
-                             
-                             // Detect Bit Depth (approximate, JXL stores bits_per_sample)
-                             int bitDepth = info.bits_per_sample;
-                             if (info.exponent_bits_per_sample > 0) bitDepth = 32; // Float usually 32-bit container
-                             
-                             bool hasAlpha = (info.num_extra_channels > 0); // Simplification: extra channels *usually* alpha
-                             bool isLossless = (info.uses_original_profile == JXL_TRUE); 
-                             // Not strictly true (Modular Squeeze can use original profile but be lossy), 
-                             // but "uses_original_profile" is the best proxy for "Not transformed to XYB".
-                             // True Lossless in JXL is complex. For UI, "Lossless" usually implies "Arithmetic/Modular mode without XYB".
-                             
-                             CImageLoader::PopulateFormatDetails(pMetadata, L"JXL", bitDepth, isLossless, hasAlpha, false); 
-                             success = true; // [v6.3] Mark as successful
-                        }
-                    }
-                    else if (status == JXL_DEC_COLOR_ENCODING) {
-                         size_t iccSize = 0;
-                         if (JXL_DEC_SUCCESS == JxlDecoderGetICCProfileSize(dec, JXL_COLOR_PROFILE_TARGET_DATA, &iccSize) && iccSize > 0) {
-                             std::vector<uint8_t> icc(iccSize);
-                             if (JXL_DEC_SUCCESS == JxlDecoderGetColorAsICCProfile(dec, JXL_COLOR_PROFILE_TARGET_DATA, icc.data(), iccSize)) {
-                                 pMetadata->HasEmbeddedColorProfile = true;
-                                 std::wstring desc = CImageLoader::ParseICCProfileName(icc.data(), icc.size());
-                                 
-                                 // [v6.3] Fallback: Parse Structured Color Encoding (e.g. for P3/HLG/PQ where ICC name is missing)
-                                 if (desc.empty()) {
-                                      JxlColorEncoding enc;
-                                      if (JXL_DEC_SUCCESS == JxlDecoderGetColorAsEncodedProfile(dec, JXL_COLOR_PROFILE_TARGET_DATA, &enc)) {
-                                          desc = ParseJXLColorEncoding(enc);
-                                      }
-                                 }
-                                 
-                                 if (!desc.empty()) pMetadata->ColorSpace = desc;
-                             }
-                         }
-                    }
-                    else if (status == JXL_DEC_BOX) {
-                        JxlBoxType t;
-                        if (JXL_DEC_SUCCESS == JxlDecoderGetBoxType(dec, t, JXL_TRUE)) {
-                            if (memcmp(t, "Exif", 4) == 0) {
-                                ex.resize(65536);
-                                JxlDecoderSetBoxBuffer(dec, ex.data(), ex.size());
-                                reading = true;
-                            } else reading = false;
-                        }
-                    } else if (reading && status != JXL_DEC_BOX_NEED_MORE_OUTPUT) {
-                        // Finished box
-                        size_t rem = JxlDecoderReleaseBoxBuffer(dec);
-                        size_t size = ex.size() - rem;
-                        if (size > 0) {
-                            easyexif::EXIFInfo exif;
-                            if (exif.parseFromEXIFSegment(ex.data(), static_cast<unsigned>(size)) == 0) { QuickView::PopulateMetadataFromEasyExif(exif, *pMetadata); success = true; }
-                            else {
-                                std::vector<unsigned char> tmp(size + 6);
-                                memcpy(tmp.data(), "Exif\0\0", 6); memcpy(tmp.data()+6, ex.data(), size);
-                                if (exif.parseFromEXIFSegment(tmp.data(), static_cast<unsigned>(tmp.size())) == 0) { QuickView::PopulateMetadataFromEasyExif(exif, *pMetadata); success = true; }
-                            }
-                        }
-                        break; // Found it
-                    }
-                }
-            }
-        }
-        JxlDecoderDestroy(dec);
-        return success;
-    }
-
-    return false;
-}
-
 HRESULT CImageLoader::ReadMetadata(LPCWSTR filePath, ImageMetadata* pMetadata, bool clear) {
     if (!filePath || !pMetadata) return E_INVALIDARG;
     if (clear) *pMetadata = {}; 
@@ -9630,7 +9300,7 @@ void CImageLoader::ComputeHistogramFromFrame(const QuickView::RawImageFrame& fra
     int auxStride = hasGainMap ? pAux->stride : 0;
     const uint8_t* auxPixels = hasGainMap ? pAux->pixels : nullptr;
 
-    for (UINT y = 0; y < frame.height; y += stepY) {
+    for (UINT y = 0; y < (UINT)frame.height; y += stepY) {
         const uint8_t* row = ptr + (UINT64)y * stride;
         
         if (isFloat) {
@@ -9661,7 +9331,7 @@ void CImageLoader::ComputeHistogramFromFrame(const QuickView::RawImageFrame& fra
     }
 
     // Laplacian Sharpness (sampled)
-    if (frame.width > lapStep * 2 && frame.height > lapStep * 2) {
+    if ((UINT)frame.width > lapStep * 2 && (UINT)frame.height > lapStep * 2) {
         auto getLumaAt = [&](const uint8_t* rowPtr, UINT x) -> int {
             if (isFloat) {
                 const float* px = (const float*)rowPtr + x * 4;
@@ -9675,12 +9345,12 @@ void CImageLoader::ComputeHistogramFromFrame(const QuickView::RawImageFrame& fra
             }
         };
 
-        for (UINT y = lapStep; y + lapStep < frame.height; y += lapStep) {
+        for (UINT y = lapStep; y + lapStep < (UINT)frame.height; y += lapStep) {
             const uint8_t* rowPrev = ptr + (UINT64)(y - lapStep) * stride;
             const uint8_t* rowCurr = ptr + (UINT64)y * stride;
             const uint8_t* rowNext = ptr + (UINT64)(y + lapStep) * stride;
 
-            for (UINT x = lapStep; x + lapStep < frame.width; x += lapStep) {
+            for (UINT x = lapStep; x + lapStep < (UINT)frame.width; x += lapStep) {
                 const int center = getLumaAt(rowCurr, x);
                 const int left = getLumaAt(rowCurr, x - lapStep);
                 const int right = getLumaAt(rowCurr, x + lapStep);
@@ -9946,14 +9616,10 @@ HRESULT CImageLoader::LoadThumbAVIF_Proxy(const uint8_t* data, size_t size, int 
     
     // Copy pixels
     size_t outSize = rgb.rowBytes * rgb.height;
-    try {
-        pData->pixels.assign(rgb.pixels, rgb.pixels + outSize);
-        pData->isValid = true;
-        pData->isBlurry = (targetSize > 0); // Blurry if scaled, Clear if full (FastPass)
-        result = AVIF_RESULT_OK;
-    } catch (...) {
-        result = AVIF_RESULT_OUT_OF_MEMORY;
-    }
+    pData->pixels.assign(rgb.pixels, rgb.pixels + outSize);
+    pData->isValid = true;
+    pData->isBlurry = (targetSize > 0); // Blurry if scaled, Clear if full (FastPass)
+    result = AVIF_RESULT_OK;
 
     // 8. Cleanup
     avifRGBImageFreePixels(&rgb);
@@ -9984,14 +9650,10 @@ HRESULT CImageLoader::LoadThumbWebPFromMemory(const uint8_t* data, size_t size, 
     }
     
     // 2. Call Helper
-    int outW = 0, outH = 0, outStride = 0;
-    uint8_t* outPixels = nullptr;
-    
+
     auto allocate = [&](size_t s) -> uint8_t* {
-         try {
              pData->pixels.resize(s);
              return pData->pixels.data();
-         } catch(...) { return nullptr; }
     };
     auto freeOnFail = [&](uint8_t*) { pData->pixels.clear(); };
     
@@ -10027,7 +9689,7 @@ HRESULT CImageLoader::LoadThumbWebPFromMemory(const uint8_t* data, size_t size, 
 
 
 
-HRESULT CImageLoader::LoadThumbJXL_DC(const uint8_t* pFile, size_t fileSize, ThumbData* pData, ImageMetadata* pMetadata, bool forceRenderFull, bool allowFakeBase) {
+HRESULT CImageLoader::LoadThumbJXL_DC(const uint8_t* pFile, size_t fileSize, ThumbData* pData, ImageMetadata* pMetadata, bool allowFakeBase) {
     if (!pFile || fileSize == 0 || !pData) return E_INVALIDARG;
 
     pData->isValid = false;
@@ -10132,9 +9794,7 @@ HRESULT CImageLoader::LoadThumbJXL_DC(const uint8_t* pFile, size_t fileSize, Thu
                 if (downH == 0) downH = 1;
                 
                 size_t bufferSize = downW * downH * 4;
-                try {
-                    pData->pixels.resize(bufferSize);
-                } catch(...) { return cleanup(E_OUTOFMEMORY); }
+                pData->pixels.resize(bufferSize);
                 
                 pData->width = (UINT)downW;
                 pData->height = (UINT)downH;
@@ -10189,11 +9849,7 @@ HRESULT CImageLoader::LoadThumbJXL_DC(const uint8_t* pFile, size_t fileSize, Thu
                     // Safety cap: preview buffer should remain practical for base-layer display.
                     const size_t kPreviewCap = 512ULL * 1024ULL * 1024ULL; // 512 MB
                     if (previewSize <= kPreviewCap) {
-                        try {
-                            pData->pixels.resize(previewSize);
-                        } catch (...) {
-                            return cleanup(E_OUTOFMEMORY);
-                        }
+                        pData->pixels.resize(previewSize);
 
                         pData->width = (UINT)info.preview.xsize;
                         pData->height = (UINT)info.preview.ysize;
@@ -10241,7 +9897,7 @@ HRESULT CImageLoader::LoadThumbJXL_DC(const uint8_t* pFile, size_t fileSize, Thu
                   // FastLane Full Decode (or HeavyLane forced full decode within reasonable limits)
                   size_t stride = info.xsize * 4;
                   size_t bufSize = stride * info.ysize;
-                  try { pData->pixels.resize(bufSize); } catch(...) { return cleanup(E_OUTOFMEMORY); }
+                  pData->pixels.resize(bufSize);
                   
                   pData->width = (UINT)info.xsize;
                   pData->height = (UINT)info.ysize;
@@ -10257,9 +9913,7 @@ HRESULT CImageLoader::LoadThumbJXL_DC(const uint8_t* pFile, size_t fileSize, Thu
                   // We fake a 1x1 transparent pixel to satisfy the pipeline and unlock Titan Mode.
                   QV_LOG("JXL_DC", TraceLoggingString("FakeBase LargeImage", "Action"));
                   
-                  try {
-                      pData->pixels.assign(4, 0); // 1 pixel, 4 channels (RGBA), all 0 (transparent)
-                  } catch(...) { return cleanup(E_OUTOFMEMORY); }
+                  pData->pixels.assign(4, 0); // 1 pixel, 4 channels (RGBA), all 0 (transparent)
                   
                   pData->width = 1;
                   pData->height = 1;
@@ -10502,7 +10156,7 @@ HRESULT CImageLoader::LoadFastPass(LPCWSTR filePath, ThumbData* pData) {
          if (!ReadFileToVector(filePath, buf)) return E_FAIL;
          
          // FastPass is user-visible too, so do not allow Titan's fake base here.
-         HRESULT hr = LoadThumbJXL_DC(buf.data(), buf.size(), pData, nullptr, false, false);
+         HRESULT hr = LoadThumbJXL_DC(buf.data(), buf.size(), pData, nullptr, false);
          if (SUCCEEDED(hr)) {
              // pData->isBlurry and loaderName already set inside LoadThumbJXL_DC
              // isBlurry=true (DC), Name="libjxl (DC)"
@@ -10529,8 +10183,7 @@ HRESULT CImageLoader::LoadFastPass(LPCWSTR filePath, ThumbData* pData) {
         ctx.forcePreview = true; 
         
         ctx.allocator = [&](size_t s) -> uint8_t* {
-             try { pData->pixels.resize(s); return pData->pixels.data(); }
-             catch (...) { return nullptr; }
+             pData->pixels.resize(s); return pData->pixels.data();
         };
         
         QuickView::Codec::DecodeResult res;
@@ -10552,7 +10205,8 @@ HRESULT CImageLoader::LoadFastPass(LPCWSTR filePath, ThumbData* pData) {
     // [Module B] Fast SVG Path
     else if (format == L"SVG") {
         using namespace QuickView;
-        RawImageFrame* pFrame = new RawImageFrame();
+        std::unique_ptr<RawImageFrame> pFrame(new (std::nothrow) RawImageFrame());
+        if (!pFrame) return E_OUTOFMEMORY;
         
         // Smart Sizing (Delegate to LoadToFrame logic via -1)
         
@@ -10564,7 +10218,7 @@ HRESULT CImageLoader::LoadFastPass(LPCWSTR filePath, ThumbData* pData) {
         int targetH = -1;
         
         // Use LoadToFrame (Hybrid D2D Path) on Current Thread
-        HRESULT hr = LoadToFrame(filePath, pFrame, nullptr, targetW, targetH, &pData->loaderName, nullptr, nullptr);
+        HRESULT hr = LoadToFrame(filePath, pFrame.get(), nullptr, targetW, targetH, &pData->loaderName, nullptr, nullptr);
         
         if (SUCCEEDED(hr)) {
              pData->width = pFrame->width;
@@ -10583,8 +10237,6 @@ HRESULT CImageLoader::LoadFastPass(LPCWSTR filePath, ThumbData* pData) {
              pData->isBlurry = false;
         }
         
-        pFrame->Release();
-        delete pFrame;
         return hr;
     }
 
@@ -10860,7 +10512,7 @@ static bool GetISOBMFFDimensions(LPCWSTR filePath, uint32_t* width, uint32_t* he
     // Actually, simply scanning for ALL 'ispe' boxes within the buffer is fairly safe because 'ispe' shouldn't appear randomly.
     // But to be correct, let's parse boxes.
 
-    const uint8_t* ptr = buffer.data();
+
     // Helper to peek boxes
     uint64_t maxPixels = 0;
     uint32_t maxW = 0;
@@ -10954,11 +10606,8 @@ CImageLoader::ImageHeaderInfo CImageLoader::PeekHeader(LPCWSTR filePath) {
     if (!filePath) return result;
     
     // Get file size
-    try {
-        result.fileSize = std::filesystem::file_size(filePath);
-    } catch (...) {
-        return result; // Invalid
-    }
+    std::error_code ec;
+    result.fileSize = std::filesystem::file_size(filePath, ec);
     
     // [v9.3] Use extension-first format detection (handles RAW correctly)
     result.format = DetectFormatFromContent(filePath);
@@ -11305,7 +10954,7 @@ HRESULT CImageLoader::LoadToFrame(LPCWSTR filePath, QuickView::RawImageFrame* ou
             // Hybrid D2D SVG Path (D3D11 WARP Device Architecture)
             // Debugging: Added detailed HRESULT logs.
 
-            HRESULT hr = S_OK;
+
             
             // [Fix] Universal SVG Sanitizer & Style Inliner
             // Issues: 
@@ -11317,7 +10966,7 @@ HRESULT CImageLoader::LoadToFrame(LPCWSTR filePath, QuickView::RawImageFrame* ou
                 // =========================================================
                 // PHASE 1: ID SANITIZATION (Fix Broken Links)
                 // =========================================================
-                try {
+                {
                     std::map<std::string, std::string> replacements;
                     int count = 0;
                     
@@ -11353,8 +11002,6 @@ HRESULT CImageLoader::LoadToFrame(LPCWSTR filePath, QuickView::RawImageFrame* ou
                             TraceLoggingString("IDsSanitized", "Action"),
                             TraceLoggingInt32((int)replacements.size(), "Count"));
                     }
-                } catch (...) {
-                    QV_LOG("SVG_Sanitize", TraceLoggingString("IDPattern Failure", "Action"));
                 }
 
                 // =========================================================
@@ -11364,7 +11011,7 @@ HRESULT CImageLoader::LoadToFrame(LPCWSTR filePath, QuickView::RawImageFrame* ou
                 // <style> blocks and inline fill/stroke directly onto elements.
                 // Uses string_view zero-copy parsing. No std::regex.
                 // =========================================================
-                try {
+                {
                     int inlinedCount = 0;
                     
                     // --- Utility lambdas (string_view based) ---
@@ -11578,8 +11225,6 @@ HRESULT CImageLoader::LoadToFrame(LPCWSTR filePath, QuickView::RawImageFrame* ou
                              TraceLoggingString("Inlined", "Action"),
                              TraceLoggingInt32(inlinedCount, "Count"));
                     }
-                } catch (...) {
-                    QV_LOG("SVG_Style", TraceLoggingString("InlinerFailure", "Action"));
                 }
                 
                 // Commit changes
@@ -11597,7 +11242,7 @@ HRESULT CImageLoader::LoadToFrame(LPCWSTR filePath, QuickView::RawImageFrame* ou
             
             std::string svgContent(fileData.begin(), fileData.end());
 
-            try {
+            {
                 float pw = 0, ph = 0;
                 std::string wStr = GetSvgRootAttrVal(svgContent, "width");
                 std::string hStr = GetSvgRootAttrVal(svgContent, "height");
@@ -11615,8 +11260,6 @@ HRESULT CImageLoader::LoadToFrame(LPCWSTR filePath, QuickView::RawImageFrame* ou
                         svgH = vbH;
                     }
                 }
-            } catch (...) {
-                QV_LOG("SVG_Parse", TraceLoggingString("DimensionFailed Default", "Action"));
             }
             
             if (svgW <= 0) svgW = 512;
@@ -11833,43 +11476,7 @@ std::wstring CImageLoader::ParseICCProfileName(const uint8_t* data, size_t size)
     return L""; // Not found
 }
 
-// Helper: Parse JXL Color Encoding enum
-static std::wstring ParseJXLColorEncoding(const JxlColorEncoding& c) {
-    if (c.color_space == JXL_COLOR_SPACE_GRAY) return L"Grayscale";
-    if (c.color_space == JXL_COLOR_SPACE_XYB) return L"XYB";
-    if (c.color_space != JXL_COLOR_SPACE_RGB) return L""; // Unknown
 
-    std::wstring primaries;
-    switch (c.primaries) {
-        case JXL_PRIMARIES_SRGB: primaries = L"sRGB"; break;
-        case JXL_PRIMARIES_P3: primaries = L"Display P3"; break;
-        case JXL_PRIMARIES_2100: primaries = L"Rec.2100"; break;
-        default: break;
-    }
-
-    std::wstring transfer;
-    switch (c.transfer_function) {
-        case JXL_TRANSFER_FUNCTION_SRGB: transfer = L"sRGB"; break;
-        case JXL_TRANSFER_FUNCTION_LINEAR: transfer = L"Linear"; break;
-        case JXL_TRANSFER_FUNCTION_PQ: transfer = L"PQ"; break;
-        case JXL_TRANSFER_FUNCTION_HLG: transfer = L"HLG"; break;
-        case JXL_TRANSFER_FUNCTION_709: transfer = L"Rec.709"; break;
-        case JXL_TRANSFER_FUNCTION_DCI: transfer = L"DCI"; break;
-        default: break;
-    }
-
-    // Combine logic
-    if (primaries == L"sRGB" && transfer == L"sRGB") return L"sRGB";
-    if (primaries == L"Display P3" && transfer == L"sRGB") return L"Display P3";
-    if (primaries.empty() && transfer.empty()) return L"";
-
-    // Generic formatting
-    std::wstring result = primaries.empty() ? L"Custom" : primaries;
-    if (!transfer.empty() && transfer != L"sRGB") { // Assume sRGB transfer is default/implied for many
-        result += L" (" + transfer + L")";
-    }
-    return result;
-}
 
 static QuickView::TransferFunction MapJxlTransferFunction(JxlTransferFunction tf) {
     switch (tf) {
@@ -12185,14 +11792,14 @@ HRESULT CImageLoader::GetEmbeddedPreviewInfo(LPCWSTR filePath, int* width, int* 
 
     // Conversion helper (same as ReadMetadataLibRaw)
     std::string pathUtf8;
-    try {
+    {
         int len = WideCharToMultiByte(CP_UTF8, 0, filePath, -1, NULL, 0, NULL, NULL);
         if (len > 0) {
             pathUtf8.resize(len);
             WideCharToMultiByte(CP_UTF8, 0, filePath, -1, &pathUtf8[0], len, NULL, NULL);
             pathUtf8.pop_back(); 
         }
-    } catch(...) { return E_INVALIDARG; }
+    }
 
     if (RawProcessor.open_file(pathUtf8.c_str()) != LIBRAW_SUCCESS) return E_FAIL;
     

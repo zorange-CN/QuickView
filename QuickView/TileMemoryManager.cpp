@@ -14,7 +14,7 @@ TileMemoryManager::TileMemoryManager(size_t capacityMB) {
     m_basePtr = static_cast<uint8_t*>(_aligned_malloc(m_totalSize, 64));
     
     if (!m_basePtr) {
-        throw std::bad_alloc();
+        abort();
     }
     
     // Initialize free stack

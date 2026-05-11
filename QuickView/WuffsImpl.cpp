@@ -1,4 +1,4 @@
-#include "pch.h"
+
 
 // === Module Selection ===
 #define WUFFS_CONFIG__MODULES
@@ -44,12 +44,11 @@ typedef unsigned char Bytef;
 typedef unsigned long uLongf;
 #endif
 
-#include <vector>
-#include <cstring>
-#include <memory_resource>
-#include <new>
-#include <malloc.h>
 #include <algorithm>
+#include <cstring>
+#include <malloc.h>
+#include <vector>
+
 
 namespace WuffsLoader {
 
@@ -58,10 +57,7 @@ namespace WuffsLoader {
         uint8_t* ptr = nullptr;
         using allocator_type = std::allocator<uint8_t>;
         BufferAdapter(AllocatorFunc f) : allocFunc(f) {}
-        void resize(size_t s) {
-            ptr = allocFunc(s);
-            if (!ptr && s > 0) throw std::bad_alloc();
-        }
+        void resize(size_t s) { ptr = allocFunc(s); }
         uint8_t* data() { return ptr; }
         allocator_type get_allocator() const { return allocator_type(); }
     };
@@ -162,14 +158,14 @@ static bool DecodePNG_Impl(const uint8_t* data, size_t size,
         WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED);
     if (!wuffs_base__status__is_ok(&status)) return false;
 
-    wuffs_base__io_buffer src = {0};
+    wuffs_base__io_buffer src = {};
     src.data.ptr = const_cast<uint8_t*>(data);
     src.data.len = size;
     src.meta.wi = std::min(size, (size_t)1048576); 
     src.meta.ri = 0;
     src.meta.closed = (src.meta.wi == size);
 
-    wuffs_base__image_config ic = {0};
+    wuffs_base__image_config ic = {};
     WUFFS_TRY(wuffs_png__decoder__decode_image_config(&dec, &ic, &src));
 
     uint32_t width = wuffs_base__pixel_config__width(&ic.pixcfg);
@@ -182,7 +178,10 @@ static bool DecodePNG_Impl(const uint8_t* data, size_t size,
         pInfo->hasAlpha = !wuffs_base__image_config__first_frame_is_opaque(&ic);
         
         // Bit Depth - simplified check based on source format
-        wuffs_base__pixel_format fmt = wuffs_base__pixel_config__pixel_format(&ic.pixcfg);
+        wuffs_base__pixel_format fmt =
+            wuffs_base__pixel_config__pixel_format(&ic.pixcfg);
+        (void)fmt;
+        (void)fmt;
         // Wuffs format encoding is complex, but we can verify bit depth approximately
         // Standard PNG is usually 8 bit per channel. 
         // If 16-bit, Wuffs might report it? 
@@ -198,7 +197,7 @@ static bool DecodePNG_Impl(const uint8_t* data, size_t size,
     wuffs_base__pixel_config__set(&ic.pixcfg, WUFFS_BASE__PIXEL_FORMAT__BGRA_PREMUL, WUFFS_BASE__PIXEL_SUBSAMPLING__NONE, width, height);
 
     size_t pixelSize = (size_t)width * height * 4;
-    try { outPixels.resize(pixelSize); } catch (...) { return false; }
+    outPixels.resize(pixelSize);
 
     wuffs_base__pixel_buffer pb;
     status = wuffs_base__pixel_buffer__set_from_slice(&pb, &ic.pixcfg, wuffs_base__make_slice_u8(outPixels.data(), pixelSize));
@@ -207,9 +206,9 @@ static bool DecodePNG_Impl(const uint8_t* data, size_t size,
     uint64_t workbuf_len = wuffs_png__decoder__workbuf_len(&dec).max_incl;
     // [Opt] Use same allocator as output (PMR for Heavy Lane = Fast / Heap for Scout = Standard)
     std::vector<uint8_t, typename Vec::allocator_type> workbuf(outPixels.get_allocator());
-    try { workbuf.resize(workbuf_len); } catch(...) { return false; }
+    workbuf.resize(workbuf_len);
 
-    wuffs_base__frame_config fc = {0};
+    wuffs_base__frame_config fc = {};
     WUFFS_TRY(wuffs_png__decoder__decode_frame_config(&dec, &fc, &src));
 
     WUFFS_TRY(wuffs_png__decoder__decode_frame(&dec, &pb, &src, WUFFS_BASE__PIXEL_BLEND__SRC, wuffs_base__make_slice_u8(workbuf.data(), workbuf.size()), nullptr));
@@ -236,14 +235,14 @@ static bool DecodeGIF_Impl(const uint8_t* data, size_t size,
         WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED);
     if (!wuffs_base__status__is_ok(&status)) return false;
 
-    wuffs_base__io_buffer src = {0};
+    wuffs_base__io_buffer src = {};
     src.data.ptr = const_cast<uint8_t*>(data);
     src.data.len = size;
     src.meta.wi = std::min(size, (size_t)1048576);
     src.meta.ri = 0;
     src.meta.closed = (src.meta.wi == size);
 
-    wuffs_base__image_config ic = {0};
+    wuffs_base__image_config ic = {};
     WUFFS_TRY(wuffs_gif__decoder__decode_image_config(&dec, &ic, &src));
 
     uint32_t width = wuffs_base__pixel_config__width(&ic.pixcfg);
@@ -253,7 +252,7 @@ static bool DecodeGIF_Impl(const uint8_t* data, size_t size,
     wuffs_base__pixel_config__set(&ic.pixcfg, WUFFS_BASE__PIXEL_FORMAT__BGRA_PREMUL, WUFFS_BASE__PIXEL_SUBSAMPLING__NONE, width, height);
 
     size_t pixelSize = (size_t)width * height * 4;
-    try { outPixels.resize(pixelSize); } catch(...) { return false; }
+    outPixels.resize(pixelSize);
 
     wuffs_base__pixel_buffer pb;
     status = wuffs_base__pixel_buffer__set_from_slice(&pb, &ic.pixcfg, wuffs_base__make_slice_u8(outPixels.data(), pixelSize));
@@ -262,9 +261,9 @@ static bool DecodeGIF_Impl(const uint8_t* data, size_t size,
     uint64_t workbuf_len = wuffs_gif__decoder__workbuf_len(&dec).max_incl;
     // [Opt] Use same allocator as output (PMR for Heavy Lane = Fast / Heap for Scout = Standard)
     std::vector<uint8_t, typename Vec::allocator_type> workbuf(outPixels.get_allocator());
-    try { workbuf.resize(workbuf_len); } catch(...) { return false; }
+    workbuf.resize(workbuf_len);
 
-    wuffs_base__frame_config fc = {0};
+    wuffs_base__frame_config fc = {};
     WUFFS_TRY(wuffs_gif__decoder__decode_frame_config(&dec, &fc, &src));
 
     WUFFS_TRY(wuffs_gif__decoder__decode_frame(&dec, &pb, &src, WUFFS_BASE__PIXEL_BLEND__SRC, wuffs_base__make_slice_u8(workbuf.data(), workbuf.size()), nullptr));
@@ -291,14 +290,14 @@ static bool DecodeBMP_Impl(const uint8_t* data, size_t size,
         WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED);
     if (!wuffs_base__status__is_ok(&status)) return false;
 
-    wuffs_base__io_buffer src = {0};
+    wuffs_base__io_buffer src = {};
     src.data.ptr = const_cast<uint8_t*>(data);
     src.data.len = size;
     src.meta.wi = std::min(size, (size_t)1048576);
     src.meta.ri = 0;
     src.meta.closed = (src.meta.wi == size);
 
-    wuffs_base__image_config ic = {0};
+    wuffs_base__image_config ic = {};
     WUFFS_TRY(wuffs_bmp__decoder__decode_image_config(&dec, &ic, &src));
 
     uint32_t width = wuffs_base__pixel_config__width(&ic.pixcfg);
@@ -308,7 +307,7 @@ static bool DecodeBMP_Impl(const uint8_t* data, size_t size,
     wuffs_base__pixel_config__set(&ic.pixcfg, WUFFS_BASE__PIXEL_FORMAT__BGRA_PREMUL, WUFFS_BASE__PIXEL_SUBSAMPLING__NONE, width, height);
 
     size_t pixelSize = (size_t)width * height * 4;
-    try { outPixels.resize(pixelSize); } catch(...) { return false; }
+    outPixels.resize(pixelSize);
 
     wuffs_base__pixel_buffer pb;
     status = wuffs_base__pixel_buffer__set_from_slice(&pb, &ic.pixcfg, wuffs_base__make_slice_u8(outPixels.data(), pixelSize));
@@ -317,9 +316,9 @@ static bool DecodeBMP_Impl(const uint8_t* data, size_t size,
     uint64_t workbuf_len = wuffs_bmp__decoder__workbuf_len(&dec).max_incl;
     // [Opt] Use same allocator as output (PMR for Heavy Lane = Fast / Heap for Scout = Standard)
     std::vector<uint8_t, typename Vec::allocator_type> workbuf(outPixels.get_allocator());
-    try { workbuf.resize(workbuf_len); } catch(...) { return false; }
+    workbuf.resize(workbuf_len);
 
-    wuffs_base__frame_config fc = {0};
+    wuffs_base__frame_config fc = {};
     WUFFS_TRY(wuffs_bmp__decoder__decode_frame_config(&dec, &fc, &src));
 
     WUFFS_TRY(wuffs_bmp__decoder__decode_frame(&dec, &pb, &src, WUFFS_BASE__PIXEL_BLEND__SRC, wuffs_base__make_slice_u8(workbuf.data(), workbuf.size()), nullptr));
@@ -346,14 +345,14 @@ static bool DecodeTGA_Impl(const uint8_t* data, size_t size,
         WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED);
     if (!wuffs_base__status__is_ok(&status)) return false;
 
-    wuffs_base__io_buffer src = {0};
+    wuffs_base__io_buffer src = {};
     src.data.ptr = const_cast<uint8_t*>(data);
     src.data.len = size;
     src.meta.wi = std::min(size, (size_t)1048576);
     src.meta.ri = 0;
     src.meta.closed = (src.meta.wi == size);
 
-    wuffs_base__image_config ic = {0};
+    wuffs_base__image_config ic = {};
     WUFFS_TRY(wuffs_targa__decoder__decode_image_config(&dec, &ic, &src));
 
     uint32_t width = wuffs_base__pixel_config__width(&ic.pixcfg);
@@ -363,7 +362,7 @@ static bool DecodeTGA_Impl(const uint8_t* data, size_t size,
     wuffs_base__pixel_config__set(&ic.pixcfg, WUFFS_BASE__PIXEL_FORMAT__BGRA_PREMUL, WUFFS_BASE__PIXEL_SUBSAMPLING__NONE, width, height);
 
     size_t pixelSize = (size_t)width * height * 4;
-    try { outPixels.resize(pixelSize); } catch(...) { return false; }
+    outPixels.resize(pixelSize);
 
     wuffs_base__pixel_buffer pb;
     status = wuffs_base__pixel_buffer__set_from_slice(&pb, &ic.pixcfg, wuffs_base__make_slice_u8(outPixels.data(), pixelSize));
@@ -372,9 +371,9 @@ static bool DecodeTGA_Impl(const uint8_t* data, size_t size,
     uint64_t workbuf_len = wuffs_targa__decoder__workbuf_len(&dec).max_incl;
     // [Opt] Use same allocator as output (PMR for Heavy Lane = Fast / Heap for Scout = Standard)
     std::vector<uint8_t, typename Vec::allocator_type> workbuf(outPixels.get_allocator());
-    try { workbuf.resize(workbuf_len); } catch(...) { return false; }
+    workbuf.resize(workbuf_len);
 
-    wuffs_base__frame_config fc = {0};
+    wuffs_base__frame_config fc = {};
     WUFFS_TRY(wuffs_targa__decoder__decode_frame_config(&dec, &fc, &src));
 
     WUFFS_TRY(wuffs_targa__decoder__decode_frame(&dec, &pb, &src, WUFFS_BASE__PIXEL_BLEND__SRC, wuffs_base__make_slice_u8(workbuf.data(), workbuf.size()), nullptr));
@@ -401,14 +400,14 @@ static bool DecodeWBMP_Impl(const uint8_t* data, size_t size,
         WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED);
     if (!wuffs_base__status__is_ok(&status)) return false;
 
-    wuffs_base__io_buffer src = {0};
+    wuffs_base__io_buffer src = {};
     src.data.ptr = const_cast<uint8_t*>(data);
     src.data.len = size;
     src.meta.wi = std::min(size, (size_t)1048576);
     src.meta.ri = 0;
     src.meta.closed = (src.meta.wi == size);
 
-    wuffs_base__image_config ic = {0};
+    wuffs_base__image_config ic = {};
     WUFFS_TRY(wuffs_wbmp__decoder__decode_image_config(&dec, &ic, &src));
 
     uint32_t width = wuffs_base__pixel_config__width(&ic.pixcfg);
@@ -418,7 +417,7 @@ static bool DecodeWBMP_Impl(const uint8_t* data, size_t size,
     wuffs_base__pixel_config__set(&ic.pixcfg, WUFFS_BASE__PIXEL_FORMAT__BGRA_PREMUL, WUFFS_BASE__PIXEL_SUBSAMPLING__NONE, width, height);
 
     size_t pixelSize = (size_t)width * height * 4;
-    try { outPixels.resize(pixelSize); } catch(...) { return false; }
+    outPixels.resize(pixelSize);
 
     wuffs_base__pixel_buffer pb;
     status = wuffs_base__pixel_buffer__set_from_slice(&pb, &ic.pixcfg, wuffs_base__make_slice_u8(outPixels.data(), pixelSize));
@@ -427,9 +426,9 @@ static bool DecodeWBMP_Impl(const uint8_t* data, size_t size,
     uint64_t workbuf_len = wuffs_wbmp__decoder__workbuf_len(&dec).max_incl;
     // [Opt] Use same allocator as output (PMR for Heavy Lane = Fast / Heap for Scout = Standard)
     std::vector<uint8_t, typename Vec::allocator_type> workbuf(outPixels.get_allocator());
-    try { workbuf.resize(workbuf_len); } catch(...) { return false; }
+    workbuf.resize(workbuf_len);
 
-    wuffs_base__frame_config fc = {0};
+    wuffs_base__frame_config fc = {};
     WUFFS_TRY(wuffs_wbmp__decoder__decode_frame_config(&dec, &fc, &src));
 
     WUFFS_TRY(wuffs_wbmp__decoder__decode_frame(&dec, &pb, &src, WUFFS_BASE__PIXEL_BLEND__SRC, wuffs_base__make_slice_u8(workbuf.data(), workbuf.size()), nullptr));
@@ -456,14 +455,14 @@ static bool DecodeNetpbm_Impl(const uint8_t* data, size_t size,
         WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED);
     if (!wuffs_base__status__is_ok(&status)) return false;
 
-    wuffs_base__io_buffer src = {0};
+    wuffs_base__io_buffer src = {};
     src.data.ptr = const_cast<uint8_t*>(data);
     src.data.len = size;
     src.meta.wi = std::min(size, (size_t)1048576);
     src.meta.ri = 0;
     src.meta.closed = (src.meta.wi == size);
 
-    wuffs_base__image_config ic = {0};
+    wuffs_base__image_config ic = {};
     WUFFS_TRY(wuffs_netpbm__decoder__decode_image_config(&dec, &ic, &src));
 
     uint32_t width = wuffs_base__pixel_config__width(&ic.pixcfg);
@@ -473,7 +472,7 @@ static bool DecodeNetpbm_Impl(const uint8_t* data, size_t size,
     wuffs_base__pixel_config__set(&ic.pixcfg, WUFFS_BASE__PIXEL_FORMAT__BGRA_PREMUL, WUFFS_BASE__PIXEL_SUBSAMPLING__NONE, width, height);
 
     size_t pixelSize = (size_t)width * height * 4;
-    try { outPixels.resize(pixelSize); } catch(...) { return false; }
+    outPixels.resize(pixelSize);
 
     wuffs_base__pixel_buffer pb;
     status = wuffs_base__pixel_buffer__set_from_slice(&pb, &ic.pixcfg, wuffs_base__make_slice_u8(outPixels.data(), pixelSize));
@@ -482,9 +481,9 @@ static bool DecodeNetpbm_Impl(const uint8_t* data, size_t size,
     uint64_t workbuf_len = wuffs_netpbm__decoder__workbuf_len(&dec).max_incl;
     // [Opt] Use same allocator as output (PMR for Heavy Lane = Fast / Heap for Scout = Standard)
     std::vector<uint8_t, typename Vec::allocator_type> workbuf(outPixels.get_allocator());
-    try { workbuf.resize(workbuf_len); } catch(...) { return false; }
+    workbuf.resize(workbuf_len);
 
-    wuffs_base__frame_config fc = {0};
+    wuffs_base__frame_config fc = {};
     WUFFS_TRY(wuffs_netpbm__decoder__decode_frame_config(&dec, &fc, &src));
 
     WUFFS_TRY(wuffs_netpbm__decoder__decode_frame(&dec, &pb, &src, WUFFS_BASE__PIXEL_BLEND__SRC, wuffs_base__make_slice_u8(workbuf.data(), workbuf.size()), nullptr));
@@ -511,14 +510,14 @@ static bool DecodeQOI_Impl(const uint8_t* data, size_t size,
         WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED);
     if (!wuffs_base__status__is_ok(&status)) return false;
 
-    wuffs_base__io_buffer src = {0};
+    wuffs_base__io_buffer src = {};
     src.data.ptr = const_cast<uint8_t*>(data);
     src.data.len = size;
     src.meta.wi = std::min(size, (size_t)1048576);
     src.meta.ri = 0;
     src.meta.closed = (src.meta.wi == size);
 
-    wuffs_base__image_config ic = {0};
+    wuffs_base__image_config ic = {};
     WUFFS_TRY(wuffs_qoi__decoder__decode_image_config(&dec, &ic, &src));
 
     uint32_t width = wuffs_base__pixel_config__width(&ic.pixcfg);
@@ -528,7 +527,7 @@ static bool DecodeQOI_Impl(const uint8_t* data, size_t size,
     wuffs_base__pixel_config__set(&ic.pixcfg, WUFFS_BASE__PIXEL_FORMAT__BGRA_PREMUL, WUFFS_BASE__PIXEL_SUBSAMPLING__NONE, width, height);
 
     size_t pixelSize = (size_t)width * height * 4;
-    try { outPixels.resize(pixelSize); } catch(...) { return false; }
+    outPixels.resize(pixelSize);
 
     wuffs_base__pixel_buffer pb;
     status = wuffs_base__pixel_buffer__set_from_slice(&pb, &ic.pixcfg, wuffs_base__make_slice_u8(outPixels.data(), pixelSize));
@@ -537,9 +536,9 @@ static bool DecodeQOI_Impl(const uint8_t* data, size_t size,
     uint64_t workbuf_len = wuffs_qoi__decoder__workbuf_len(&dec).max_incl;
     // [Opt] Use same allocator as output (PMR for Heavy Lane = Fast / Heap for Scout = Standard)
     std::vector<uint8_t, typename Vec::allocator_type> workbuf(outPixels.get_allocator());
-    try { workbuf.resize(workbuf_len); } catch(...) { return false; }
+    workbuf.resize(workbuf_len);
 
-    wuffs_base__frame_config fc = {0};
+    wuffs_base__frame_config fc = {};
     WUFFS_TRY(wuffs_qoi__decoder__decode_frame_config(&dec, &fc, &src));
 
     WUFFS_TRY(wuffs_qoi__decoder__decode_frame(&dec, &pb, &src, WUFFS_BASE__PIXEL_BLEND__SRC, wuffs_base__make_slice_u8(workbuf.data(), workbuf.size()), nullptr));
@@ -572,150 +571,176 @@ public:
     
     ~WuffsAnimator() override = default;
 
-    bool Initialize(std::shared_ptr<QuickView::MappedFile> file, QuickView::PixelFormat preferredFormat) override {
-        m_mappedFile = file;
-        const uint8_t* data = file->data();
-        size_t size = file->size();
-        
-        m_src.data.ptr = const_cast<uint8_t*>(data);
-        m_src.data.len = size;
-        m_src.meta.wi = std::min(size, (size_t)1048576);
-        m_src.meta.ri = 0;
-        m_src.meta.closed = (m_src.meta.wi == size);
+    bool Initialize(std::shared_ptr<QuickView::MappedFile> file,
+                    QuickView::PixelFormat /*preferredFormat*/) override {
+      m_mappedFile = file;
+      const uint8_t *data = file->data();
+      size_t size = file->size();
 
-        // Try GIF first
-        wuffs_base__status status = wuffs_gif__decoder__initialize(
-            &m_gifDec, sizeof(m_gifDec), WUFFS_VERSION,
-            WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED);
-            
+      m_src.data.ptr = const_cast<uint8_t *>(data);
+      m_src.data.len = size;
+      m_src.meta.wi = std::min(size, (size_t)1048576);
+      m_src.meta.ri = 0;
+      m_src.meta.closed = (m_src.meta.wi == size);
+
+      // Try GIF first
+      wuffs_base__status status = wuffs_gif__decoder__initialize(
+          &m_gifDec, sizeof(m_gifDec), WUFFS_VERSION,
+          WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED);
+
+      if (wuffs_base__status__is_ok(&status)) {
+        status =
+            wuffs_gif__decoder__decode_image_config(&m_gifDec, &m_ic, &m_src);
         if (wuffs_base__status__is_ok(&status)) {
-            status = wuffs_gif__decoder__decode_image_config(&m_gifDec, &m_ic, &m_src);
-            if (wuffs_base__status__is_ok(&status)) {
-                // [BUGFIX] Verify actual animated GIF via Application Extension or multiple Image Descriptors
-                bool hasAnim = false;
-                const uint8_t* p = data;
-                size_t offset = 13; // Header (6) + LSD (7)
-                if (size > 13) {
-                    uint8_t lsd_packed = p[10];
-                    if (lsd_packed & 0x80) { // Global Color Table Flag
-                        offset += 3 * (2 << (lsd_packed & 0x07));
-                    }
-                    int image_count = 0;
-                    while (offset < size) {
-                        uint8_t block_type = p[offset++];
-                        if (block_type == 0x3B) { // Trailer
-                            break;
-                        } else if (block_type == 0x2C) { // Image Descriptor
-                            image_count++;
-                            if (image_count > 1) {
-                                hasAnim = true;
-                                break;
-                            }
-                            if (offset + 9 > size) break;
-                            uint8_t id_packed = p[offset + 8];
-                            offset += 9;
-                            if (id_packed & 0x80) { // Local Color Table Flag
-                                offset += 3 * (2 << (id_packed & 0x07));
-                            }
-                            if (offset >= size) break;
-                            offset++; // LZW minimum code size
-                            while (offset < size) {
-                                uint8_t sub_len = p[offset++];
-                                if (sub_len == 0) break;
-                                offset += sub_len;
-                            }
-                        } else if (block_type == 0x21) { // Extension
-                            if (offset >= size) break;
-                            offset++; // Skip ext_type
-                            // Skip extension sub-blocks
-                            while (offset < size) {
-                                uint8_t sub_len = p[offset++];
-                                if (sub_len == 0) break;
-                                offset += sub_len;
-                            }
-                        } else {
-                            break; // Unknown block, stop
-                        }
-                    }
-                }
-                if (hasAnim) {
-                    m_isGif = true;
-                } else {
-                    return false; // Fallback to static GIF fast-path
-                }
+          // [BUGFIX] Verify actual animated GIF via Application Extension or
+          // multiple Image Descriptors
+          bool hasAnim = false;
+          const uint8_t *p = data;
+          size_t offset = 13; // Header (6) + LSD (7)
+          if (size > 13) {
+            uint8_t lsd_packed = p[10];
+            if (lsd_packed & 0x80) { // Global Color Table Flag
+              offset += 3 * (2 << (lsd_packed & 0x07));
             }
-        }
-        
-        if (!m_isGif) {
-            // Try PNG (APNG)
-            m_src.meta.ri = 0;
-            status = wuffs_png__decoder__initialize(
-                &m_pngDec, sizeof(m_pngDec), WUFFS_VERSION,
-                WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED);
-            if (wuffs_base__status__is_ok(&status)) {
-                status = wuffs_png__decoder__decode_image_config(&m_pngDec, &m_ic, &m_src);
-                if (wuffs_base__status__is_ok(&status)) {
-                    // [BUGFIX] Verify actual APNG via acTL chunk presence before IDAT
-                    bool hasAcTL = false;
-                    const uint8_t* p = data;
-                    size_t offset = 8; // Skip PNG signature
-                    while (offset + 12 <= size) {
-                        uint32_t chunk_len = (p[offset] << 24) | (p[offset + 1] << 16) | (p[offset + 2] << 8) | p[offset + 3];
-                        uint32_t chunk_type = (p[offset + 4] << 24) | (p[offset + 5] << 16) | (p[offset + 6] << 8) | p[offset + 7];
-                        
-                        if (chunk_type == 0x6163544C) { // 'acTL'
-                            hasAcTL = true;
-                            break;
-                        } else if (chunk_type == 0x49444154 || chunk_type == 0x49454E44) { // 'IDAT' or 'IEND'
-                            break;
-                        }
-                        offset += 12 + chunk_len;
-                    }
-                    if (hasAcTL) {
-                        m_isPng = true;
-                    } else {
-                        return false; // Fallback to static PNG fast-path
-                    }
-                } else {
-                    return false;
+            int image_count = 0;
+            while (offset < size) {
+              uint8_t block_type = p[offset++];
+              if (block_type == 0x3B) { // Trailer
+                break;
+              } else if (block_type == 0x2C) { // Image Descriptor
+                image_count++;
+                if (image_count > 1) {
+                  hasAnim = true;
+                  break;
                 }
+                if (offset + 9 > size)
+                  break;
+                uint8_t id_packed = p[offset + 8];
+                offset += 9;
+                if (id_packed & 0x80) { // Local Color Table Flag
+                  offset += 3 * (2 << (id_packed & 0x07));
+                }
+                if (offset >= size)
+                  break;
+                offset++; // LZW minimum code size
+                while (offset < size) {
+                  uint8_t sub_len = p[offset++];
+                  if (sub_len == 0)
+                    break;
+                  offset += sub_len;
+                }
+              } else if (block_type == 0x21) { // Extension
+                if (offset >= size)
+                  break;
+                offset++; // Skip ext_type
+                // Skip extension sub-blocks
+                while (offset < size) {
+                  uint8_t sub_len = p[offset++];
+                  if (sub_len == 0)
+                    break;
+                  offset += sub_len;
+                }
+              } else {
+                break; // Unknown block, stop
+              }
+            }
+          }
+          if (hasAnim) {
+            m_isGif = true;
+          } else {
+            return false; // Fallback to static GIF fast-path
+          }
+        }
+      }
+
+      if (!m_isGif) {
+        // Try PNG (APNG)
+        m_src.meta.ri = 0;
+        status = wuffs_png__decoder__initialize(
+            &m_pngDec, sizeof(m_pngDec), WUFFS_VERSION,
+            WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED);
+        if (wuffs_base__status__is_ok(&status)) {
+          status =
+              wuffs_png__decoder__decode_image_config(&m_pngDec, &m_ic, &m_src);
+          if (wuffs_base__status__is_ok(&status)) {
+            // [BUGFIX] Verify actual APNG via acTL chunk presence before IDAT
+            bool hasAcTL = false;
+            const uint8_t *p = data;
+            size_t offset = 8; // Skip PNG signature
+            while (offset + 12 <= size) {
+              uint32_t chunk_len = (p[offset] << 24) | (p[offset + 1] << 16) |
+                                   (p[offset + 2] << 8) | p[offset + 3];
+              uint32_t chunk_type = (p[offset + 4] << 24) |
+                                    (p[offset + 5] << 16) |
+                                    (p[offset + 6] << 8) | p[offset + 7];
+
+              if (chunk_type == 0x6163544C) { // 'acTL'
+                hasAcTL = true;
+                break;
+              } else if (chunk_type == 0x49444154 ||
+                         chunk_type == 0x49454E44) { // 'IDAT' or 'IEND'
+                break;
+              }
+              offset += 12 + chunk_len;
+            }
+            if (hasAcTL) {
+              m_isPng = true;
             } else {
-                return false;
+              return false; // Fallback to static PNG fast-path
             }
+          } else {
+            return false;
+          }
+        } else {
+          return false;
         }
-        
-        m_width = wuffs_base__pixel_config__width(&m_ic.pixcfg);
-        m_height = wuffs_base__pixel_config__height(&m_ic.pixcfg);
-        if (m_width == 0 || m_height == 0) return false;
+      }
 
-        // Is it actually animated?
-        uint32_t num_loops = 0;
-        if (m_isGif) num_loops = wuffs_gif__decoder__num_animation_loops(&m_gifDec);
-        if (m_isPng) num_loops = wuffs_png__decoder__num_animation_loops(&m_pngDec);
-        // Note: num_loops can be 0 (infinite) and still be animated. A better check is if first frame config implies more.
-        
-        // Let's assume initialized successfully
-        wuffs_base__pixel_config__set(&m_ic.pixcfg, WUFFS_BASE__PIXEL_FORMAT__BGRA_PREMUL, WUFFS_BASE__PIXEL_SUBSAMPLING__NONE, m_width, m_height);
-        
-        m_pixelBytes = m_width * m_height * 4;
-        m_canvas.resize(m_pixelBytes);
-        
-        status = wuffs_base__pixel_buffer__set_from_slice(&m_pb, &m_ic.pixcfg, wuffs_base__make_slice_u8(m_canvas.data(), m_pixelBytes));
-        if (!wuffs_base__status__is_ok(&status)) return false;
+      m_width = wuffs_base__pixel_config__width(&m_ic.pixcfg);
+      m_height = wuffs_base__pixel_config__height(&m_ic.pixcfg);
+      if (m_width == 0 || m_height == 0)
+        return false;
 
-        uint64_t workbuf_len = 0;
-        if (m_isGif) workbuf_len = wuffs_gif__decoder__workbuf_len(&m_gifDec).max_incl;
-        if (m_isPng) workbuf_len = wuffs_png__decoder__workbuf_len(&m_pngDec).max_incl;
-        m_workbuf.resize((size_t)workbuf_len);
-        
-        m_isAnimated = true; // For now.
-        return true;
+      // Is it actually animated?
+      uint32_t num_loops = 0;
+      (void)num_loops;
+      (void)num_loops;
+      if (m_isGif)
+        num_loops = wuffs_gif__decoder__num_animation_loops(&m_gifDec);
+      if (m_isPng)
+        num_loops = wuffs_png__decoder__num_animation_loops(&m_pngDec);
+      // Note: num_loops can be 0 (infinite) and still be animated. A better
+      // check is if first frame config implies more.
+
+      // Let's assume initialized successfully
+      wuffs_base__pixel_config__set(
+          &m_ic.pixcfg, WUFFS_BASE__PIXEL_FORMAT__BGRA_PREMUL,
+          WUFFS_BASE__PIXEL_SUBSAMPLING__NONE, m_width, m_height);
+
+      m_pixelBytes = m_width * m_height * 4;
+      m_canvas.resize(m_pixelBytes);
+
+      status = wuffs_base__pixel_buffer__set_from_slice(
+          &m_pb, &m_ic.pixcfg,
+          wuffs_base__make_slice_u8(m_canvas.data(), m_pixelBytes));
+      if (!wuffs_base__status__is_ok(&status))
+        return false;
+
+      uint64_t workbuf_len = 0;
+      if (m_isGif)
+        workbuf_len = wuffs_gif__decoder__workbuf_len(&m_gifDec).max_incl;
+      if (m_isPng)
+        workbuf_len = wuffs_png__decoder__workbuf_len(&m_pngDec).max_incl;
+      m_workbuf.resize((size_t)workbuf_len);
+
+      m_isAnimated = true; // For now.
+      return true;
     }
 
     std::shared_ptr<RawImageFrame> GetNextFrame() override {
         wuffs_base__status status;
-        wuffs_base__frame_config fc = {0};
-        
+        wuffs_base__frame_config fc = {};
+
         // Process previous frame disposalBEFORE decoding new frame config
         if (m_currentIndex > 0) {
             if (m_lastDisposal == FrameDisposalMode::RestoreBackground) {

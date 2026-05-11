@@ -17,7 +17,14 @@
 // Forward decl if needed, but TinyEXR header declares it.
 
 #define TINYEXR_IMPLEMENTATION
+#pragma warning(push)
+#pragma warning(disable: 4100)
+#ifdef __clang__
+#pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Wunused-parameter"
+#endif
 #include "../third_party/tinyexr/tinyexr.h"
+#pragma warning(pop)
 
 #include "QuickViewETW.h"
 static constexpr const char* CURRENT_MODULE = "TinyExrLoader";

@@ -1,4 +1,3 @@
-#include "pch.h"
 #include "UIRenderer.h"
 #include "AppStrings.h"
 #include "DebugMetrics.h"
@@ -10,7 +9,6 @@
 #include "ImageLoaderSimd.h"
 #include <psapi.h>
 #include <algorithm>
-#include <ranges>
 #include <cmath>
 
 #pragma comment(lib, "psapi.lib")
@@ -409,8 +407,8 @@ RECT UIRenderer::CalculateOSDDirtyRect() {
     // OSD Position
     const float s = m_uiScale;
     
-    float paddingH = 30.0f * s;
-    float paddingV = 15.0f * s;
+    float paddingH = 30.0f * s; (void)paddingH; (void)paddingH;
+    float paddingV = 15.0f * s; (void)paddingV;
     float maxOSDWidth = 800.0f * s;  // Estimated max
     float maxOSDHeight = 80.0f * s;  // Estimated max
     
@@ -684,8 +682,8 @@ void UIRenderer::RenderDynamicLayer(ID2D1DeviceContext* dc, HWND hwnd) {
             
             // Transform image-space dirty rect to screen-space
             float fScale = m_animState.FitScale;
-            float fOfsX = m_animState.FitOffsetX;
-            float fOfsY = m_animState.FitOffsetY;
+            float fOfsX = m_animState.FitOffsetX; (void)fOfsX;
+            float fOfsY = m_animState.FitOffsetY; (void)fOfsY;
             
             // Apply DComp zoom/pan
             float zoom = m_viewState.Zoom;
@@ -858,7 +856,7 @@ void UIRenderer::DrawOSD(ID2D1DeviceContext* dc, HWND hwnd) {
     if (m_osdText.empty()) return;
 
     // Standard OSD Drawing
-    float paddingH = 20.0f * s;
+    float paddingH = 20.0f * s; (void)paddingH;
     float paddingV = 10.0f * s;
     
     ComPtr<IDWriteTextLayout> textLayout;
@@ -1433,7 +1431,7 @@ void UIRenderer::DrawDebugHUD(ID2D1DeviceContext* dc) {
 
     // 2. Traffic Lights (Triggers)
     float x = hudX + 10.0f;
-    float y = hudY + 45.0f; 
+    float y = hudY + 45.0f; (void)y; 
     float size = 14.0f;
     float gap = 40.0f;
     float trafficY = hudY + 90.0f;
@@ -1737,6 +1735,27 @@ D2D1_SIZE_F UIRenderer::GetRequiredInfoPanelSize() const {
         }
         float textW = m_panelFormat ? MeasureTextWidth(info) : 400.0f;
         // Padding(16) + text + Gap(6) + ExpandBtn(24) + Gap(4) + CloseBtn(24) + RightPad(32) + WindowControls(152)
+     /*
+#if 0
+static std::wstring FormatBytesWithCommas(UINT64 bytes) {
+    wchar_t buf[128];
+    NUMBERFMTW fmt = { 0 };
+    fmt.NumDigits = 0;
+    fmt.LeadingZero = 1;
+    fmt.Grouping = 3;
+    fmt.lpDecimalSep = (LPWSTR)L".";
+    fmt.lpThousandSep = (LPWSTR)L",";
+    fmt.NegativeOrder = 1;
+
+    wchar_t val[64];
+    swprintf_s(val, L"%llu", bytes);
+    if (GetNumberFormatW(LOCALE_USER_DEFAULT, 0, val, &fmt, buf, 128) > 0) {
+        return buf;
+    }
+    return val;
+}
+#endif
+*/
         float totalW = textW + 106.0f * s + 152.0f * s;
         return D2D1::SizeF(totalW, 45.0f * s);
     }
@@ -1744,7 +1763,7 @@ D2D1_SIZE_F UIRenderer::GetRequiredInfoPanelSize() const {
     return D2D1::SizeF(0, 0);
 }
 
-// Helper: Format bytes with comma separators
+/*
 static std::wstring FormatBytesWithCommas(UINT64 bytes) {
     std::wstring num = std::to_wstring(bytes);
     std::wstring result;
@@ -1756,6 +1775,7 @@ static std::wstring FormatBytesWithCommas(UINT64 bytes) {
     }
     return result + L" B";
 }
+*/
 
  
 UIRenderer::TooltipInfo UIRenderer::GetTooltipInfo(const std::wstring& label) const {
@@ -1772,7 +1792,7 @@ std::vector<InfoRow> UIRenderer::BuildGridRows(const CImageLoader::ImageMetadata
 
     // Row 1: Filename
     std::wstring filename = imagePath.substr(imagePath.find_last_of(L"\\/") + 1);
-    rows.push_back({ L"\U0001F4C4", L"File", filename, L"", filename, TruncateMode::MiddleEllipsis, true });
+    rows.push_back({L"\U0001F4C4", L"File", filename, L"", filename, TruncateMode::MiddleEllipsis, true});
 
     // Row 2: Dimensions + Megapixels + Zoom
     if (metadata.Width > 0) {
@@ -1783,7 +1803,7 @@ std::vector<InfoRow> UIRenderer::BuildGridRows(const CImageLoader::ImageMetadata
         wchar_t mpBuf[48];
         int zoomPct = GetCurrentZoomPercent();
         swprintf_s(mpBuf, L"(%.1fMP)@%d%%", megapixels, zoomPct);
-        rows.push_back({ L"\U0001F4D0", L"Size", dimBuf, mpBuf, L"", TruncateMode::None, false });
+        rows.push_back({L"\U0001F4D0", L"Size", dimBuf, mpBuf, L"", TruncateMode::None, false});
     }
 
     // Row 3: File Size
@@ -1797,11 +1817,11 @@ std::vector<InfoRow> UIRenderer::BuildGridRows(const CImageLoader::ImageMetadata
         } else {
             swprintf_s(sizeBuf, L"%llu B", bytes);
         }
-        rows.push_back({ L"\U0001F4BE", L"Disk", (std::wstring)sizeBuf, L"", L"", TruncateMode::None, false });
+        rows.push_back({L"\U0001F4BE", L"Disk", (std::wstring)sizeBuf, L"", L"", TruncateMode::None, false});
     }
 
     if (!metadata.Date.empty()) {
-        rows.push_back({ L"\U0001F4C5", L"Date", metadata.Date, L"", L"", TruncateMode::EndEllipsis, false });
+        rows.push_back({L"\U0001F4C5", L"Date", metadata.Date, L"", L"", TruncateMode::EndEllipsis, false});
     }
 
     if (!metadata.Make.empty() || !metadata.Model.empty()) {
@@ -1810,17 +1830,17 @@ std::vector<InfoRow> UIRenderer::BuildGridRows(const CImageLoader::ImageMetadata
             if (!camera.empty()) camera += L" ";
             camera += metadata.Model;
         }
-        rows.push_back({ L"\U0001F4F7", L"Camera", camera, L"", camera, TruncateMode::EndEllipsis, false });
+        rows.push_back({L"\U0001F4F7", L"Camera", camera, L"", camera, TruncateMode::EndEllipsis, false});
     }
 
     if (!metadata.ISO.empty()) {
         std::wstring exp = L"ISO " + metadata.ISO + L"  " + metadata.Aperture + L"  " + metadata.Shutter;
         std::wstring sub = metadata.ExposureBias.empty() ? L"" : metadata.ExposureBias;
-        rows.push_back({ L"\U000026A1", L"Exp", exp, sub, exp + L" " + sub, TruncateMode::EndEllipsis, false });
+        rows.push_back({L"\U000026A1", L"Exp", exp, sub, exp + L" " + sub, TruncateMode::EndEllipsis, false});
     }
 
     if (!metadata.Lens.empty()) {
-        rows.push_back({ L"\U0001F52D", L"Lens", metadata.Lens, L"", metadata.Lens, TruncateMode::EndEllipsis, false });
+        rows.push_back({L"\U0001F52D", L"Lens", metadata.Lens, L"", metadata.Lens, TruncateMode::EndEllipsis, false});
     }
 
     if (!metadata.Focal.empty()) {
@@ -1828,7 +1848,7 @@ std::vector<InfoRow> UIRenderer::BuildGridRows(const CImageLoader::ImageMetadata
         if (!metadata.Focal35mm.empty() && !metadata.Focal.contains(metadata.Focal35mm)) {
             focalSub = metadata.Focal35mm;
         }
-        rows.push_back({ L"\U0001F3AF", L"Focal", metadata.Focal, focalSub, L"", TruncateMode::None, false });
+        rows.push_back({L"\U0001F3AF", L"Focal", metadata.Focal, focalSub, L"", TruncateMode::None, false});
     }
 
     {
@@ -1855,7 +1875,7 @@ std::vector<InfoRow> UIRenderer::BuildGridRows(const CImageLoader::ImageMetadata
         }
         if (!colorText.empty()) {
         if (metadata.HasEmbeddedColorProfile) colorText += L" [ICC]";
-        rows.push_back({ L"\U0001F3A8", L"Color", colorText, L"", L"", TruncateMode::None, false });
+        rows.push_back({L"\U0001F3A8", L"Color", colorText, L"", L"", TruncateMode::None, false});
         }
     }
 
@@ -1874,73 +1894,67 @@ std::vector<InfoRow> UIRenderer::BuildGridRows(const CImageLoader::ImageMetadata
         }
 
         if (!hdrSummary.empty() || !hdrDetailTooltip.empty()) {
-            rows.push_back({
-                L"\U0001F31F",
+            rows.push_back({L"\U0001F31F",
                 L"HDR",
                 hdrSummary.empty() ? L"Metadata" : hdrSummary,
                 g_runtime.ShowHdrDetailsExpanded ? L"" : hdrSummaryDetail, 
                 hdrSummary + (hdrDetailTooltip.empty() ? L"" : L"\n" + hdrDetailTooltip),
-                TruncateMode::EndEllipsis,
-                false
-            });
+                TruncateMode::EndEllipsis, false});
         }
-        rows.push_back({
-            L"\U0001F9EA",
+        rows.push_back({L"\U0001F9EA",
             L"HDR Pro",
             g_runtime.ShowHdrDetailsExpanded ? L"Hide professional details" : L"Show professional details",
             g_runtime.ShowHdrDetailsExpanded ? L"\u25BE" : L"\u25B8",
             L"",
-            TruncateMode::EndEllipsis,
-            true
-        });
+            TruncateMode::EndEllipsis, true});
 
         if (g_runtime.ShowHdrDetailsExpanded) {
             const auto& displayState = m_compEngine->GetDisplayColorState();
             const int bitDepth = ExtractNominalBitDepth(metadata);
 
-            rows.push_back({ L"\U0001F4CC", L"D.Range", BuildDynamicRangeLabel(metadata), L"", L"", TruncateMode::EndEllipsis, false });
+            rows.push_back({L"\U0001F4CC", L"D.Range", BuildDynamicRangeLabel(metadata), L"", L"", TruncateMode::EndEllipsis, false});
             if (bitDepth > 0) {
                 wchar_t bitBuf[48];
                 swprintf_s(bitBuf, metadata.colorInfo.IsSceneLinear() ? L"%d-bit Float" : L"%d-bit", bitDepth);
-                rows.push_back({ L"\U0001F522", L"BitDepth", bitBuf, L"", L"", TruncateMode::None, false });
+                rows.push_back({L"\U0001F522", L"BitDepth", bitBuf, L"", L"", TruncateMode::None, false});
             }
             const QuickView::TransferFunction effectiveTransfer =
                 metadata.hdrMetadata.transfer != QuickView::TransferFunction::Unknown
                     ? metadata.hdrMetadata.transfer
                     : metadata.colorInfo.transfer;
-            rows.push_back({ L"\U0001F4A0", L"Transfer", QuickView::ToString(effectiveTransfer), L"", L"", TruncateMode::None, false });
+            rows.push_back({L"\U0001F4A0", L"Transfer", QuickView::ToString(effectiveTransfer), L"", L"", TruncateMode::None, false});
             if (metadata.ColorSpace.empty()) {
                 const wchar_t* primaries = QuickView::ToString(metadata.hdrMetadata.primaries);
                 if (primaries && wcscmp(primaries, L"Unknown") != 0) {
-                    rows.push_back({ L"\U0001F308", L"Gamut", primaries, L"", L"", TruncateMode::None, false });
+                    rows.push_back({L"\U0001F308", L"Gamut", primaries, L"", L"", TruncateMode::None, false});
                 }
             }
             if (metadata.hdrMetadata.maxCLLNits > 0.0f) {
-                rows.push_back({ L"\U00002600", L"MaxCLL", FormatHdrNits(metadata.hdrMetadata.maxCLLNits), L"", L"", TruncateMode::None, false });
+                rows.push_back({L"\U00002600", L"MaxCLL", FormatHdrNits(metadata.hdrMetadata.maxCLLNits), L"", L"", TruncateMode::None, false});
             }
             if (metadata.hdrMetadata.maxFALLNits > 0.0f) {
-                rows.push_back({ L"\U0001F525", L"MaxFALL", FormatHdrNits(metadata.hdrMetadata.maxFALLNits), L"", L"", TruncateMode::None, false });
+                rows.push_back({L"\U0001F525", L"MaxFALL", FormatHdrNits(metadata.hdrMetadata.maxFALLNits), L"", L"", TruncateMode::None, false});
             }
             const std::wstring mastering = BuildMasteringDisplayLabel(metadata.hdrMetadata);
             if (!mastering.empty()) {
-                rows.push_back({ L"\U0001F5A5", L"Mastering", mastering, L"", mastering, TruncateMode::EndEllipsis, false });
+                rows.push_back({L"\U0001F5A5", L"Mastering", mastering, L"", mastering, TruncateMode::EndEllipsis, false});
             }
-            rows.push_back({ L"\U0001F6E0", L"Pipeline", BuildRenderPathLabel(metadata, displayState), L"", L"", TruncateMode::EndEllipsis, false });
+            rows.push_back({L"\U0001F6E0", L"Pipeline", BuildRenderPathLabel(metadata, displayState), L"", L"", TruncateMode::EndEllipsis, false});
             if (metadata.MeasuredPeakNits > 0.0f) {
-                rows.push_back({ L"\U00002600", L"ImagePeak", FormatHdrNits(metadata.MeasuredPeakNits), L"", L"Max content luminance detected by SIMD scan", TruncateMode::None, false });
+                rows.push_back({L"\U00002600", L"ImagePeak", FormatHdrNits(metadata.MeasuredPeakNits), L"", L"Max content luminance detected by SIMD scan", TruncateMode::None, false});
             }
-            rows.push_back({ L"\U0001F4A1", L"Display", BuildDisplayHeadroomLabel(displayState), L"", L"", TruncateMode::EndEllipsis, false });
+            rows.push_back({L"\U0001F4A1", L"Display", BuildDisplayHeadroomLabel(displayState), L"", L"", TruncateMode::EndEllipsis, false});
 
             if (metadata.hdrMetadata.hasGainMap) {
-                rows.push_back({ L"\U0001F5BC", L"Base", L"SDR Base Layer", L"", L"", TruncateMode::EndEllipsis, false });
-                rows.push_back({ L"\U0001F4C8", L"GainMap", L"Present (ISO 21496-1)", metadata.hdrMetadata.gainMapApplied ? L"Applied" : L"Detected", L"", TruncateMode::EndEllipsis, false });
+                rows.push_back({L"\U0001F5BC", L"Base", L"SDR Base Layer", L"", L"", TruncateMode::EndEllipsis, false});
+                rows.push_back({L"\U0001F4C8", L"GainMap", L"Present (ISO 21496-1)", metadata.hdrMetadata.gainMapApplied ? L"Applied" : L"Detected", L"", TruncateMode::EndEllipsis, false});
                 const std::wstring gainRatio = BuildGainRatioLabel(metadata.hdrMetadata);
                 if (!gainRatio.empty()) {
-                    rows.push_back({ L"\U00002696", L"GainRatio", gainRatio, L"", gainRatio, TruncateMode::EndEllipsis, false });
+                    rows.push_back({L"\U00002696", L"GainRatio", gainRatio, L"", gainRatio, TruncateMode::EndEllipsis, false});
                 }
                 const std::wstring gainWeight = BuildGainBlendWeightLabel(metadata.hdrMetadata, displayState);
                 if (!gainWeight.empty()) {
-                    rows.push_back({ L"\U0001F500", L"Blend", gainWeight, L"", gainWeight, TruncateMode::EndEllipsis, false });
+                    rows.push_back({L"\U0001F500", L"Blend", gainWeight, L"", gainWeight, TruncateMode::EndEllipsis, false});
                 }
             }
         }
@@ -1948,19 +1962,19 @@ std::vector<InfoRow> UIRenderer::BuildGridRows(const CImageLoader::ImageMetadata
 
     // Restore Missing EXIF Rows for Info Panel
     if (!metadata.Flash.empty()) {
-        rows.push_back({ L"\U0001F4A1", L"Flash", metadata.Flash, L"", L"", TruncateMode::None, false });
+        rows.push_back({L"\U0001F4A1", L"Flash", metadata.Flash, L"", L"", TruncateMode::None, false});
     }
     if (!metadata.WhiteBalance.empty()) {
-        rows.push_back({ L"\U0001F321", L"W.Bal", metadata.WhiteBalance, L"", L"", TruncateMode::None, false });
+        rows.push_back({L"\U0001F321", L"W.Bal", metadata.WhiteBalance, L"", L"", TruncateMode::None, false});
     }
     if (!metadata.MeteringMode.empty()) {
-        rows.push_back({ L"\U000025CE", L"Meter", metadata.MeteringMode, L"", L"", TruncateMode::None, false });
+        rows.push_back({L"\U000025CE", L"Meter", metadata.MeteringMode, L"", L"", TruncateMode::None, false});
     }
     if (!metadata.ExposureProgram.empty()) {
-        rows.push_back({ L"\U0001F4CA", L"Prog", metadata.ExposureProgram, L"", metadata.ExposureProgram, TruncateMode::EndEllipsis, false });
+        rows.push_back({L"\U0001F4CA", L"Prog", metadata.ExposureProgram, L"", metadata.ExposureProgram, TruncateMode::EndEllipsis, false});
     }
     if (!metadata.Software.empty()) {
-        rows.push_back({ L"\U0001F4BB", L"Soft", metadata.Software, L"", metadata.Software, TruncateMode::EndEllipsis, false });
+        rows.push_back({L"\U0001F4BB", L"Soft", metadata.Software, L"", metadata.Software, TruncateMode::EndEllipsis, false});
     }
 
 	    if (!metadata.Format.empty() || !metadata.FormatDetails.empty()) {
@@ -1983,25 +1997,25 @@ std::vector<InfoRow> UIRenderer::BuildGridRows(const CImageLoader::ImageMetadata
 	        }
 
 	        AppendFormatToken(formatText, formatTokens);
-	        rows.push_back({ L"\U0001F39E", L"Format", formatText, L"", metadata.FormatDetails, TruncateMode::EndEllipsis, false });
+	        rows.push_back({L"\U0001F39E", L"Format", formatText, L"", metadata.FormatDetails, TruncateMode::EndEllipsis, false});
 	    }
 
     // Advanced Metrics at the very bottom (only for HUD/Geek mode)
     if (showAdvanced) {
         if (metadata.HasSharpness) {
             wchar_t buf[32]; swprintf_s(buf, L"%.0f", metadata.Sharpness);
-            rows.push_back({ L"\U0001F3AF", L"Sharp", buf, L"", L"", TruncateMode::None, false });
+            rows.push_back({L"\U0001F3AF", L"Sharp", buf, L"", L"", TruncateMode::None, false});
         }
         if (metadata.HasEntropy) {
             wchar_t buf[32]; swprintf_s(buf, L"%.2f", metadata.Entropy);
-            rows.push_back({ L"\U0001F4CA", L"Ent", buf, L"", L"", TruncateMode::None, false });
+            rows.push_back({L"\U0001F4CA", L"Ent", buf, L"", L"", TruncateMode::None, false});
         }
         
         // BPP (Bits Per Pixel)
         if (metadata.Width > 0 && metadata.Height > 0 && metadata.FileSize > 0) {
             double bpp = (double)(metadata.FileSize * 8) / ((double)metadata.Width * metadata.Height);
             wchar_t bppBuf[32]; swprintf_s(bppBuf, L"%.2f bpp", bpp);
-            rows.push_back({ L"\U0001F4C8", L"BPP", bppBuf, L"", L"", TruncateMode::None, false });
+            rows.push_back({L"\U0001F4C8", L"BPP", bppBuf, L"", L"", TruncateMode::None, false});
         }
     }
 
@@ -2598,7 +2612,7 @@ void UIRenderer::DrawCompactInfo(ID2D1DeviceContext* dc) {
     }
     
     float textW = MeasureTextWidth(info);
-    float totalW = textW + 56.0f * s;
+    // [[maybe_unused]] float totalW = textW + 56.0f * s;
     
     D2D1_RECT_F rect = D2D1::RectF(16.0f * s, 8.0f * s, 16.0f * s + textW, 32.0f * s);
     // [Visual Consistency] Follow UI theme instead of image luma
@@ -3126,6 +3140,7 @@ void UIRenderer::DrawComparePaneIndicator(ID2D1DeviceContext* dc, HWND hwnd) {
 }
 
 namespace {
+/*
     static std::wstring FormatBytesShortLocal(UINT64 bytes) {
         const double kb = 1024.0;
         const double mb = kb * 1024.0;
@@ -3142,12 +3157,15 @@ namespace {
         }
         return buf;
     }
+*/
 
+/*
     static std::wstring FormatDouble(double value, int decimals = 2) {
         wchar_t buf[64]{};
         swprintf_s(buf, L"%.*f", decimals, value);
         return buf;
     }
+*/
 
     static std::wstring ExtractBitDepth(const std::wstring& details) {
         size_t pos = details.find(L"-bit");
@@ -3357,7 +3375,7 @@ void UIRenderer::DrawCompareInfoHUD(ID2D1DeviceContext* dc) {
             for (const auto& m : metrics) {
                 float tw = MeasureTextWidth(m.val, m_panelFormat.Get());
                 D2D1_RECT_F r = D2D1::RectF(currentX, y, currentX + tw, y + 24.0f * s);
-                D2D1_RECT_F sr = D2D1::RectF(r.left + 1*s, r.top + 1*s, r.right + 1*s, r.bottom + 1*s);
+                // [[maybe_unused]] D2D1_RECT_F sr = D2D1::RectF(r.left + 1*s, r.top + 1*s, r.right + 1*s, r.bottom + 1*s);
                 ID2D1SolidColorBrush* b = m.isWinner ? winBrush : textBrush;
                 
                 DrawTextWithFourWayShadow(dc, m.val.c_str(), (UINT32)m.val.length(), m_panelFormat.Get(), r, b, shadowBrush, 1.1f * s);
@@ -3705,11 +3723,10 @@ void UIRenderer::DrawCompareInfoHUD(ID2D1DeviceContext* dc) {
                     auto IsBetter = [&](const std::wstring& lbl, const std::wstring& val1, const std::wstring& val2) -> bool {
                         if (lbl == L"Disk") return leftMeta.FileSize > rightMeta.FileSize;
                         if (lbl == L"Size") return (leftMeta.Width * leftMeta.Height) > (rightMeta.Width * rightMeta.Height);
-                        try {
-                            // Extract numeric parts
-                            float v1 = std::stof(val1); float v2 = std::stof(val2);
-                            if (lbl == L"Sharp" || lbl == L"Ent" || lbl == L"BPP") return v1 > v2;
-                        } catch (...) {}
+                    if (val1.empty() || val2.empty()) return false;
+                    float v1 = std::wcstof(val1.c_str(), nullptr); 
+                    float v2 = std::wcstof(val2.c_str(), nullptr);
+                    if (lbl == L"Sharp" || lbl == L"Ent" || lbl == L"BPP") return v1 > v2;
                         return false;
                     };
                     

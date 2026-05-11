@@ -134,7 +134,7 @@ struct SystemInfo {
                 typedef LONG(WINAPI* RtlGetVersionPtr)(PRTL_OSVERSIONINFOW);
                 RtlGetVersionPtr fx = (RtlGetVersionPtr)GetProcAddress(hMod, "RtlGetVersion");
                 if (fx) {
-                    RTL_OSVERSIONINFOW rovi = { 0 };
+                    RTL_OSVERSIONINFOW rovi = {};
                     rovi.dwOSVersionInfoSize = sizeof(rovi);
                     if (fx(&rovi) == 0) {
                         return rovi.dwMajorVersion > 10 || (rovi.dwMajorVersion == 10 && rovi.dwBuildNumber >= 22000);

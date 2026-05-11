@@ -32,21 +32,20 @@ enum class TruncateMode {
 };
 
 struct InfoRow {
-    std::wstring icon;       // Emoji icon (e.g., "📄")
-    std::wstring label;      // Label (e.g., "文件")
-    std::wstring valueMain;  // Main value (e.g., "f/1.6")
-    std::wstring valueSub;   // Secondary value in gray (e.g., "(1,138,997 B)")
-    std::wstring fullText;   // Full text for tooltip
-    
+    std::wstring icon = L"";       // Emoji icon (e.g., "📄")
+    std::wstring label = L"";      // Label (e.g., "文件")
+    std::wstring valueMain = L"";  // Main value (e.g., "f/1.6")
+    std::wstring valueSub = L"";   // Secondary value in gray (e.g., "(1,138,997 B)")
+    std::wstring fullText = L"";   // Full text for tooltip
+
     TruncateMode mode = TruncateMode::EndEllipsis;
     bool isClickable = false;
-    
+
     // Runtime (calculated during layout)
     D2D1_RECT_F hitRect = {};
-    std::wstring displayText; // Truncated display text
+    std::wstring displayText = L""; // Truncated display text
     bool isTruncated = false;
 };
-
 // ============================================================================
 // Hit Test Result Types
 // ============================================================================

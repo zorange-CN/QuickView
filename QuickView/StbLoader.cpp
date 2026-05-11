@@ -10,7 +10,19 @@
 #define STBI_NO_TGA  // Use Wuffs (saves ~3KB)
 // Keep PSD, HDR, PIC, PNM (stb handles these, Wuffs doesn't fully)
 
+#pragma warning(push)
+#pragma warning(disable: 4100)
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-function"
+#endif
+
 #include "../third_party/stb/stb_image.h"
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
+#pragma warning(pop)
 #include <zlib.h>
 
 #ifndef Bytef
@@ -33,7 +45,7 @@ extern "C" int stbi_zlib_decode_buffer(char *obuffer, int olen, const char *ibuf
     return -1;
 }
 
-extern "C" unsigned char *stbi_zlib_compress(unsigned char *data, int data_len, int *out_len, int quality) {
+extern "C" unsigned char *stbi_zlib_compress(unsigned char *data, int data_len, int *out_len, int /*quality*/) {
     uLongf destLen = compressBound(data_len);
     unsigned char* dest = (unsigned char*)malloc(destLen);
     if (!dest) return nullptr;

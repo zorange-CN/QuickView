@@ -45,8 +45,6 @@ using namespace Microsoft::WRL;
 #include <commdlg.h> 
 #include <vector>
 #include <string_view>
-#include <array>
-#include <ranges>
 #include <cstdlib>
 #include <limits>
 #include <cmath>
@@ -189,7 +187,7 @@ CRenderEngine* g_pRenderEngine = nullptr; // Global raw alias for linker compati
 
 bool g_isFullScreen = false;
 bool g_isDraggingAnimSeek = false;
-static WINDOWPLACEMENT g_savedWindowPlacement = { sizeof(WINDOWPLACEMENT) };
+static WINDOWPLACEMENT g_savedWindowPlacement = { sizeof(WINDOWPLACEMENT), 0, 0, {0,0}, {0,0}, {0,0,0,0} };
 
 namespace {
 enum class PreferredAppMode {
@@ -1426,7 +1424,7 @@ static DCOMPOSITION_BITMAP_INTERPOLATION_MODE GetOptimalDCompInterpolationMode(f
         return DCOMPOSITION_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR;
     }
 
-    int mode = (totalScale >= 1.0f) ? g_config.ZoomModeIn : g_config.ZoomModeOut;
+    [[maybe_unused]] int mode = (totalScale >= 1.0f) ? g_config.ZoomModeIn : g_config.ZoomModeOut;
     // DComp lacks cubic, fallback to linear for mode 3
     return DCOMPOSITION_BITMAP_INTERPOLATION_MODE_LINEAR;
 }
@@ -2244,7 +2242,7 @@ static void SnapWindowToCompareImages(HWND hwnd) {
 
             // Get monitor work area
             HMONITOR hMon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-            MONITORINFO mi = { sizeof(mi) };
+            MONITORINFO mi{}; mi.cbSize = sizeof(mi);
             if (GetMonitorInfoW(hMon, &mi)) {
                 int maxW = mi.rcWork.right - mi.rcWork.left;
                 int maxH = mi.rcWork.bottom - mi.rcWork.top;
@@ -2622,7 +2620,7 @@ bool CanPan(HWND hwnd) {
     // Condition 2: Window exceeds screen bounds (locked window mode or zoomed beyond screen)
     // Get screen work area (excludes taskbar)
     HMONITOR hMon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-    MONITORINFO mi = { sizeof(mi) };
+    MONITORINFO mi{}; mi.cbSize = sizeof(mi);
     if (GetMonitorInfo(hMon, &mi)) {
         RECT windowRect; GetWindowRect(hwnd, &windowRect);
         int winW = windowRect.right - windowRect.left;
@@ -2928,7 +2926,8 @@ static bool RenderImageToDComp(HWND hwnd, ImageResource& res, bool isFastUpgrade
     
     if (!isFastUpgrade && !IsZoomed(hwnd) && (!g_runtime.LockWindowSize || !g_config.KeepWindowSizeOnNav)) {
         HMONITOR hMon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-        MONITORINFO mi = { sizeof(mi) };
+        MONITORINFO mi{};
+        mi.cbSize = sizeof(mi);
         if (GetMonitorInfoW(hMon, &mi)) {
             float screenW = (float)(mi.rcWork.right - mi.rcWork.left);
             float screenH = (float)(mi.rcWork.bottom - mi.rcWork.top);
@@ -3563,7 +3562,7 @@ static void ReloadComparePaneForDisplayChange(HWND hwnd, ComparePane pane) {
             return;
         }
 
-        LoadImageIntoCompareLeftSlot(hwnd, g_compare.left.path, [hwnd](bool success) {
+        LoadImageIntoCompareLeftSlot(hwnd, g_compare.left.path, [](bool success) {
             if (success) {
                 MarkCompareDirty();
                 RequestRepaint(PaintLayer::Image | PaintLayer::Static | PaintLayer::Dynamic);
@@ -4057,7 +4056,7 @@ static void ToggleCompareHUD(HWND hwnd, int targetMode) {
     RequestRepaint(PaintLayer::Dynamic | PaintLayer::Static);
 }
 
-static RECT s_restoredWindowRect = { 0 };
+static RECT s_restoredWindowRect{};
 
 static float GetCurrentRealScale(HWND hwnd) {
     if (!g_imageResource) return 1.0f;
@@ -4095,7 +4094,7 @@ static void PerformRestoreWindow(HWND hwnd) {
         g_osd.Show(hwnd, AppStrings::OSD_Restored, false, false, D2D1::ColorF(D2D1::ColorF::White));
         RequestRepaint(PaintLayer::All);
 
-        s_restoredWindowRect = { 0 };
+        s_restoredWindowRect = {};
     }
 }
 
@@ -4427,7 +4426,9 @@ static void PerformZoomFit(HWND hwnd, float maxScreenPct = 1.0f, bool allowResiz
 
         // [Existing Logic 0]
         HMONITOR hMon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-        MONITORINFO mi = { sizeof(mi) }; GetMonitorInfoW(hMon, &mi);
+        MONITORINFO mi{};
+        mi.cbSize = sizeof(mi);
+        GetMonitorInfoW(hMon, &mi);
         int fullScreenW = mi.rcWork.right - mi.rcWork.left;
         int fullScreenH = mi.rcWork.bottom - mi.rcWork.top;
         
@@ -4634,7 +4635,7 @@ void DrawDialog(ID2D1DeviceContext* context, const RECT& clientRect) {
         if (i >= layout.Buttons.size()) break;
         D2D1_RECT_F btnRect = layout.Buttons[i];
         
-        bool isSelected = (i == g_dialog.SelectedButtonIndex);
+        bool isSelected = (static_cast<int>(i) == g_dialog.SelectedButtonIndex);
         if (isSelected) {
             context->FillRoundedRectangle(D2D1::RoundedRect(btnRect, 4.0f, 4.0f), pBorderBrush.Get());
         } else {
@@ -4654,7 +4655,7 @@ void DrawDialog(ID2D1DeviceContext* context, const RECT& clientRect) {
         D2D1_RECT_F textRect = D2D1::RectF(btnRect.left, btnRect.top - 2, btnRect.right, btnRect.bottom - 2);
         
         // Button text is ALWAYS white if selected (on Blue), or theme-aware if not
-        ID2D1SolidColorBrush* finalBtnTextBrush = isSelected ? pGrayTextBrush.Get() : pTextBrush.Get(); // Wait, selected bg is pBorderBrush (Accent)
+        [[maybe_unused]] ID2D1SolidColorBrush* finalBtnTextBrush = isSelected ? pGrayTextBrush.Get() : pTextBrush.Get(); // Wait, selected bg is pBorderBrush (Accent)
         // If selected, use White text for better contrast on Accent Blue.
         ComPtr<ID2D1SolidColorBrush> whiteBrush;
         context->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White), &whiteBrush);
@@ -4729,7 +4730,8 @@ void CreateDialogInput(HWND parent) {
     // Register Host Class (Once)
     static bool registered = false;
     if (!registered) {
-        WNDCLASSEXW wc = { sizeof(wc) };
+        WNDCLASSEXW wc{};
+        wc.cbSize = sizeof(wc);
         wc.lpfnWndProc = InputHostWndProc;
         wc.hInstance = GetModuleHandle(nullptr);
         wc.lpszClassName = L"QuickViewInputHost";
@@ -4844,7 +4846,7 @@ DialogResult ShowQuickViewDialog(HWND hwnd, const std::wstring& title, const std
                 if (g_dialog.SelectedButtonIndex > 0) g_dialog.SelectedButtonIndex--;
                 RequestRepaint(PaintLayer::Dynamic);
             } else if (msgStruct.wParam == VK_RIGHT) {
-                if (g_dialog.SelectedButtonIndex < g_dialog.Buttons.size() - 1) g_dialog.SelectedButtonIndex++;
+                if (g_dialog.SelectedButtonIndex < static_cast<int>(g_dialog.Buttons.size()) - 1) g_dialog.SelectedButtonIndex++;
                 RequestRepaint(PaintLayer::Dynamic);
             } else if (msgStruct.wParam == VK_TAB || msgStruct.wParam == VK_SPACE) { 
                  if (g_dialog.HasCheckbox) {
@@ -5021,7 +5023,8 @@ bool SaveCurrentImage(bool saveAs) {
     
     std::wstring targetPath = g_editState.OriginalFilePath;
     if (saveAs) {
-        OPENFILENAMEW ofn = { sizeof(ofn) };
+        OPENFILENAMEW ofn{};
+        ofn.lStructSize = sizeof(ofn);
         wchar_t szFile[MAX_PATH] = { 0 };
         wcscpy_s(szFile, g_editState.OriginalFilePath.c_str());
         ofn.lStructSize = sizeof(ofn);
@@ -5977,7 +5980,7 @@ void AdjustWindowForOverlay(HWND hwnd, bool isClosed) {
     int newY = cy - targetH / 2;
 
     HMONITOR hMon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-    MONITORINFO mi = { sizeof(mi) };
+    MONITORINFO mi{}; mi.cbSize = sizeof(mi);
     if (GetMonitorInfo(hMon, &mi)) {
         if (newX < mi.rcWork.left) newX = mi.rcWork.left;
         if (newY < mi.rcWork.top) newY = mi.rcWork.top;
@@ -6014,7 +6017,7 @@ void AdjustWindowForOverlay(HWND hwnd, bool isClosed) {
 }
 
 void AdjustWindowToImage(HWND hwnd) {
-    s_restoredWindowRect = { 0 }; // Clear restored rect so new image sets new initial size
+    s_restoredWindowRect = {}; // Clear restored rect so new image sets new initial size
     if (!g_imageResource) return;
     if (g_runtime.LockWindowSize && g_config.KeepWindowSizeOnNav) return;  // Don't auto-resize when locked and requested to keep size
     
@@ -6064,7 +6067,7 @@ void AdjustWindowToImage(HWND hwnd) {
     // if we haven't even finished loading the real image or if we're looking at a Titan Fake Base.
     if (imgWidth <= 16 && imgHeight <= 16) return;
     
-    VisualState vs = GetVisualState(); // Refresh VS (Rotation state)
+    // VisualState vs = GetVisualState(); // Refresh VS (Rotation state)
     
     // [First Principles] Map 1 Image Pixel into 1 Window Logical Unit directly.
     // DComp will handle the scaling to physical pixels.
@@ -6126,7 +6129,7 @@ void AdjustWindowToImage(HWND hwnd) {
 
     // [v9.7] Fix: Use SetWindowPlacement to set dimensions.
     // This handles Maximize/Snap states gracefully.
-    WINDOWPLACEMENT wp = { sizeof(WINDOWPLACEMENT) };
+    WINDOWPLACEMENT wp{}; wp.length = sizeof(wp);
     if (GetWindowPlacement(hwnd, &wp)) {
         wp.flags = 0;
         wp.showCmd = SW_SHOWNORMAL;
@@ -6136,7 +6139,7 @@ void AdjustWindowToImage(HWND hwnd) {
         int offsetLeft = 0;
         int offsetTop = 0;
         if ((GetWindowLongPtr(hwnd, GWL_EXSTYLE) & WS_EX_TOOLWINDOW) == 0) {
-            MONITORINFO pmi = { sizeof(MONITORINFO) };
+            MONITORINFO pmi{}; pmi.cbSize = sizeof(pmi);
             if (GetMonitorInfoW(MonitorFromWindow(nullptr, MONITOR_DEFAULTTOPRIMARY), &pmi)) {
                 offsetLeft = pmi.rcWork.left - pmi.rcMonitor.left;
                 offsetTop = pmi.rcWork.top - pmi.rcMonitor.top;
@@ -6284,7 +6287,7 @@ void ReloadCurrentImage(HWND hwnd) {
 // [Cross-Monitor] Calculate Union Rect of all monitors
 RECT GetVirtualScreenRect() {
     RECT vRect = { 0, 0, 0, 0 };
-    auto MonitorEnumProc = [](HMONITOR hMon, HDC hdc, LPRECT lprcMonitor, LPARAM dwData) -> BOOL {
+    auto MonitorEnumProc = []([[maybe_unused]] HMONITOR hMon, [[maybe_unused]] HDC hdc, LPRECT lprcMonitor, LPARAM dwData) -> BOOL {
         RECT* pRect = (RECT*)dwData;
         if (pRect->right == 0 && pRect->bottom == 0 && pRect->left == 0 && pRect->top == 0) {
              *pRect = *lprcMonitor;
@@ -6304,7 +6307,7 @@ static RECT GetWindowExpansionBounds(HWND hwnd) {
 
     RECT bounds = { 0, 0, 0, 0 };
     HMONITOR hMon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-    MONITORINFO mi = { sizeof(mi) };
+    MONITORINFO mi{}; mi.cbSize = sizeof(mi);
     if (GetMonitorInfoW(hMon, &mi)) {
         bounds = mi.rcWork;
     }
@@ -6431,7 +6434,7 @@ static D2D1_COLOR_F ResolveCanvasColor() {
 // [Visual Rotation] Helper to calculate accumulated matrix
 // [Fix] Centralized DComp Synchronization Logic
 // Calculates correct Zoom/Pan/Centering based on Visual Dimensions (Rotated)
-static void SyncDCompState(HWND hwnd, float winW, float winH, bool animate) {
+static void SyncDCompState([[maybe_unused]] HWND hwnd, float winW, float winH, bool animate) {
     if (!g_compEngine || !g_compEngine->IsInitialized()) return;
     if (winW <= 0 || winH <= 0) return;
 
@@ -6968,7 +6971,7 @@ static void TryCleanupOldVersion(int argc, LPWSTR* argv) {
 HCURSOR g_currentCursor = nullptr;
 int g_initialCmdShow = SW_SHOW;
 
-int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int nCmdShow) {
+int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, [[maybe_unused]] LPWSTR lpCmdLine, int nCmdShow) {
     // === Priority 0: CMD Parsing & Subprocess dispatch ===
     int argc = 0;
     LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
@@ -7026,7 +7029,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int nCmdSh
         }
     }
     
-    HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    [[maybe_unused]] HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     WNDCLASSEXW wcex = {};
     wcex.cbSize = sizeof(WNDCLASSEXW);
     wcex.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
@@ -7277,7 +7280,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int nCmdSh
     
     // --- Auto Update Integration ---
     UpdateManager::Get().Init(GetAppVersionUTF8());
-    UpdateManager::Get().SetCallback([hwnd](bool found, const VersionInfo& info) {
+    UpdateManager::Get().SetCallback([hwnd](bool found, [[maybe_unused]] const VersionInfo& info) {
         // Post status (found = 1, not found = 0)
         PostMessage(hwnd, WM_UPDATE_FOUND, (WPARAM)found, 0); 
     });
@@ -7387,7 +7390,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
         return 0;
     }
     case WM_EXITSIZEMOVE: {
-        s_restoredWindowRect = { 0 }; // Clear restored rect so new size is treated as initial
+        s_restoredWindowRect = {}; // Clear restored rect so new size is treated as initial
         // Interactive resize/move ended - sync composition state immediately
         if (g_compEngine && g_compEngine->IsInitialized()) {
             RECT rc; GetClientRect(hwnd, &rc);
@@ -7784,7 +7787,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
         // Without this, maximized window extends beyond screen edges (to hide resize borders),
         // causing the top portion of client area to be clipped.
         HMONITOR hMon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-        MONITORINFO mi = { sizeof(mi) };
+        MONITORINFO mi{}; mi.cbSize = sizeof(mi);
         if (GetMonitorInfoW(hMon, &mi)) {
             // Use work area (excludes taskbar)
             pMMI->ptMaxPosition.x = mi.rcWork.left - mi.rcMonitor.left;
@@ -7806,7 +7809,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
         POINT pt = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
         RECT rc; GetWindowRect(hwnd, &rc);
         int border = 8; 
-        int captionHeight = 32;  // Custom title bar height
+        // int captionHeight = 32;  // Custom title bar height
         
         // Edge resize detection
         if (pt.y < rc.top + border) {
@@ -8473,7 +8476,7 @@ SKIP_EDGE_NAV:;
 
             if (g_compare.syncZoom) {
                 cyclePane(pane);
-                ComparePane other = (pane == ComparePane::Left) ? ComparePane::Right : ComparePane::Left;
+                // ComparePane other = (pane == ComparePane::Left) ? ComparePane::Right : ComparePane::Left;
                 if (pane == ComparePane::Left) {
                     CompareView right = GetRightCompareView();
                     right.Zoom = g_compare.left.view.Zoom;
@@ -8511,7 +8514,7 @@ SKIP_EDGE_NAV:;
             bool is100Percent = (fabsf(currentRealScale - 1.0f) < 0.05f);
 
             HMONITOR hMon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-            MONITORINFO mi = { sizeof(mi) }; GetMonitorInfoW(hMon, &mi);
+            MONITORINFO mi{}; mi.cbSize = sizeof(mi); GetMonitorInfoW(hMon, &mi);
             int maxW = mi.rcWork.right - mi.rcWork.left;
             int maxH = mi.rcWork.bottom - mi.rcWork.top;
             
@@ -9414,7 +9417,7 @@ SKIP_EDGE_NAV:;
     }
 
     case WM_MOUSEHWHEEL: {
-        float wheelDelta = (float)GET_WHEEL_DELTA_WPARAM(wParam) / (float)WHEEL_DELTA;
+        [[maybe_unused]] float wheelDelta = (float)GET_WHEEL_DELTA_WPARAM(wParam) / (float)WHEEL_DELTA;
 
         if (g_helpOverlay.IsVisible() || g_settingsOverlay.IsVisible() || g_gallery.IsVisible()) {
             return 0; // Ignore thumb wheel on overlays for now, or route them if needed later
@@ -9917,7 +9920,7 @@ SKIP_EDGE_NAV:;
                 PerformCompareZoomFit(hwnd);
             } else if (g_imageResource) {
                 HMONITOR hMon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-                MONITORINFO mi = { sizeof(mi) }; GetMonitorInfoW(hMon, &mi);
+                MONITORINFO mi{}; mi.cbSize = sizeof(mi); GetMonitorInfoW(hMon, &mi);
                 int maxW = mi.rcWork.right - mi.rcWork.left;
                 int maxH = mi.rcWork.bottom - mi.rcWork.top;
                 RECT rcWin; GetWindowRect(hwnd, &rcWin);
@@ -10094,7 +10097,7 @@ SKIP_EDGE_NAV:;
             extern std::vector<std::wstring>& GetSystemIccProfiles();
             std::vector<std::wstring>& profiles = GetSystemIccProfiles();
             int idx = cmdId - IDM_SOFT_PROOF_BASE;
-            if (idx >= 0 && idx < profiles.size()) {
+            if (idx >= 0 && static_cast<size_t>(idx) < profiles.size()) {
                 if (contextLeft) {
                     g_compare.left.SoftProofProfilePath = profiles[idx];
                     g_compare.left.EnableSoftProofing = true;
@@ -10319,13 +10322,13 @@ SKIP_EDGE_NAV:;
                     RestoreCurrentExifOrientation();
                 } else {
                 // Enter Fullscreen
-                RECT targetRect = { 0 };
+                RECT targetRect{};
                 
                 // [Phase 2] Cross-Monitor Spanning (Video Wall Mode)
                 if (g_runtime.CrossMonitorMode) {
                     targetRect = GetVirtualScreenRect();
                 } else {
-                    MONITORINFO mi = { sizeof(mi) };
+                    MONITORINFO mi{}; mi.cbSize = sizeof(mi);
                     if (GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY), &mi)) {
                         targetRect = mi.rcMonitor;
                     }
@@ -11057,6 +11060,7 @@ void ProcessEngineEvents(HWND hwnd) {
     auto events = g_imageEngine->PollState();
     for (auto& evt : events) {
         switch (evt.type) {
+            default: break;
         case EventType::PreviewReady:
         case EventType::FullReady: {
             if (!g_renderEngine) break;
@@ -11340,7 +11344,7 @@ void ProcessEngineEvents(HWND hwnd) {
                     } else if (g_config.OpenFullScreenMode == 1) {
                         // Large Only
                         HMONITOR hMon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-                        MONITORINFO mi = { sizeof(mi) };
+                        MONITORINFO mi{}; mi.cbSize = sizeof(mi);
                         if (GetMonitorInfo(hMon, &mi)) {
                             int monWidth = mi.rcMonitor.right - mi.rcMonitor.left;
                             int monHeight = mi.rcMonitor.bottom - mi.rcMonitor.top;
@@ -11577,7 +11581,7 @@ void ProcessEngineEvents(HWND hwnd) {
                          bool hitLimit = (evt.rawFrame->width >= 3500 || evt.rawFrame->height >= 3500); 
                          
                          // Stop loop if dimensions match or we hit limit
-                         bool dimensionsMatch = (evt.rawFrame->width >= evt.metadata.Width);
+                         bool dimensionsMatch = (static_cast<UINT>(evt.rawFrame->width) >= evt.metadata.Width);
                          
                          g_isImageScaled = (!dimensionsMatch && !hitLimit && !noImprovement);
                          
@@ -12115,7 +12119,7 @@ static void EnqueuePhase2NavigationTask(
     task.serial = ++g_phase2NavSerial;
 
     bool dropped = false;
-    uint64_t droppedSerial = 0;
+    [[maybe_unused]] uint64_t droppedSerial = 0;
     ImageID droppedId = 0;
     {
         std::lock_guard<std::mutex> lock(g_phase2NavMutex);
@@ -12151,7 +12155,7 @@ static void EnqueuePhase2NavigationTask(
 } // namespace
 
 // [v8.16] Added BrowseDirection to prevent resetting direction to IDLE
-void StartNavigation(HWND hwnd, std::wstring path, bool showOSD, QuickView::BrowseDirection dir) {
+void StartNavigation(HWND hwnd, std::wstring path, [[maybe_unused]] bool showOSD, QuickView::BrowseDirection dir) {
 
     if (!g_imageEngine || path.empty()) return;
     g_isLoading = true; // [Fix] Start loading state machine

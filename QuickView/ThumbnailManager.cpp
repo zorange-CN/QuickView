@@ -41,7 +41,7 @@ void ThumbnailManager::ClearCache() {
     m_slowQueue = std::priority_queue<Task, std::vector<Task>, std::greater<Task>>();
 }
 
-ComPtr<ID2D1Bitmap> ThumbnailManager::GetThumbnail(size_t imageId, LPCWSTR filePath, ID2D1RenderTarget* pRT) {
+ComPtr<ID2D1Bitmap> ThumbnailManager::GetThumbnail(size_t imageId, LPCWSTR /*filePath*/, ID2D1RenderTarget* pRT) {
     std::lock_guard<std::mutex> lock(m_cacheMutex);
 
     // 1. Check L2 Cache (GPU Bitmap)
@@ -66,7 +66,7 @@ ComPtr<ID2D1Bitmap> ThumbnailManager::GetThumbnail(size_t imageId, LPCWSTR fileP
             
             if (bmp) {
                 // Determine size for LRU (approx VRAM usage)
-                size_t sizeBytes = itL1->second.pixels.size(); 
+                // size_t sizeBytes = itL1->second.pixels.size(); 
                 
                 // Store in L2
                 m_l2Cache[imageId] = bmp;
@@ -332,3 +332,4 @@ ThumbnailManager::ImageInfo ThumbnailManager::GetImageInfo(size_t imageId) {
     }
     return { 0, 0, 0, false };
 }
+

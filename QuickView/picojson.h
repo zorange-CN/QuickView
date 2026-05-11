@@ -33,9 +33,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <cstddef>
-#include <iostream>
+//#include <iostream>
 #include <iterator>
-#include <limits>
+//#include <limits>
 #include <map>
 #include <stdexcept>
 #include <string>
@@ -99,8 +99,7 @@ extern "C" {
 #ifndef PICOJSON_ASSERT
 #define PICOJSON_ASSERT(e)                                                                                                         \
   do {                                                                                                                             \
-    if (!(e))                                                                                                                      \
-      throw std::runtime_error(#e);                                                                                                \
+    if (!(e)) abort();                                                                                                \
   } while (0)
 #endif
 
@@ -195,8 +194,12 @@ public:
   bool contains(const size_t idx) const;
   bool contains(const std::string &key) const;
   std::string to_str() const;
-  template <typename Iter> void serialize(Iter os, bool prettify = false) const;
-  std::string serialize(bool prettify = false) const;
+  template <typename Iter> void serialize(Iter oi, bool prettify = false) const {
+    return _serialize(oi, prettify ? 0 : -1);
+  }
+  std::string serialize(bool prettify = false) const {
+    return _serialize(prettify ? 0 : -1);
+  }
 
 private:
   template <typename T> value(const T *); // intentionally defined to block implicit conversion of pointer to bool
@@ -252,7 +255,7 @@ inline value::value(double n) : type_(number_type), u_() {
       isnan(n) || isinf(n)
 #endif
           ) {
-    throw std::overflow_error("");
+    u_.number_ = 0.0; return;
   }
   u_.number_ = n;
 }
@@ -561,14 +564,6 @@ template <typename Iter> void serialize_str(const std::string &s, Iter oi) {
   serialize_str_char<Iter> process_char = {oi};
   std::for_each(s.begin(), s.end(), process_char);
   *oi++ = '"';
-}
-
-template <typename Iter> void value::serialize(Iter oi, bool prettify) const {
-  return _serialize(oi, prettify ? 0 : -1);
-}
-
-inline std::string value::serialize(bool prettify) const {
-  return _serialize(prettify ? 0 : -1);
 }
 
 template <typename Iter> void value::_indent(Iter oi, int indent) {
@@ -1179,11 +1174,10 @@ template <> inline void swap(picojson::value &x, picojson::value &y) {
 }
 #endif
 
+/*
 inline std::istream &operator>>(std::istream &is, picojson::value &x) {
-  picojson::set_last_error(std::string());
-  const std::string err(picojson::parse(x, is));
+  std::string err = picojson::parse(x, is);
   if (!err.empty()) {
-    picojson::set_last_error(err);
     is.setstate(std::ios::failbit);
   }
   return is;
@@ -1193,6 +1187,7 @@ inline std::ostream &operator<<(std::ostream &os, const picojson::value &x) {
   x.serialize(std::ostream_iterator<char>(os));
   return os;
 }
+*/
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif

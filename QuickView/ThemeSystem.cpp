@@ -13,7 +13,7 @@ namespace QuickView::UI::ThemeSystem {
 
     static std::wstring ShowFileDialog(HWND hwnd, bool isSave) {
         wchar_t szFile[MAX_PATH] = { 0 };
-        OPENFILENAMEW ofn = { sizeof(ofn) };
+        OPENFILENAMEW ofn = {}; ofn.lStructSize = sizeof(ofn);
         ofn.hwndOwner = hwnd;
         ofn.lpstrFile = szFile;
         ofn.nMaxFile = MAX_PATH;

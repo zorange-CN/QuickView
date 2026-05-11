@@ -3,7 +3,6 @@
 #include <vector>
 #include <string>
 #include <functional>
-#include <map>
 #include "GeekGlass.h"
 #include "GeekIconLibrary.h"
 
@@ -41,8 +40,8 @@ enum class OptionType {
 };
 
 struct SettingsItem {
-    std::wstring label;
-    OptionType type;
+    std::wstring label = L"";
+    OptionType type = OptionType::Toggle;
 
     bool* pBoolVal = nullptr;
     float* pFloatVal = nullptr;
@@ -51,30 +50,30 @@ struct SettingsItem {
 
     float minVal = 0.0f;
     float maxVal = 100.0f;
-    std::vector<std::wstring> options; 
-    std::wstring displayFormat;        
+    std::vector<std::wstring> options = {}; 
+    std::wstring displayFormat = L"";        
     
-    std::function<void()> onChange;
-    std::function<void()> onChange2; 
+    std::function<void()> onChange = nullptr;
+    std::function<void()> onChange2 = nullptr; 
 
-    D2D1_RECT_F rect; 
-    D2D1_RECT_F interactRect = {0};
-    D2D1_RECT_F interactRect2 = {0}; 
+    D2D1_RECT_F rect = {}; 
+    D2D1_RECT_F interactRect = {};
+    D2D1_RECT_F interactRect2 = {}; 
     bool isHovered = false;
     bool isHovered2 = false; 
     
     bool isDisabled = false;
-    std::wstring disabledText; 
-    std::wstring tooltipText;
-    D2D1_RECT_F tooltipIconRect = {0};
+    std::wstring disabledText = L""; 
+    std::wstring tooltipText = L"";
+    D2D1_RECT_F tooltipIconRect = {};
     
     std::wstring buttonText = L"Select";  
     std::wstring buttonText2 = L"";       
-    std::wstring buttonActivatedText;     
+    std::wstring buttonActivatedText = L"";     
     bool isActivated = false;             
     bool isDestructive = false;           
 
-    std::wstring statusText;
+    std::wstring statusText = L"";
     D2D1::ColorF statusColor = D2D1::ColorF(D2D1::ColorF::White);
     DWORD statusSetTime = 0; 
 };
@@ -193,7 +192,6 @@ private:
     std::wstring m_dismissedVersion; 
     D2D1_RECT_F m_toastRect; 
     int m_toastHoverBtn = -1; 
-    bool m_showFullLog = false; 
     
     float m_hudX = 0.0f;
     float m_hudY = 0.0f;

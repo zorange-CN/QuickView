@@ -1,4 +1,3 @@
-#include "pch.h"
 #include "ImageEngine.h"
 #include "QuickViewETW.h"
 static constexpr const char* CURRENT_MODULE = "ImageEngine";
@@ -12,7 +11,6 @@ static constexpr const char* CURRENT_MODULE = "ImageEngine";
 #include <psapi.h>
 #pragma comment(lib, "psapi.lib")
 #include <cctype>
-#include <filesystem>
 #include <chrono>
 
 extern HWND g_mainHwnd;
@@ -978,7 +976,7 @@ void ImageEngine::ResetDebugCounters() {
 // ============================================================================
 
 ImageEngine::FastLane::FastLane(ImageEngine* parent, CImageLoader* loader)
-    : m_parent(parent), m_loader(loader)
+    : m_loader(loader), m_parent(parent)
 {
     // Start worker
     m_thread = std::jthread([this]() { QueueWorker(); });
@@ -1055,8 +1053,7 @@ void ImageEngine::FastLane::QueueWorker() {
 
     while (!m_stopSignal) {
         FastLaneCommand cmd;
-        // Standard C++ Try-Catch for Robustness
-        try {
+        {
             {
                 std::unique_lock lock(m_queueMutex);
                 m_cv.wait(lock, [this] { return m_stopSignal || !m_queue.empty(); });
@@ -1259,12 +1256,6 @@ void ImageEngine::FastLane::QueueWorker() {
             
             m_isWorking = false; // [HUD V4] Idle
 
-        } catch (const std::exception& ex) {
-            m_isWorking = false; // [HUD V4] Safety reset
-            QV_LOG("FastLane_Error", TraceLoggingString("CriticalException", "Action"));
-            QV_LOG("Engine_Exception", TraceLoggingString(ex.what(), "Error"));
-        } catch (...) {
-            QV_LOG("FastLane_Error", TraceLoggingString("UnknownException", "Action"));
         }
     }
     QV_LOG("FastLane_Lifecycle", TraceLoggingString("WorkerExiting", "Action"));
@@ -1452,10 +1443,9 @@ void ImageEngine::ScheduleJob(int index, QuickView::Priority pri) {
     }
 }
 
-void ImageEngine::PruneQueue(int currentIndex, QuickView::BrowseDirection dir) {
+void ImageEngine::PruneQueue(int currentIndex, QuickView::BrowseDirection /*dir*/) {
     // Calculate valid range based on direction
-    int minValid = currentIndex - 2;
-    int maxValid = currentIndex + m_prefetchPolicy.lookAheadCount + 1;
+    // Remove unused minValid and maxValid
     
     // FastLane already has skip-middle logic
     // Heavy lane has single-slot replacement
@@ -1665,7 +1655,7 @@ void ImageEngine::RequestFullMetadata() {
             }
         } cleaner{m_fastLane, id};
 
-        try {
+        {
             // Initialize COM for WIC
             HRESULT hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
             
@@ -1710,8 +1700,6 @@ void ImageEngine::RequestFullMetadata() {
             
             if (SUCCEEDED(hr)) CoUninitialize();
             
-        } catch (...) {
-            QV_LOG("Engine_AsyncMeta", TraceLoggingString("CriticalException", "Action"));
         }
         
         // Destructor of 'cleaner' runs here, removing ID from pending set.
@@ -1859,4 +1847,6 @@ void ImageEngine::UpdateTileViewport(QuickView::RegionRect viewport, float scale
 void ImageEngine::InvalidateGpuTiles() {
     if (m_tileManager) m_tileManager->InvalidateGpuTiles();
 }
+
+
 

@@ -1,6 +1,6 @@
-#include "pch.h"
 #include "AnimationDecoder.h"
 #include "MappedFile.h"
+
 #include <avif/avif.h>
 
 namespace QuickView {
@@ -9,7 +9,7 @@ class AvifAnimator : public IAnimationDecoder {
 public:
     AvifAnimator() {
         m_decoder = avifDecoderCreate();
-        memset(&m_rgb, 0, sizeof(m_rgb));
+        m_rgb = {};
     }
     ~AvifAnimator() override {
         if (m_rgb.pixels) {
@@ -20,14 +20,11 @@ public:
         }
     }
 
-    bool Initialize(std::shared_ptr<QuickView::MappedFile> file, QuickView::PixelFormat preferredFormat) override {
+    bool Initialize(std::shared_ptr<QuickView::MappedFile> file, QuickView::PixelFormat /*preferredFormat*/) override {
         m_mappedFile = file;
         
-        avifResult res = avifDecoderSetIOMemory(m_decoder, file->data(), file->size());
-        if (res != AVIF_RESULT_OK) return false;
-
-        res = avifDecoderParse(m_decoder);
-        if (res != AVIF_RESULT_OK) return false;
+        if (avifDecoderSetIOMemory(m_decoder, file->data(), file->size()) != AVIF_RESULT_OK) return false;
+        if (avifDecoderParse(m_decoder) != AVIF_RESULT_OK) return false;
 
         m_totalFrames = m_decoder->imageCount;
         if (m_totalFrames <= 1) return false; // Not animated
@@ -36,16 +33,14 @@ public:
         m_rgb.format = AVIF_RGB_FORMAT_BGRA;
         m_rgb.depth = 8;
         
-        avifRGBImageAllocatePixels(&m_rgb);
+        if (avifRGBImageAllocatePixels(&m_rgb) != AVIF_RESULT_OK) return false;
         
         return true;
     }
 
     std::shared_ptr<RawImageFrame> GetNextFrame() override {
         avifResult res = avifDecoderNextImage(m_decoder);
-        if (res == AVIF_RESULT_NO_IMAGES_REMAINING) {
-            return nullptr;
-        }
+        if (res == AVIF_RESULT_NO_IMAGES_REMAINING) return nullptr;
         if (res != AVIF_RESULT_OK) return nullptr;
         
         return BuildFrame();
@@ -54,8 +49,7 @@ public:
     std::shared_ptr<RawImageFrame> SeekToFrame(uint32_t targetIndex) override {
         if (targetIndex >= m_totalFrames) targetIndex = m_totalFrames - 1;
         
-        avifResult res = avifDecoderNthImage(m_decoder, targetIndex);
-        if (res != AVIF_RESULT_OK) return nullptr;
+        if (avifDecoderNthImage(m_decoder, targetIndex) != AVIF_RESULT_OK) return nullptr;
         
         return BuildFrame();
     }
@@ -65,8 +59,7 @@ public:
 
 private:
     std::shared_ptr<RawImageFrame> BuildFrame() {
-        avifResult res = avifImageYUVToRGB(m_decoder->image, &m_rgb);
-        if (res != AVIF_RESULT_OK) return nullptr;
+        if (avifImageYUVToRGB(m_decoder->image, &m_rgb) != AVIF_RESULT_OK) return nullptr;
         
         auto frame = std::make_shared<RawImageFrame>();
         
@@ -85,7 +78,9 @@ private:
         meta.index = m_decoder->imageIndex;
         
         avifImageTiming timing;
-        avifDecoderNthImageTiming(m_decoder, m_decoder->imageIndex, &timing);
+        if (avifDecoderNthImageTiming(m_decoder, m_decoder->imageIndex, &timing) != AVIF_RESULT_OK) {
+            timing.duration = 0.1;
+        }
         meta.delayMs = (uint32_t)(timing.duration * 1000.0);
         if (meta.delayMs < 10) meta.delayMs = 100;
         
@@ -113,3 +108,5 @@ std::unique_ptr<IAnimationDecoder> CreateAvifAnimator() {
 }
 
 } // namespace QuickView
+
+

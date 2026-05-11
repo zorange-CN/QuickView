@@ -1,14 +1,15 @@
-#include "pch.h"
-#include "picojson.h"
+
 #include "UpdateManager.h"
-#include <fstream>
-#include <iostream>
-#include <sstream>
-#include <shlwapi.h>
+#include "picojson.h"
 #include <algorithm>
-#include <shellapi.h>
 #include <ctime>
+#include <fstream>
+#include <shellapi.h>
+#include <shlwapi.h>
+#include <string>
+#include <vector>
 #include <wincrypt.h>
+
 
 #pragma comment(lib, "winhttp.lib")
 #pragma comment(lib, "shlwapi.lib")
@@ -140,8 +141,9 @@ void UpdateManager::CheckThread(int delaySeconds) {
                        m_tempPath = exeInZip;
                    } else {
                        std::wstring fullCmd = L"-xf \"" + dest + L"\" -C \"" + extractDir + L"\"";
-                       
-                       SHELLEXECUTEINFOW sei = { sizeof(sei) };
+
+                       SHELLEXECUTEINFOW sei = {};
+                       sei.cbSize = sizeof(sei);
                        sei.fMask = SEE_MASK_NOCLOSEPROCESS;
                        sei.lpVerb = L"open";
                        sei.lpFile = L"tar.exe";
@@ -273,14 +275,13 @@ std::string UpdateManager::HttpGet(const std::wstring& host, const std::wstring&
                     if (!WinHttpQueryDataAvailable(hRequest, &dwSize)) break;
                     if (!dwSize) break;
 
-                    char* pszOutBuffer = new char[dwSize + 1];
+                    std::unique_ptr<char[]> pszOutBuffer(new (std::nothrow) char[dwSize + 1]);
                     if (!pszOutBuffer) break;
 
-                    ZeroMemory(pszOutBuffer, dwSize + 1);
-                    if (WinHttpReadData(hRequest, (LPVOID)pszOutBuffer, dwSize, &dwDownloaded)) {
-                        result.append(pszOutBuffer, dwDownloaded);
+                    ZeroMemory(pszOutBuffer.get(), dwSize + 1);
+                    if (WinHttpReadData(hRequest, (LPVOID)pszOutBuffer.get(), dwSize, &dwDownloaded)) {
+                        result.append(pszOutBuffer.get(), dwDownloaded);
                     }
-                    delete[] pszOutBuffer;
                 } while (dwSize > 0);
             }
         }
@@ -370,10 +371,20 @@ bool UpdateManager::CompareVersions(const std::string& current, const std::strin
     
     auto parse = [](const std::string& s) {
         std::vector<int> v;
-        std::stringstream ss(s);
-        std::string seg;
-        while(std::getline(ss, seg, '.')) {
-            try { v.push_back(std::stoi(seg)); } catch (...) { v.push_back(0); }
+        size_t start = 0;
+        size_t end = s.find('.');
+        while (start < s.size()) {
+          std::string seg = s.substr(start, end - start);
+          int val = 0;
+          if (!seg.empty()) {
+            // Simple atoi fallback
+            val = std::atoi(seg.c_str());
+          }
+          v.push_back(val);
+          if (end == std::string::npos)
+            break;
+          start = end + 1;
+          end = s.find('.', start);
         }
         return v;
     };
@@ -428,8 +439,9 @@ void UpdateManager::HandleExit() {
                 // 5. Build command line with cleanup instructions for the new process
                 std::wstring cmdLine = L"\"" + std::wstring(currentExe) + L"\" --cleanup-pid " + std::to_wstring(currentPid);
 
-                STARTUPINFOW si = { sizeof(si) };
-                PROCESS_INFORMATION pi = { 0 };
+                STARTUPINFOW si = {};
+                si.cb = sizeof(si);
+                PROCESS_INFORMATION pi = {};
 
                 // 6. Spawn the NEW process
                 if (CreateProcessW(NULL, const_cast<LPWSTR>(cmdLine.c_str()), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
@@ -445,5 +457,3 @@ void UpdateManager::HandleExit() {
         }
     }
 }
-
-

@@ -41,7 +41,6 @@ private:
     
     HWND m_hwnd = nullptr; // For resize
     bool m_visible = false;
-    float m_opacity = 0.0f;
     float m_scrollOffset = 0.0f;
     float m_contentHeight = 0.0f;
     float m_uiScale = 1.0f;
@@ -72,7 +71,6 @@ private:
     const float WIDTH = 500.0f;
     const float MAX_HEIGHT = 600.0f;
     const float ROW_HEIGHT = 28.0f;
-    const float HEADER_HEIGHT = 40.0f;
     D2D1_RECT_F m_finalRect = {};
 
     // Geek Glass properties

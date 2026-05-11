@@ -41,29 +41,27 @@ public:
         // Supported extensions (comprehensive list including RAW formats)
         // using QuickView::SUPPORTED_EXTENSIONS from SupportedExtensions.h
 
-        try {
-            m_sizes.clear();
-            
-            for (const auto& entry : fs::directory_iterator(dir)) {
-                if (entry.is_regular_file()) {
-                    std::wstring ext = entry.path().extension().wstring();
-                    std::transform(ext.begin(), ext.end(), ext.begin(), [](wchar_t c){ return std::towlower(c); });
-                    
-                    for (const auto& supp : QuickView::SUPPORTED_EXTENSIONS) {
-                        if (ext == supp) {
-                            m_files.push_back(entry.path().wstring());
-                            // Cache file size for Scout Lane decision
-                            try {
-                                m_sizes.push_back(entry.file_size());
-                            } catch (...) {
-                                m_sizes.push_back(0); // Error case
-                            }
-                            break;
-                        }
+        std::error_code ec;
+        if (fs::exists(p, ec) && fs::is_directory(p, ec)) {
+            // Already handled isDirectory
+        }
+
+        m_sizes.clear();
+        for (const auto& entry : fs::directory_iterator(dir, ec)) {
+            if (entry.is_regular_file(ec)) {
+                std::wstring ext = entry.path().extension().wstring();
+                std::transform(ext.begin(), ext.end(), ext.begin(), [](wchar_t c){ return std::towlower(c); });
+                
+                for (const auto& supp : QuickView::SUPPORTED_EXTENSIONS) {
+                    if (ext == supp) {
+                        m_files.push_back(entry.path().wstring());
+                        // Cache file size for Scout Lane decision
+                        m_sizes.push_back(entry.file_size(ec));
+                        break;
                     }
                 }
             }
-        } catch (...) {}
+        }
 
         
         struct Entry {
@@ -81,16 +79,16 @@ public:
             Entry e;
             e.p = m_files[i];
             e.s = m_sizes[i];
-            try {
-                e.m = fs::last_write_time(e.p);
-            } catch (...) {}
+            std::error_code ec;
+            e.m = fs::last_write_time(e.p, ec);
 
             e.t = fs::path(e.p).extension().wstring();
             std::transform(e.t.begin(), e.t.end(), e.t.begin(), [](wchar_t c){ return std::towlower(c); });
 
             // Only parse EXIF date if specifically requested (to save load time)
             if (g_runtime.SortOrder == 3) {
-                 FILE *fp = _wfopen(e.p.c_str(), L"rb");
+                 FILE *fp = nullptr;
+                 _wfopen_s(&fp, e.p.c_str(), L"rb");
                  if (fp) {
                      unsigned char buf[65536];
                      size_t bytes = fread(buf, 1, sizeof(buf), fp);
@@ -173,7 +171,7 @@ public:
     }
 
     // Legacy support: We ignore `loop` and strictly use NavLoopMode instead
-    std::wstring Next(bool unused = true) {
+    std::wstring Next(bool /*unused*/ = true) {
         if (m_files.empty()) return L"";
 
         if (m_currentIndex >= (int)m_files.size() - 1) {
@@ -203,7 +201,7 @@ public:
         return m_files[m_currentIndex];
     }
 
-    std::wstring Previous(bool unused = true) {
+    std::wstring Previous(bool /*unused*/ = true) {
         if (m_files.empty()) return L"";
 
         if (m_currentIndex <= 0) {
@@ -270,12 +268,8 @@ public:
     // [Fix] Refresh metadata for current file (e.g. after Save)
     void Refresh() {
         if (m_currentIndex >= 0 && m_currentIndex < (int)m_files.size()) {
-            try {
-                namespace fs = std::filesystem;
-                m_sizes[m_currentIndex] = fs::file_size(m_files[m_currentIndex]);
-            } catch (...) {
-                m_sizes[m_currentIndex] = 0;
-            }
+            std::error_code ec;
+            m_sizes[m_currentIndex] = std::filesystem::file_size(m_files[m_currentIndex], ec);
         }
     }
     
@@ -330,22 +324,21 @@ private:
         // [Logic Upgrade] Through Subfolders: 
         // 1. If moving forward, check if currentDir has subfolders first.
         if (next) {
-            try {
-                std::vector<std::wstring> subfolders;
-                for (const auto& entry : fs::directory_iterator(currentDir)) {
-                    if (entry.is_directory()) subfolders.push_back(entry.path().wstring());
+            std::error_code ec;
+            std::vector<std::wstring> subfolders;
+            for (const auto& entry : fs::directory_iterator(currentDir, ec)) {
+                if (entry.is_directory(ec)) subfolders.push_back(entry.path().wstring());
+            }
+            if (!subfolders.empty()) {
+                std::sort(subfolders.begin(), subfolders.end(), [](const std::wstring& a, const std::wstring& b) {
+                    return StrCmpLogicalW(a.c_str(), b.c_str()) < 0;
+                });
+                for (const auto& sub : subfolders) {
+                    FileNavigator tempNav;
+                    tempNav.Initialize(sub);
+                    if (tempNav.Count() > 0) return tempNav.First();
                 }
-                if (!subfolders.empty()) {
-                    std::sort(subfolders.begin(), subfolders.end(), [](const std::wstring& a, const std::wstring& b) {
-                        return StrCmpLogicalW(a.c_str(), b.c_str()) < 0;
-                    });
-                    for (const auto& sub : subfolders) {
-                        FileNavigator tempNav;
-                        tempNav.Initialize(sub);
-                        if (tempNav.Count() > 0) return tempNav.First();
-                    }
-                }
-            } catch (...) {}
+            }
         }
 
         // 2. Siblings navigation
@@ -353,11 +346,10 @@ private:
         if (parentDir.empty() || parentDir == currentDir) return L"";
 
         std::vector<std::wstring> folders;
-        try {
-            for (const auto& entry : fs::directory_iterator(parentDir)) {
-                if (entry.is_directory()) folders.push_back(entry.path().wstring());
-            }
-        } catch(...) { return L""; }
+        std::error_code ec_fold;
+        for (const auto& entry : fs::directory_iterator(parentDir, ec_fold)) {
+            if (entry.is_directory(ec_fold)) folders.push_back(entry.path().wstring());
+        }
 
         if (folders.empty()) return L"";
 

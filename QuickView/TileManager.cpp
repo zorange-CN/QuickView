@@ -150,7 +150,7 @@ namespace QuickView {
         // [Zoom Optimization] Reset Queue if LOD Changed
         if (lod != m_currentLOD) {
             // Cancel pending tasks in the OLD layer to free up workers
-            if (m_currentLOD < m_layers.size() && m_layers[m_currentLOD]) {
+            if (m_currentLOD < (int)m_layers.size() && m_layers[m_currentLOD]) {
                 m_layers[m_currentLOD]->ResetQueueStatus();
             }
             m_currentLOD = lod;
@@ -384,7 +384,7 @@ namespace QuickView {
     
     // [Smart Pull]
     ITileStateLayer* TileManager::GetLayer(int lod) {
-        if (lod < 0 || lod >= m_layers.size()) return nullptr;
+        if (lod < 0 || lod >= (int)m_layers.size()) return nullptr;
         return m_layers[lod].get();
     }
 
@@ -428,7 +428,7 @@ namespace QuickView {
         return (entry && entry->state.load(std::memory_order_relaxed) == TileStateCode::Ready);
     }
 
-    bool TileManager::IsNeeded(TileKey key, uint32_t genId) const {
+    bool TileManager::IsNeeded(TileKey /*key*/, uint32_t genId) const {
         // Deprecated? Smart Pull uses direct layer check.
         if (genId != m_generationId) return false;
         return true;
@@ -439,7 +439,7 @@ namespace QuickView {
         // Lock not strictly needed if m_lastViewport is atomic-ish, but safer.
         std::lock_guard lock(m_mutex);
         
-        if (key.level() != m_currentLOD) return false;
+        if ((int)key.level() != m_currentLOD) return false;
 
         int tileSize = TILE_SIZE << key.level();
         int tx = key.x() * tileSize;

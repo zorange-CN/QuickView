@@ -414,7 +414,6 @@ bool HelpOverlay::OnMouseWheel(float delta) {
 void HelpOverlay::OnMouseMove(float x, float y) {
     if (!m_visible) return;
     
-    bool wasHover = m_hoverClose;
     if (x >= m_closeRect.left && x <= m_closeRect.right && y >= m_closeRect.top && y <= m_closeRect.bottom) {
         m_hoverClose = true;
         g_currentCursor = ::LoadCursor(NULL, IDC_HAND);

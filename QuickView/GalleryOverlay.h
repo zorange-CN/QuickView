@@ -46,7 +46,6 @@ private:
     // Scroll state
     float m_scrollTop = 0.0f;
     float m_maxScroll = 0.0f;
-    float m_targetScrollTop = 0.0f; // For smooth scroll if needed (simplified to direct scroll for now)
     
     // Layout
     int m_cols = 6;

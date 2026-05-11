@@ -44,7 +44,7 @@ HRESULT CompositionEngine::DrawTiles(ID2D1DeviceContext* pContext,
                                      bool showDebugGrid) 
 {
     if (!pContext || !tileManager) return E_INVALIDARG;
-    int renderedCount = 0;
+    int renderedCount = 0; (void)renderedCount;
 
     // Create Debug Brush if needed
     ComPtr<ID2D1SolidColorBrush> debugBrush;
@@ -201,7 +201,7 @@ HRESULT CompositionEngine::UpdateVirtualTiles(QuickView::TileManager* tileManage
         }
     }
     
-    HRESULT hr = S_OK;
+    HRESULT hr = S_OK; (void)hr; (void)hr;
     int updateCount = 0;
     static constexpr int kMaxUploadsPerFrame = 8; // [Fix9] Increased from 4 for faster initial tile display
     bool hasDeferredTiles = false;
@@ -397,7 +397,7 @@ HRESULT CompositionEngine::Initialize(HWND hwnd, ID3D11Device* d3dDevice, ID2D1D
     m_hwnd = hwnd;
     m_d2dDevice = d2dDevice;
     
-    HRESULT hr = S_OK;
+    HRESULT hr = S_OK; (void)hr;
     
     // 1. Get DXGI Device
     ComPtr<IDXGIDevice> dxgiDevice;
@@ -608,7 +608,7 @@ ID2D1DeviceContext* CompositionEngine::BeginPendingUpdate(UINT width, UINT heigh
     layer.isTitan = false;
     layer.surfaceFormat = ResolveImageSurfaceFormat(surfaceFormatOverride == DXGI_FORMAT_UNKNOWN ? m_surfaceFormat : surfaceFormatOverride);
     
-    HRESULT hr = S_OK;
+    HRESULT hr = S_OK; (void)hr;
 
     // [Smart Dispatch] Titan Mode: Explicit flag OR size threshold for bitmap-style
     // content. SVG can request an oversized standard surface so it stays on the
@@ -1095,7 +1095,7 @@ HRESULT CompositionEngine::ResizeSurfaces(UINT width, UINT height) {
 }
 
 // [Refactor] Virtual Canvas Matrix Chain (VisualState)
-HRESULT CompositionEngine::UpdateTransformMatrix(VisualState vs, float winW, float winH, float zoom, float panX, float panY, float animationDurationMs) {
+HRESULT CompositionEngine::UpdateTransformMatrix(VisualState vs, float /*winW*/, float /*winH*/, float zoom, float panX, float panY, float animationDurationMs) {
     if (!m_modelTransform || !m_scaleTransform || !m_translateTransform) return E_FAIL;
     
     // 1. Build Model Matrix (Flip * Rotate)

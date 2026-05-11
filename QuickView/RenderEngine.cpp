@@ -10,7 +10,6 @@
 #include "RenderEngine.h"
 #include "QuickViewETW.h"
 static constexpr const char* CURRENT_MODULE = "RenderEngine";
-#include "DebugMetrics.h"
 #include "EditState.h"
 #include "ImageTypes.h" // [Direct D2D] RawImageFrame
 #include "ImageLoaderSimd.h"
@@ -74,7 +73,7 @@ bool LoadIccFromResource(T *d2dContext, int resourceId,
       dstContext));
 }
 
-float ToneMapAces(float value) {
+[[maybe_unused]] float ToneMapAces(float value) {
   value = (value > 0.0f) ? value : 0.0f;
   const float numerator = value * (2.51f * value + 0.03f);
   const float denominator = value * (2.43f * value + 0.59f) + 0.14f;
@@ -306,6 +305,7 @@ struct Matrix3 {
   float m[3][3];
 };
 
+#if 0
 bool InvertMatrix3(const Matrix3& in, Matrix3* out) {
   if (!out) return false;
   const float a = in.m[0][0], b = in.m[0][1], c = in.m[0][2];
@@ -328,6 +328,7 @@ bool InvertMatrix3(const Matrix3& in, Matrix3* out) {
            {C * inv, F * inv, I * inv}}};
   return true;
 }
+#endif
 
 bool BuildSyntheticDisplayProfile(const QuickView::DisplayColorState& displayState,
                                   ProfileBlob* outBlob) {
@@ -418,6 +419,7 @@ bool TryLoadProfileBytesForPrimaries(QuickView::ColorPrimaries primaries,
   }
 }
 
+#if 0
 HPROFILE OpenProfileFromBytes(const void *data, DWORD size) {
   if (!data || size == 0)
     return nullptr;
@@ -428,7 +430,9 @@ HPROFILE OpenProfileFromBytes(const void *data, DWORD size) {
   profile.cbDataSize = size;
   return OpenColorProfileW(&profile, PROFILE_READ, FILE_SHARE_READ, OPEN_EXISTING);
 }
+#endif
 
+#if 0
 HPROFILE OpenProfileFromPath(const std::wstring &path) {
   if (path.empty())
     return nullptr;
@@ -440,6 +444,7 @@ HPROFILE OpenProfileFromPath(const std::wstring &path) {
       static_cast<DWORD>((path.size() + 1) * sizeof(wchar_t));
   return OpenColorProfileW(&profile, PROFILE_READ, FILE_SHARE_READ, OPEN_EXISTING);
 }
+#endif
 
 bool TryGetMonitorProfilePath(const QuickView::DisplayColorState &displayState,
                               std::wstring *outPath) {
@@ -618,7 +623,7 @@ bool TryGetLinearPrimariesToScRgbMatrix(QuickView::ColorPrimaries primaries,
   }
 }
 
-void TransformLinearPixelToScRgb(const ColorMatrix3x3 &matrix, float &r, float &g,
+[[maybe_unused]] void TransformLinearPixelToScRgb(const ColorMatrix3x3 &matrix, float &r, float &g,
                                  float &b) {
   const float rr = matrix.m[0][0] * r + matrix.m[0][1] * g + matrix.m[0][2] * b;
   const float gg = matrix.m[1][0] * r + matrix.m[1][1] * g + matrix.m[1][2] * b;
@@ -804,7 +809,7 @@ BuildToneMapSettings(const QuickView::RawImageFrame &frame,
       (displayState.GetSdrWhiteScale() > 1.0f ? displayState.GetSdrWhiteScale() : 1.0f);
   float peakNits = displayState.GetEffectivePeakNits(g_config.HdrPeakNitsOverride);
       
-  const float displayPeakScRgb = (peakNits / 80.0f > 1.0f ? peakNits / 80.0f : 1.0f);
+  const float displayPeakScRgb = (peakNits / 80.0f > 1.0f ? peakNits / 80.0f : 1.0f); (void)displayPeakScRgb;
 
   float contentPeakScRgb = 1.0f;
   float contentAverageScRgb = 0.0f;
@@ -950,7 +955,7 @@ BuildToneMapSettings(const QuickView::RawImageFrame &frame,
     }
   }
 
-  const float headroom = settings.displayPeakScRgb / settings.paperWhiteScRgb;
+  const float headroom = settings.displayPeakScRgb / settings.paperWhiteScRgb; (void)headroom;
   settings.exposure = 1.0f;
   if (frame.hdrMetadata.hasGainMap) {
     settings.exposure = 1.0f;
@@ -1838,8 +1843,8 @@ CRenderEngine::UploadRawFrameToGPU(const QuickView::RawImageFrame &frame,
           // [Optimization] Check Cache to avoid re-uploading pixels during slider drag
           bool useCachedTextures = (m_bakeCache.lastBasePixels == frame.pixels && 
                                     m_bakeCache.lastAuxPixels == frame.auxLayer->pixels &&
-                                    m_bakeCache.lastBaseW == frame.width &&
-                                    m_bakeCache.lastBaseH == frame.height &&
+                                    m_bakeCache.lastBaseW == (UINT)frame.width &&
+                                    m_bakeCache.lastBaseH == (UINT)frame.height &&
                                     m_bakeCache.baseTexture != nullptr &&
                                     m_bakeCache.auxTexture != nullptr);
 

@@ -44,7 +44,4 @@ using Microsoft::WRL::ComPtr;
 #pragma comment(lib, "ole32.lib")   // [SVG] For CreateStreamOnHGlobal
 
 // Helper macro for HRESULT checking
-#ifndef THROW_IF_FAILED
-#define THROW_IF_FAILED(hr) \
-    if (FAILED(hr)) { throw std::runtime_error("HRESULT failed: " + std::to_string(hr)); }
-#endif
+

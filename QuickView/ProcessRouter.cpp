@@ -89,9 +89,9 @@ static void ServerLoop(std::stop_token st) {
             DWORD err = GetLastError();
             if (err == ERROR_IO_PENDING) {
                 // Wait for either: client connects OR stop requested.
-                HANDLE waits[] = { s_connectEvent };
+                HANDLE waits[] = { s_connectEvent }; (void)waits; (void)waits;
                 while (!st.stop_requested()) {
-                    DWORD w = WaitForSingleObject(s_connectEvent, 200);
+                    DWORD w = WaitForSingleObject(s_connectEvent, 200); (void)w; (void)w;
                     if (w == WAIT_OBJECT_0) break;
                 }
                 if (st.stop_requested()) {
@@ -157,7 +157,7 @@ static void ChildWatcherLoop(std::stop_token st) {
 
         // Wait on up to MAXIMUM_WAIT_OBJECTS handles (or chunk).
         DWORD count = static_cast<DWORD>(std::min<size_t>(snapshot.size(), MAXIMUM_WAIT_OBJECTS));
-        DWORD w = WaitForMultipleObjects(count, snapshot.data(), FALSE, 500);
+        DWORD w = WaitForMultipleObjects(count, snapshot.data(), FALSE, 500); (void)w; (void)w;
         // Any child exiting triggers re-check; loop back to PurgeDeadChildren.
     }
 }

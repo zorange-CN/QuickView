@@ -1,15 +1,12 @@
-#include "pch.h"
 #include "HeavyLanePool.h"
 #include "QuickViewETW.h"
 static constexpr const char* CURRENT_MODULE = "HeavyLanePool";
-#include "DebugMetrics.h"
 #include "ImageEngine.h"
 #include "ImageLoaderSimd.h"
 #include "TileManager.h"
 #include "ToolProcessProtocol.h"
 #include "AnimationDecoder.h"
 #include <turbojpeg.h>
-#include <filesystem>
 #include <chrono>
 #include <winioctl.h>
 
@@ -805,7 +802,7 @@ void HeavyLanePool::WorkerLoop(int workerId, std::stop_token st) {
     
     while (!st.stop_requested()) {
         JobInfo job;
-        bool taken = false;
+        [[maybe_unused]] bool taken = false;
 
         // Wait for job
         {
@@ -888,7 +885,7 @@ void HeavyLanePool::WorkerLoop(int workerId, std::stop_token st) {
         }
         
         // Perform decode
-        auto t0 = std::chrono::steady_clock::now();
+        [[maybe_unused]] auto t0 = std::chrono::steady_clock::now();
         
         // [Fix Bug #85] RAII-based IO permit management
         // Ensures permit is always released even on cancellation, early return, or exception.
@@ -1086,7 +1083,7 @@ void HeavyLanePool::ShrinkerLoop(std::stop_token st) {
         const auto timeout = std::chrono::seconds(5);
         
         // We always want to keep AT LEAST 1 worker alive (if cap > 0)
-        int stayAliveCount = 0;
+        [[maybe_unused]] int stayAliveCount = 0;
         
         for (int i = 0; i < m_cap; ++i) {
             if (m_workers[i].state == WorkerState::STANDBY) {
@@ -1118,7 +1115,7 @@ void HeavyLanePool::ShrinkerLoop(std::stop_token st) {
     }
 }
 
-bool HeavyLanePool::ShouldBecomeHotSpare(int workerId) {
+bool HeavyLanePool::ShouldBecomeHotSpare([[maybe_unused]] int workerId) {
     // Decision logic:
     // 1. Total active workers should not exceed some "baseline" if idle for too long.
     // 2. But if we JUST finished a job, we usually stay STANDBY for at least a few seconds.
@@ -1166,38 +1163,37 @@ void HeavyLanePool::PerformDecode(int workerId, const JobInfo& job, std::stop_to
     // Access worker to check stopSource
     Worker& self = m_workers[workerId]; 
     
-    try {
-        auto cancelPred = [&]() {
-            return st.stop_requested() || self.stopSource.stop_requested();
-        };
+    auto cancelPred = [&]() {
+        return st.stop_requested() || self.stopSource.stop_requested();
+    };
 
-        if (cancelPred()) return;
+    if (cancelPred()) return;
 
-        // [Phase 4.1] Bug 3: Visibility Culling - Drop stale jobs instantly
-        if (job.type == JobType::Tile) {
-            if (auto tm = m_parent->GetTileManager()) {
-                auto* layer = tm->GetLayer(job.tileCoord.lod);
-                if (layer) {
-                    auto state = layer->GetState(job.tileCoord.col, job.tileCoord.row);
-                    if (state != QuickView::TileStateCode::Queued && state != QuickView::TileStateCode::Loading) {
-                        m_cancelCount++;
-                        return; // Guard auto-handles cleanup, NO OnTileCancelled ping
-                    }
+    // [Phase 4.1] Bug 3: Visibility Culling - Drop stale jobs instantly
+    if (job.type == JobType::Tile) {
+        if (auto tm = m_parent->GetTileManager()) {
+            auto* layer = tm->GetLayer(job.tileCoord.lod);
+            if (layer) {
+                auto state = layer->GetState(job.tileCoord.col, job.tileCoord.row);
+                if (state != QuickView::TileStateCode::Queued && state != QuickView::TileStateCode::Loading) {
+                    m_cancelCount++;
+                    return; // Guard auto-handles cleanup, NO OnTileCancelled ping
                 }
             }
         }
+    }
 
-        // [Unified Architecture] Always use the Back Arena for new decoding jobs
-        // Note: For Tiles, we should ideally use SlabAllocator.
-        // For now, reuse the heavy arena (it resets anyway).
-        QuantumArena& arena = m_pool->GetBackHeavyArena();
-        
-        QuickView::RawImageFrame rawFrame;
-        std::wstring loaderName;
-        CImageLoader::ImageMetadata meta;
-        HRESULT hr = E_FAIL;
-        
-        auto decodeStart = std::chrono::high_resolution_clock::now();
+    // [Unified Architecture] Always use the Back Arena for new decoding jobs
+    // Note: For Tiles, we should ideally use SlabAllocator.
+    // For now, reuse the heavy arena (it resets anyway).
+    QuantumArena& arena = m_pool->GetBackHeavyArena();
+    
+    QuickView::RawImageFrame rawFrame;
+    std::wstring loaderName;
+    CImageLoader::ImageMetadata meta;
+    HRESULT hr = E_FAIL;
+    
+    auto decodeStart = std::chrono::high_resolution_clock::now();
 
          if (job.type == JobType::Standard) {
               // --- Standard Decode (Full/Scaled) ---
@@ -1425,7 +1421,7 @@ void HeavyLanePool::PerformDecode(int workerId, const JobInfo& job, std::stop_to
                        }
                    }
                }
-                else if (FAILED(hr) && m_benchPhase == BenchPhase::PENDING) {
+               else if (FAILED(hr) && m_benchPhase == BenchPhase::PENDING) {
                     // [Fix] If Base Layer decode aborted (e.g. Gigapixel JXL too massive for CPU),
                     // MUST unlock concurrency so Native Region Decoding can blast through tiles!
                     // We simulate a fast decode (100MP/s) to unlock ~14 threads.
@@ -1433,7 +1429,7 @@ void HeavyLanePool::PerformDecode(int workerId, const JobInfo& job, std::stop_to
                     RecordBaselineSample(10000000.0, 100.0, 10000, 10000, false);
                 }
          }
-          else if (job.type == JobType::Tile) {
+         else if (job.type == JobType::Tile) {
                // --- Tile Decode ---
                // [Diagnostic] Trace missing tile (4,0)
                if (job.tileCoord.col == 4 && job.tileCoord.row == 0 && job.tileCoord.lod == 3) {
@@ -1851,10 +1847,7 @@ tile_decode_done: ; // [P14] Jump target for fast path (skip legacy TJ decode)
             std::lock_guard lock(m_poolMutex);
             m_workers[workerId].lastDecodeMs = decodeMs;
         }
-    }
-    catch (...) {
-        if (outLoaderName) *outLoaderName = L"Worker Exception";
-    }
+
     
     
     self.lastTotalMs = (int)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start).count();
@@ -2308,7 +2301,7 @@ void HeavyLanePool::EnqueueTrash(TrashBag&& bag) {
     // we MUST force a partial cleanup in the current thread to prevent MMF handle exhaustion.
     // [Optimization] Also trigger if physical memory is extremely low.
     bool pressure = false;
-    MEMORYSTATUSEX ms = { sizeof(ms) };
+    MEMORYSTATUSEX ms{}; ms.dwLength = sizeof(ms);
     if (GlobalMemoryStatusEx(&ms)) {
         if (ms.ullAvailPhys < ms.ullTotalPhys / 10) pressure = true; // < 10% RAM left
     }
@@ -2460,7 +2453,7 @@ bool HeavyLanePool::AcquireMasterBackingView(ImageID imageId, const uint8_t** ou
 // After this call, m_masterBacking.view is a writable pointer that decoders
 // (libjxl, Wuffs) can write into directly. No pixel data is copied.
 // Windows VMM handles page faults → disk-backed paging automatically.
-HRESULT HeavyLanePool::BuildMasterBackingStoreEmpty(int width, int height, int stride, ImageID imageId) {
+HRESULT HeavyLanePool::BuildMasterBackingStoreEmpty(int width, int height, int stride, [[maybe_unused]] ImageID imageId) {
     if (width <= 0 || height <= 0 || stride <= 0) return E_INVALIDARG;
 
     // [Optimization] Return previous buffer to pool FIRST, ensuring we can grab it back in Step 0
@@ -2621,7 +2614,7 @@ bool HeavyLanePool::ShouldUseSingleDecode(int lod) const {
     
     size_t peakBytes = fullResBytes + decoderOverhead;
     
-    MEMORYSTATUSEX ms = { sizeof(ms) };
+    MEMORYSTATUSEX ms{}; ms.dwLength = sizeof(ms);
     GlobalMemoryStatusEx(&ms);
     size_t available = ms.ullAvailPhys;
     
@@ -2666,7 +2659,7 @@ bool HeavyLanePool::ShouldUseSingleDecodeForWebP(int lod) const {
 
     double requiredRamMB = ((double)m_titanSrcW * (double)m_titanSrcH * 4.0) / (1024.0 * 1024.0);
 
-    MEMORYSTATUSEX ms = { sizeof(ms) };
+    MEMORYSTATUSEX ms{}; ms.dwLength = sizeof(ms);
     if (!GlobalMemoryStatusEx(&ms)) return false;
     double availableRamMB = (double)ms.ullAvailPhys / (1024.0 * 1024.0);
 
@@ -3041,7 +3034,7 @@ HRESULT HeavyLanePool::FullDecodeAndCacheLOD(Worker& worker, const JobInfo& job,
                     fullFrame.height = targetH;
                     fullFrame.stride = (int)dstStride;
                     fullFrame.format = QuickView::PixelFormat::BGRA8888;
-                    fullFrame.memoryDeleter = [masterPixels](uint8_t* p) mutable { masterPixels.reset(); };
+                    fullFrame.memoryDeleter = [masterPixels]([[maybe_unused]] uint8_t* p) mutable { masterPixels.reset(); };
                     hr = S_OK;
                     QV_LOG("P15_MasterRoute", TraceLoggingString("ZeroCopy LOD0 RAM", "Action"));
                 } else {
@@ -3254,7 +3247,7 @@ HRESULT HeavyLanePool::FullDecodeAndCacheLOD(Worker& worker, const JobInfo& job,
                         fullFrame.width = targetW;
                         fullFrame.height = targetH;
                         fullFrame.stride = (int)dstStride;
-                        fullFrame.memoryDeleter = [frameSharedPtr](uint8_t* p) mutable { frameSharedPtr.reset(); };
+                        fullFrame.memoryDeleter = [frameSharedPtr]([[maybe_unused]] uint8_t* p) mutable { frameSharedPtr.reset(); };
                         
                         QV_LOG("P15_MasterRoute", TraceLoggingString("ZeroCopy LOD0", "Action"));
                     }
@@ -3264,7 +3257,7 @@ HRESULT HeavyLanePool::FullDecodeAndCacheLOD(Worker& worker, const JobInfo& job,
                     fullFrame.width = fullFrame.width;
                     fullFrame.height = fullFrame.height;
                     fullFrame.stride = fullFrame.stride;
-                    fullFrame.memoryDeleter = [frameSharedPtr](uint8_t* p) mutable { frameSharedPtr.reset(); };
+                    fullFrame.memoryDeleter = [frameSharedPtr]([[maybe_unused]] uint8_t* p) mutable { frameSharedPtr.reset(); };
                     
                     QV_LOG("DecodeWorker_Result",
                         TraceLoggingString("DirectLOD Applied", "Action"),

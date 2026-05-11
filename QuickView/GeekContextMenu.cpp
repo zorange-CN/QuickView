@@ -29,7 +29,7 @@ static SetWindowCompositionAttributeFn GetSWCA() {
 // ============================================================
 // Constants
 // ============================================================
-static constexpr float PI = 3.14159265f;
+// static constexpr float PI = 3.14159265f;
 
 // ============================================================
 // Static Members
@@ -67,7 +67,8 @@ GeekContextMenu::~GeekContextMenu() {
 // ============================================================
 void GeekContextMenu::EnsureClassRegistered() {
     if (s_classRegistered) return;
-    WNDCLASSEXW wc = { sizeof(wc) };
+    WNDCLASSEXW wc = {};
+    wc.cbSize = sizeof(wc);
     wc.style = CS_HREDRAW | CS_VREDRAW;
     wc.lpfnWndProc = WndProc;
     wc.hInstance = GetModuleHandle(nullptr);
@@ -115,7 +116,7 @@ void GeekContextMenu::ShowMenu(HWND parent, int sx, int sy,
     menu->CalculateLayout();
     SIZE winSize = menu->GetWindowSize();
 
-    MONITORINFO mi = { sizeof(mi) };
+    MONITORINFO mi = {}; mi.cbSize = sizeof(mi);
     GetMonitorInfoW(hMon, &mi);
     RECT wa = mi.rcWork;
     int x = sx, y = sy;
@@ -176,7 +177,7 @@ void GeekContextMenu::ShowSubmenuPopup(HWND parent, int sx, int sy,
     SIZE winSize = sub->GetWindowSize();
 
     HMONITOR hMon = MonitorFromPoint({ sx, sy }, MONITOR_DEFAULTTONEAREST);
-    MONITORINFO mi = { sizeof(mi) };
+    MONITORINFO mi = {}; mi.cbSize = sizeof(mi);
     GetMonitorInfoW(hMon, &mi);
     RECT wa = mi.rcWork;
     int x = sx, y = sy;
@@ -502,7 +503,7 @@ void GeekContextMenu::CalculateLayout() {
     // Calculate max height based on monitor
     POINT pt = m_originPt;
     HMONITOR hMon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
-    MONITORINFO mi = { sizeof(mi) };
+    MONITORINFO mi = {}; mi.cbSize = sizeof(mi);
     GetMonitorInfoW(hMon, &mi);
     float waH = (float)(mi.rcWork.bottom - mi.rcWork.top) / m_scale;
     
@@ -627,7 +628,6 @@ void GeekContextMenu::RenderItems() {
 void GeekContextMenu::RenderScrollIndicators() {
     if (m_totalBodyH <= m_maxBodyH) return;
 
-    float bodyH = std::min(m_totalBodyH, m_maxBodyH);
     float indicatorSize = 10.0f;
     float arrowEdgePad = 3.0f; // (16px padding - 10px arrow) / 2 = 3px centered
 

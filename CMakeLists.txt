@@ -94,8 +94,11 @@ set_source_files_properties(QuickView/ImageLoaderSimd.cpp PROPERTIES SKIP_PRECOM
 # ============================================================================
 if(MSVC OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     # Common strict warnings, encoding, standard conformance, and function-level linking
-    target_compile_options(QuickView PRIVATE /W4 /utf-8 /Gw /Gy /permissive-)
+    target_compile_options(QuickView PRIVATE /W4 /WX /utf-8 /Gw /Gy /permissive-)
     
+    # [Optimization] Disable compiler identification string to save bytes
+    target_compile_options(QuickView PRIVATE /clang:-fno-ident)
+
     # Disable automatic manifest generation (we provide it via .rc)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /MANIFEST:NO")
     
@@ -110,17 +113,39 @@ if(MSVC OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
             set(ASAN_LIB_DIR "$ENV{LLVM_INSTALL_DIR}/lib/clang/$ENV{LLVM_VERSION}/lib/windows")
             target_link_directories(QuickView PRIVATE ${ASAN_LIB_DIR})
         endif()
+
+        # [ARM64 FIX] Detect architecture for ASan library naming
+        if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+            if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|ARM64")
+                set(ASAN_ARCH "aarch64")
+            else()
+                set(ASAN_ARCH "x86_64")
+            endif()
+        else()
+            set(ASAN_ARCH "i386")
+        endif()
+
         target_link_libraries(QuickView PRIVATE 
-            clang_rt.asan_dynamic-x86_64.lib 
-            clang_rt.asan_dynamic_runtime_thunk-x86_64.lib
+            clang_rt.asan_dynamic-${ASAN_ARCH}.lib 
+            clang_rt.asan_dynamic_runtime_thunk-${ASAN_ARCH}.lib
         )
     endif()
 
     if(ENABLE_LTO)
         message(STATUS "Build Matrix: Enabling Full LTO (Release-LTO Mode)")
-        # Peak performance flags: /fp:fast (maximum floating point speed) and /GS- (disable security checks for raw performance)
-        target_compile_options(QuickView PRIVATE /O2 /Gw /Zc:inline /GR- /fp:fast /GS- -flto -mllvm -inline-threshold=250)
-        target_link_options(QuickView PRIVATE -flto /OPT:REF /OPT:ICF /MAP)
+        # Peak performance flags: 
+        # /fp:fast (maximum floating point speed) 
+        # /GS- (disable security checks for raw performance)
+        # /EHs-c- (disable exceptions)
+        # -fno-unwind-tables (disable stack unwind tables for binary size)
+        target_compile_options(QuickView PRIVATE 
+            /O2 /Gw /Zc:inline /GR- /fp:fast /GS- /EHs-c-
+            /clang:-flto /clang:-mllvm /clang:-inline-threshold=250
+            /clang:-fno-unwind-tables
+            /clang:-fno-asynchronous-unwind-tables
+            /clang:-fno-ident)
+        # /MERGE:.rdata=.text (merge read-only data into code section to minimize alignment padding)
+        target_link_options(QuickView PRIVATE -flto /OPT:REF /OPT:ICF /MAP "/MERGE:.rdata=.text")
     endif()
 endif()
 

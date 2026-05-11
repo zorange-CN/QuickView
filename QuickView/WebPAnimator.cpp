@@ -22,7 +22,7 @@ public:
         }
     }
 
-    bool Initialize(std::shared_ptr<QuickView::MappedFile> file, QuickView::PixelFormat preferredFormat) override {
+    bool Initialize(std::shared_ptr<QuickView::MappedFile> file, QuickView::PixelFormat /*preferredFormat*/) override {
         m_mappedFile = file;
         WebPData webp_data;
         webp_data.bytes = file->data();

@@ -162,7 +162,7 @@ void Toolbar::UpdateLayout(float winW, float winH) {
 
 
 
-  auto isNormalButton = [&](ToolbarButtonID id) {
+  [[maybe_unused]] auto isNormalButton = [&](ToolbarButtonID id) {
     return !isCompareButton(id) && id != ToolbarButtonID::AnimPlayPause && id != ToolbarButtonID::AnimPrevFrame && id != ToolbarButtonID::AnimNextFrame && id != ToolbarButtonID::AnimDirtyRect && !isAlwaysVisible(id);
   };
 
