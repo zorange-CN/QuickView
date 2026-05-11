@@ -8019,9 +8019,11 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
                     // For maximized window, we save its RESTORE position so it knows where to return.
                     // Workspace coordinates from GetWindowPlacement are converted to screen coordinates
                     // to handle custom taskbar positions (top/left) correctly.
-                    WINDOWPLACEMENT wp = { sizeof(WINDOWPLACEMENT) };
+                    WINDOWPLACEMENT wp = {};
+                    wp.length = sizeof(WINDOWPLACEMENT);
                     if (GetWindowPlacement(hwnd, &wp)) {
-                        MONITORINFO mi = { sizeof(mi) };
+                        MONITORINFO mi = {};
+                        mi.cbSize = sizeof(mi);
                         if (GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY), &mi)) {
                             int w = wp.rcNormalPosition.right - wp.rcNormalPosition.left;
                             int h = wp.rcNormalPosition.bottom - wp.rcNormalPosition.top;
