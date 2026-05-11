@@ -14,39 +14,31 @@ jobs:
       contents: write
     strategy:
       matrix:
-        # Build for both x64 and ARM64
-        platform: [x64, ARM64]
+        include:
+          - platform: x64
+            preset: Release-LTO
+          - platform: ARM64
+            preset: ARM64-Release-LTO
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive # Recursively fetch submodules like vcpkg
-          fetch-depth: 0        # Fetch full history to support vcpkg versioning
+          submodules: recursive
+          fetch-depth: 0
 
-      - name: Install Essential Visual Studio 2026 (v145) Components
-        shell: pwsh
-        run: |
-          # Precision installation based on code analysis:
-          # 1. Workload.VCTools: Core compiler & MSBuild
-          # 2. Windows11SDK.22621: DirectX, WinRT, and System headers
-          # 3. VC.Tools.ARM64: Essential for the ARM64 release matrix
-          # 4. VC.ATL: Included for safe linking with some vcpkg dependencies
-          choco install visualstudio2026buildtools --package-parameters "--add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.Windows11SDK.22621 --add Microsoft.VisualStudio.Component.VC.Tools.ARM64 --add Microsoft.VisualStudio.Component.VC.ATL --includeRecommended --passive --norestart --locale en-US"
+      - name: Install LLVM/Clang
+        run: choco install llvm -y
 
-      - name: Add MSBuild to PATH
-        uses: microsoft/setup-msbuild@v2
-
-      # [Optimization] Restore vcpkg installed artifacts to skip compilation
       - name: Restore vcpkg Cache
         id: vcpkg-cache
         uses: actions/cache@v4
         with:
           path: |
-            QuickView/vcpkg_installed
+            out/build/${{ matrix.preset }}/vcpkg_installed
             ${{ github.workspace }}/third_party/vcpkg/installed
             ${{ env.LOCALAPPDATA }}/vcpkg/archives
-          key: vcpkg-${{ matrix.platform }}-${{ hashFiles('QuickView/vcpkg.json') }}
+          key: vcpkg-${{ matrix.platform }}-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
             vcpkg-${{ matrix.platform }}-
 
@@ -58,45 +50,36 @@ jobs:
             ./bootstrap-vcpkg.bat
           }
 
+      - name: Configure CMake
+        run: cmake --preset ${{ matrix.preset }}
+
       - name: Build Project
-        shell: pwsh
-        run: |
-          # Build Release configuration using project's native v145 toolset
-          msbuild QuickView\QuickView.sln /p:Configuration=Release /p:Platform=${{ matrix.platform }} /m
+        run: cmake --build --preset ${{ matrix.preset }}
 
       - name: Prepare Portable Version
         shell: pwsh
         run: |
-          $arch = "${{ matrix.platform }}".ToLower()
           $archUpper = if ("${{ matrix.platform }}" -eq "x64") { "X64" } else { "ARM64" }
           
-          # Extract actual version from the compiled EXE to ensure filename accuracy
-          $exePath = "QuickView\bin\${{ matrix.platform }}\Release\QuickView.exe"
-          if (-not (Test-Path $exePath)) { Write-Error "EXE not found"; exit 1 }
-          $rawVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exePath).ProductVersion
+          # Path for CMake build artifact
+          $exePath = "out/build/${{ matrix.preset }}/Release/QuickView.exe"
+          if (-not (Test-Path $exePath)) { Write-Error "EXE not found at $exePath"; exit 1 }
           
-          # Format version (ensure it starts with 'v')
+          # Extract version
+          $rawVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exePath).ProductVersion
           $tag = if ($rawVersion -like "v*") { $rawVersion } else { "v$rawVersion" }
           
-          # [Optimization] Trim trailing .0 for 4-digit versions (e.g., 5.3.0.0 -> v5.3.0) 
-          # to match semantic versioning and ensure update mechanism compatibility.
+          # Trim .0
           if ($tag -match '^v\d+\.\d+\.\d+\.0$') {
               $tag = $tag.Substring(0, $tag.LastIndexOf('.'))
           }
           
           echo "DETECTED_TAG=$tag" >> $env:GITHUB_ENV
-          echo "Detected version from EXE: $tag"
-
-          # Create temporary staging dir
-          New-Item -ItemType Directory -Force "Release/$arch"
-          New-Item -ItemType Directory -Force "Release/dist"
           
-          # Copy exe
-          Copy-Item $exePath "Release/$arch/QuickView.exe"
-
-          # Pack portable version Zip
+          # Prepare dist
+          New-Item -ItemType Directory -Force "Release/dist"
           $zipName = "QuickView_${tag}_${archUpper}.zip"
-          Compress-Archive -Path "Release/$arch/QuickView.exe" -DestinationPath "Release/dist/$zipName" -Force
+          Compress-Archive -Path $exePath -DestinationPath "Release/dist/$zipName" -Force
 
       - name: Build Inno Setup Installer
         shell: pwsh
@@ -106,18 +89,17 @@ jobs:
           $tag = "${{ env.DETECTED_TAG }}"
           $version = $tag.TrimStart('v')
           
-          # Invoke ISCC, Output to Release/dist directly
+          # Update Inno Setup to use CMake output path
+          # Note: We need to pass the EXE path to ISCC or update .iss
           $outputName = "QuickView_Installer_${tag}_${archUpper}"
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=$version /DAppArch=$arch /DOutputName=$outputName /O"Release\dist" installer\QuickView.iss
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=$version /DAppArch=$arch /DOutputName=$outputName /DExePath="out/build/${{ matrix.preset }}/Release/QuickView.exe" /O"Release\dist" installer\QuickView.iss
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
-          # Use a unique name per matrix job to avoid conflicts in v4
           name: QuickView-Staging-${{ matrix.platform }}
           path: Release/dist/*
 
-  # New job to merge everything into one single "4-file" distribution
   publish-final:
     needs: build-and-release
     runs-on: windows-latest
@@ -130,7 +112,7 @@ jobs:
         with:
           pattern: QuickView-Staging-*
           path: final-dist
-          merge-multiple: true # This flattens the structure!
+          merge-multiple: true
 
       - name: Upload Consolidated Artifact
         uses: actions/upload-artifact@v4
@@ -143,7 +125,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: final-dist/*
-          draft: true  # Create as draft for manual review
-          generate_release_notes: true  # Automatically summarize commits
+          draft: true
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

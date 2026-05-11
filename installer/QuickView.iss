@@ -3,12 +3,14 @@
 ; Author: justnullname
 
 #define MyAppName "QuickView"
+#ifndef ExePath
+  #define ExePath "..\Release\" + AppArch + "\QuickView.exe"
+#endif
+
 #ifndef MyAppVersion
-  ; Try to extract version from the compiled executable
-  #if FileExists("..\Release\" + AppArch + "\QuickView.exe")
-    #define MyAppVersion GetFileVersion("..\Release\" + AppArch + "\QuickView.exe")
+  #if FileExists(ExePath)
+    #define MyAppVersion GetFileVersion(ExePath)
   #else
-    ; Fallback version if the executable is missing (GitHub Actions will override this via CLI)
     #define MyAppVersion "2.1.0"
   #endif
 #endif
@@ -63,7 +65,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 ; Assume build artifacts are organized in Release\<Arch>\ directory
-Source: "..\Release\{#AppArch}\QuickView.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ExePath}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
