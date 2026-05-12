@@ -8078,6 +8078,28 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
      // Mouse Interaction
      case WM_MOUSEMOVE: {
           g_currentCursor = LoadCursor(nullptr, IDC_ARROW);
+          if (g_viewState.IsDraggingInfoPanel) {
+              POINT pt = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
+              int dx = pt.x - g_viewState.InfoPanelDragAnchor.x;
+              int dy = pt.y - g_viewState.InfoPanelDragAnchor.y;
+
+              if (dx != 0 || dy != 0) {
+                  float s = g_uiRenderer ? g_uiRenderer->GetUIScale() : 1.0f;
+                  g_runtime.InfoPanelX += dx / s;
+                  g_runtime.InfoPanelY += dy / s;
+
+                  // Keep it visible on screen (approx boundaries)
+                  RECT rc; GetClientRect(hwnd, &rc);
+                  float maxW = rc.right / s;
+                  float maxH = rc.bottom / s;
+                  g_runtime.InfoPanelX = std::max(0.0f, std::min(g_runtime.InfoPanelX, maxW - 50.0f));
+                  g_runtime.InfoPanelY = std::max(0.0f, std::min(g_runtime.InfoPanelY, maxH - 50.0f));
+
+                  g_viewState.InfoPanelDragAnchor = pt;
+                  RequestRepaint(PaintLayer::Static);
+              }
+              return 0; // Handled
+          }
           if (g_viewState.IsDragging) {
               g_currentCursor = LoadCursor(nullptr, IDC_SIZEALL);
           } else if (g_config.EdgeNavClick && !g_gallery.IsVisible() && !g_settingsOverlay.IsVisible() && !g_helpOverlay.IsVisible() && !g_dialog.IsVisible) {
@@ -8925,6 +8947,12 @@ SKIP_EDGE_NAV:;
              auto hit = g_uiRenderer->HitTest((float)pt.x, (float)pt.y);
              
              switch (hit.type) {
+                 case UIHitResult::InfoPanelDrag:
+                     g_viewState.IsDraggingInfoPanel = true;
+                     g_viewState.InfoPanelDragAnchor = pt;
+                     SetCapture(hwnd);
+                     return 0;
+
                  case UIHitResult::PanelToggle:
                      g_runtime.InfoPanelExpanded = !g_runtime.InfoPanelExpanded;
                      if (g_runtime.InfoPanelExpanded && g_currentMetadata.HistR.empty() && !g_imagePath.empty()) {
@@ -9145,6 +9173,15 @@ SKIP_EDGE_NAV:;
             if (releasedOver == pressed) {
                 ExecuteWindowControlButton(hwnd, pressed);
             }
+            return 0;
+        }
+
+        if (g_viewState.IsDraggingInfoPanel) {
+            g_viewState.IsDraggingInfoPanel = false;
+            ReleaseCapture();
+            g_config.InfoPanelX = g_runtime.InfoPanelX;
+            g_config.InfoPanelY = g_runtime.InfoPanelY;
+            SaveConfig();
             return 0;
         }
 

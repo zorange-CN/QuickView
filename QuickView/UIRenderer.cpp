@@ -271,6 +271,13 @@ HitTestResult UIRenderer::HitTest(float x, float y) {
         }
     }
     
+    // Draggable Panel Body
+    if (x >= m_lastInfoPanelRect.left && x <= m_lastInfoPanelRect.right &&
+        y >= m_lastInfoPanelRect.top && y <= m_lastInfoPanelRect.bottom) {
+        result.type = UIHitResult::InfoPanelDrag;
+        return result;
+    }
+
     // Not on any clickable element, reset hover
     m_hoverRowIndex = -1;
     
@@ -2615,7 +2622,9 @@ void UIRenderer::DrawCompactInfo(ID2D1DeviceContext* dc) {
     float textW = MeasureTextWidth(info);
     // [[maybe_unused]] float totalW = textW + 56.0f * s;
     
-    D2D1_RECT_F rect = D2D1::RectF(16.0f * s, 8.0f * s, 16.0f * s + textW, 32.0f * s);
+    float startX = g_runtime.InfoPanelX * s;
+    float startY = g_runtime.InfoPanelY * s;
+    D2D1_RECT_F rect = D2D1::RectF(startX, startY, startX + textW, startY + 24.0f * s);
     // [Visual Consistency] Follow UI theme instead of image luma
     const AdaptiveUiPalette palette = BuildAdaptivePalette(IsLightThemeActive() ? 1.0f : 0.0f, &m_compactInfoAdaptiveBlend);
 
@@ -2635,6 +2644,9 @@ void UIRenderer::DrawCompactInfo(ID2D1DeviceContext* dc) {
     // Close Button [x]
     m_panelCloseRect = D2D1::RectF(m_panelToggleRect.right + 4.0f * s, rect.top, m_panelToggleRect.right + 28.0f * s, rect.bottom);
     DrawTextWithFourWayShadow(dc, L"[x]", 3, m_panelFormat.Get(), m_panelCloseRect, brushRed.Get(), brushShadow.Get(), 1.1f * s);
+
+    // Save bounds for hit testing (include buttons)
+    m_lastInfoPanelRect = D2D1::RectF(rect.left, rect.top, m_panelCloseRect.right, m_panelCloseRect.bottom);
 }
 
 float UIRenderer::EstimateCanvasLuminance() const {
@@ -2835,13 +2847,14 @@ void UIRenderer::DrawInfoPanel(ID2D1DeviceContext* dc) {
     }
     width = (std::clamp)(width, 220.0f * s, 300.0f * s);
     float height = 26.0f * s + (float)m_infoGrid.size() * GRID_ROW_HEIGHT * s + 14.0f * s;
-    float startX = 16.0f * s;
-    float startY = 32.0f * s; 
+    float startX = g_runtime.InfoPanelX * s;
+    float startY = g_runtime.InfoPanelY * s;
     
     if (g_currentMetadata.HasGPS) height += 50.0f * s;
     if (g_runtime.InfoPanelExpanded && !g_currentMetadata.HistL.empty()) height += 100.0f * s;
 
     D2D1_RECT_F panelRect = D2D1::RectF(startX, startY, startX + width, startY + height);
+    m_lastInfoPanelRect = panelRect;
     
     // [Geek Glass] Panel Background Render
     QuickView::UI::GeekGlass::GeekGlassConfig glassConfig;
