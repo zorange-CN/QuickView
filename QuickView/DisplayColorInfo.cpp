@@ -199,8 +199,8 @@ bool DisplayColorInfo::Refresh(HWND hwnd, bool forceHdrSimulation) {
         nextState.advancedColorSupported = true;
         nextState.colorSpace = DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;
 
-        // Use the manual override from settings if available, otherwise default to a 400 nit simulation.
-        float simulatedPeak = ::g_config.HdrPeakNitsOverride > 0.0f ? ::g_config.HdrPeakNitsOverride : (nextState.sdrWhiteLevelNits * 5.0f);
+        // Use the manual override from settings if available, otherwise default to a 1000 nit simulation.
+        float simulatedPeak = ::g_config.HdrPeakNitsOverride > 0.0f ? ::g_config.HdrPeakNitsOverride : 1000.0f;
         
         nextState.maxLuminanceNits = simulatedPeak;
         nextState.maxFullFrameLuminanceNits = simulatedPeak;

@@ -13,6 +13,7 @@ static constexpr const char* CURRENT_MODULE = "RenderEngine";
 #include "EditState.h"
 #include "ImageTypes.h" // [Direct D2D] RawImageFrame
 #include "ImageLoaderSimd.h"
+#include <DirectXPackedVector.h>
 
 
 // 核心修复：引入 DirectX GUID 定义库 与 必要库
@@ -633,7 +634,7 @@ bool TryGetLinearPrimariesToScRgbMatrix(QuickView::ColorPrimaries primaries,
   b = bb;
 }
 
-bool BuildLinearScRgbFloatBuffer(const QuickView::RawImageFrame &frame,
+[[maybe_unused]] bool BuildLinearScRgbFloatBuffer(const QuickView::RawImageFrame &frame,
                                  std::vector<uint8_t> &convertedPixels,
                                  const uint8_t **pixelsOut,
                                  UINT *strideOut) {
@@ -772,32 +773,103 @@ static void PickKnee(float src_min, float src_max, float src_avg, float dst_min,
 } // namespace
 
 float InternalEstimateFramePeakScRgb(const QuickView::RawImageFrame &frame) {
-  if (frame.format != QuickView::PixelFormat::R32G32B32A32_FLOAT ||
-      !frame.pixels || frame.width <= 0 || frame.height <= 0) {
+  if (!frame.pixels || frame.width <= 0 || frame.height <= 0) {
     return 1.0f;
   }
 
-  // [Universe's Strongest] Blazing fast SIMD full image scan.
-  // Replaces 64x64 sampling with 100% accurate peak retrieval using AVX2/AVX512.
-  return ImageLoaderSimd::FindPeakFloat(
-      reinterpret_cast<const float *>(frame.pixels),
-      static_cast<size_t>(frame.width) * static_cast<size_t>(frame.height));
+  float peak = 1.0f;
+  if (frame.format == QuickView::PixelFormat::R32G32B32A32_FLOAT) {
+    peak = ImageLoaderSimd::FindPeakFloat(
+        reinterpret_cast<const float *>(frame.pixels),
+        static_cast<size_t>(frame.width) * static_cast<size_t>(frame.height));
+  } else if (frame.format == QuickView::PixelFormat::R16G16B16A16_FLOAT) {
+    float max_val = 0.0f;
+    size_t count = static_cast<size_t>(frame.width) * static_cast<size_t>(frame.height) * 4;
+    const DirectX::PackedVector::HALF* ptr = reinterpret_cast<const DirectX::PackedVector::HALF*>(frame.pixels);
+    for (size_t i = 0; i < count; i += 4) {
+      float r = DirectX::PackedVector::XMConvertHalfToFloat(ptr[i]);
+      float g = DirectX::PackedVector::XMConvertHalfToFloat(ptr[i+1]);
+      float b = DirectX::PackedVector::XMConvertHalfToFloat(ptr[i+2]);
+      max_val = (std::max)({max_val, r, g, b});
+    }
+    peak = max_val;
+  } else if (frame.format == QuickView::PixelFormat::R16G16B16A16_UNORM) {
+    uint16_t max_val = 0;
+    size_t count = static_cast<size_t>(frame.width) * static_cast<size_t>(frame.height) * 4;
+    const uint16_t* ptr = reinterpret_cast<const uint16_t*>(frame.pixels);
+    for (size_t i = 0; i < count; i += 4) {
+      max_val = (std::max)({max_val, ptr[i], ptr[i+1], ptr[i+2]});
+    }
+    peak = static_cast<float>(max_val) / 65535.0f;
+  }
+
+  // Final Pass: Apply EOTF if content is still encoded (PQ/HLG)
+  const QuickView::TransferFunction transfer =
+      frame.colorInfo.transfer != QuickView::TransferFunction::Unknown
+          ? frame.colorInfo.transfer
+          : frame.hdrMetadata.transfer;
+
+  if (transfer == QuickView::TransferFunction::PQ) {
+    peak = PQToLinear(peak);
+  } else if (transfer == QuickView::TransferFunction::HLG) {
+    // HLG is relative; usually we treat 1.0 as 1000 nits (12.5f scRGB)
+    peak *= 12.5f; 
+  }
+
+  return (std::max)(1.0f, peak);
 }
 
 float InternalEstimateFrameAverageScRgb(const QuickView::RawImageFrame &frame) {
-  if (frame.format != QuickView::PixelFormat::R32G32B32A32_FLOAT ||
-      !frame.pixels || frame.width <= 0 || frame.height <= 0) {
+  if (!frame.pixels || frame.width <= 0 || frame.height <= 0) {
     return 0.25f; // Reasonable fallback for HDR midtones
   }
 
   double totalLum = 0.0;
-  size_t stride = static_cast<size_t>(frame.width) * 4;
-  for (int y = 0; y < frame.height; ++y) {
-    const float* row = reinterpret_cast<const float*>(frame.pixels) + (static_cast<size_t>(y) * stride);
-    totalLum += ImageLoaderSimd::SumLuminanceFloatRange(row, 0, frame.width); // This now uses BT.2020 weights
+  if (frame.format == QuickView::PixelFormat::R32G32B32A32_FLOAT) {
+    size_t stride = static_cast<size_t>(frame.width) * 4;
+    for (int y = 0; y < frame.height; ++y) {
+      const float* row = reinterpret_cast<const float*>(frame.pixels) + (static_cast<size_t>(y) * stride);
+      totalLum += ImageLoaderSimd::SumLuminanceFloatRange(row, 0, frame.width); 
+    }
+  } else if (frame.format == QuickView::PixelFormat::R16G16B16A16_FLOAT) {
+    const DirectX::PackedVector::HALF* ptr = reinterpret_cast<const DirectX::PackedVector::HALF*>(frame.pixels);
+    for (int y = 0; y < frame.height; ++y) {
+      const DirectX::PackedVector::HALF* row = ptr + (static_cast<size_t>(y) * frame.width * 4);
+      for (int x = 0; x < frame.width; ++x) {
+        float r = DirectX::PackedVector::XMConvertHalfToFloat(row[x * 4 + 0]);
+        float g = DirectX::PackedVector::XMConvertHalfToFloat(row[x * 4 + 1]);
+        float b = DirectX::PackedVector::XMConvertHalfToFloat(row[x * 4 + 2]);
+        // BT.2020 luminance weights
+        totalLum += (std::max)(0.0f, r * 0.2627f + g * 0.6780f + b * 0.0593f);
+      }
+    }
+  } else if (frame.format == QuickView::PixelFormat::R16G16B16A16_UNORM) {
+    const uint16_t* ptr = reinterpret_cast<const uint16_t*>(frame.pixels);
+    for (int y = 0; y < frame.height; ++y) {
+      const uint16_t* row = ptr + (static_cast<size_t>(y) * frame.width * 4);
+      for (int x = 0; x < frame.width; ++x) {
+        float r = row[x * 4 + 0] / 65535.0f;
+        float g = row[x * 4 + 1] / 65535.0f;
+        float b = row[x * 4 + 2] / 65535.0f;
+        totalLum += (std::max)(0.0f, r * 0.2627f + g * 0.6780f + b * 0.0593f);
+      }
+    }
+  } else {
+    return 0.25f;
   }
 
-  return static_cast<float>(totalLum / (static_cast<double>(frame.width) * frame.height));
+  float avg = static_cast<float>(totalLum / (static_cast<double>(frame.width) * frame.height));
+
+  // If encoded in PQ, convert avg to linear
+  const QuickView::TransferFunction transfer =
+      frame.colorInfo.transfer != QuickView::TransferFunction::Unknown
+          ? frame.colorInfo.transfer
+          : frame.hdrMetadata.transfer;
+  if (transfer == QuickView::TransferFunction::PQ) {
+    avg = PQToLinear(avg);
+  }
+
+  return avg;
 }
 
 QuickView::ToneMapSettings
@@ -1001,14 +1073,17 @@ BuildToneMapSettings(const QuickView::RawImageFrame &frame,
     if (!TryGetLinearPrimariesToScRgbMatrix(primaries, &matrix)) {
         matrix = MakeIdentityMatrix();
     }
-    settings.colorMatrix[0] = matrix.m[0][0]; settings.colorMatrix[1] = matrix.m[0][1]; settings.colorMatrix[2] = matrix.m[0][2]; settings.colorMatrix[3] = 0.0f;
-    settings.colorMatrix[4] = matrix.m[1][0]; settings.colorMatrix[5] = matrix.m[1][1]; settings.colorMatrix[6] = matrix.m[1][2]; settings.colorMatrix[7] = 0.0f;
-    settings.colorMatrix[8] = matrix.m[2][0]; settings.colorMatrix[9] = matrix.m[2][1]; settings.colorMatrix[10] = matrix.m[2][2]; settings.colorMatrix[11] = 0.0f;
+    // Row-major fill: each row is [m00,m01,m02, pad]. 4th row = identity padding for float4x4.
+    settings.colorMatrix[ 0] = matrix.m[0][0]; settings.colorMatrix[ 1] = matrix.m[0][1]; settings.colorMatrix[ 2] = matrix.m[0][2]; settings.colorMatrix[ 3] = 0.0f;
+    settings.colorMatrix[ 4] = matrix.m[1][0]; settings.colorMatrix[ 5] = matrix.m[1][1]; settings.colorMatrix[ 6] = matrix.m[1][2]; settings.colorMatrix[ 7] = 0.0f;
+    settings.colorMatrix[ 8] = matrix.m[2][0]; settings.colorMatrix[ 9] = matrix.m[2][1]; settings.colorMatrix[10] = matrix.m[2][2]; settings.colorMatrix[11] = 0.0f;
+    settings.colorMatrix[12] = 0.0f;           settings.colorMatrix[13] = 0.0f;           settings.colorMatrix[14] = 0.0f;           settings.colorMatrix[15] = 1.0f;
   } else {
     settings.transferFunction = static_cast<uint32_t>(QuickView::TransferFunction::Linear);
-    settings.colorMatrix[0] = 1.0f; settings.colorMatrix[1] = 0.0f; settings.colorMatrix[2] = 0.0f; settings.colorMatrix[3] = 0.0f;
-    settings.colorMatrix[4] = 0.0f; settings.colorMatrix[5] = 1.0f; settings.colorMatrix[6] = 0.0f; settings.colorMatrix[7] = 0.0f;
-    settings.colorMatrix[8] = 0.0f; settings.colorMatrix[9] = 0.0f; settings.colorMatrix[10] = 1.0f; settings.colorMatrix[11] = 0.0f;
+    settings.colorMatrix[ 0] = 1.0f; settings.colorMatrix[ 1] = 0.0f; settings.colorMatrix[ 2] = 0.0f; settings.colorMatrix[ 3] = 0.0f;
+    settings.colorMatrix[ 4] = 0.0f; settings.colorMatrix[ 5] = 1.0f; settings.colorMatrix[ 6] = 0.0f; settings.colorMatrix[ 7] = 0.0f;
+    settings.colorMatrix[ 8] = 0.0f; settings.colorMatrix[ 9] = 0.0f; settings.colorMatrix[10] = 1.0f; settings.colorMatrix[11] = 0.0f;
+    settings.colorMatrix[12] = 0.0f; settings.colorMatrix[13] = 0.0f; settings.colorMatrix[14] = 0.0f; settings.colorMatrix[15] = 1.0f;
   }
 
   return settings;
@@ -1424,7 +1499,7 @@ HRESULT CRenderEngine::AnalyzeGamutWarningIcc(
 
     ComPtr<ID3D11Texture2D> srcTexture;
     HRESULT hr = m_computeEngine->UploadAndConvert(sampledFrame.pixels, sampledFrame.width,
-                                                   sampledFrame.height, sampledFrame.format,
+                                                   sampledFrame.height, sampledFrame.stride, sampledFrame.format,
                                                    &srcTexture);
     if (FAILED(hr)) return hr;
 
@@ -2009,6 +2084,11 @@ CRenderEngine::UploadRawFrameToGPU(const QuickView::RawImageFrame &frame,
     alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
     break;
 
+  case QuickView::PixelFormat::R16G16B16A16_FLOAT:
+    dxgiFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
+    alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
+    break;
+
   default:
     dxgiFormat = DXGI_FORMAT_B8G8R8A8_UNORM;
     break;
@@ -2039,7 +2119,7 @@ CRenderEngine::UploadRawFrameToGPU(const QuickView::RawImageFrame &frame,
       TraceLoggingInt32((int)m_displayColorState.colorSpace, "DisplayColorSpace"),
       TraceLoggingFloat32(g_config.HdrPeakNitsOverride, "HdrPeakNitsOverride"));
 
-  if (frame.format == QuickView::PixelFormat::R32G32B32A32_FLOAT || frame.format == QuickView::PixelFormat::R16G16B16A16_UNORM) {
+  if (frame.format == QuickView::PixelFormat::R32G32B32A32_FLOAT || frame.format == QuickView::PixelFormat::R16G16B16A16_UNORM || frame.format == QuickView::PixelFormat::R16G16B16A16_FLOAT) {
       ComPtr<ID2D1ColorContext> scRgbContext;
       CreateScRgbColorContext(m_d2dContext.Get(), &scRgbContext);
 
@@ -2100,7 +2180,8 @@ CRenderEngine::UploadRawFrameToGPU(const QuickView::RawImageFrame &frame,
                   TraceLoggingFloat32(toneMapSettings.contentPeakScRgb, "ContentPeak"),
                   TraceLoggingBool(m_computeEngine && m_computeEngine->IsAvailable(), "ComputeAvailable"));
               D2D1_BITMAP_PROPERTIES1 hdrProps = GetDefaultBitmapProps(
-                  frame.format == QuickView::PixelFormat::R16G16B16A16_UNORM ? DXGI_FORMAT_R16G16B16A16_UNORM : DXGI_FORMAT_R32G32B32A32_FLOAT, D2D1_ALPHA_MODE_PREMULTIPLIED);
+                  frame.format == QuickView::PixelFormat::R16G16B16A16_UNORM ? DXGI_FORMAT_R16G16B16A16_UNORM : 
+                  (frame.format == QuickView::PixelFormat::R16G16B16A16_FLOAT ? DXGI_FORMAT_R16G16B16A16_FLOAT : DXGI_FORMAT_R32G32B32A32_FLOAT), D2D1_ALPHA_MODE_PREMULTIPLIED);
               hdrProps.colorContext = scRgbContext.Get();
               m_d2dContext->CreateBitmap(
                   D2D1::SizeU(static_cast<UINT32>(frame.width),
@@ -2149,6 +2230,12 @@ CRenderEngine::UploadRawFrameToGPU(const QuickView::RawImageFrame &frame,
                           g = std::max(0.0f, (p16[x * 4 + 1] / 65535.0f) * exposure * toneMapSettings.exposureGain);
                           b = std::max(0.0f, (p16[x * 4 + 2] / 65535.0f) * exposure * toneMapSettings.exposureGain);
                           a = std::clamp(p16[x * 4 + 3] / 65535.0f, 0.0f, 1.0f);
+                      } else if (frame.format == QuickView::PixelFormat::R16G16B16A16_FLOAT) {
+                          const uint16_t* p16 = reinterpret_cast<const uint16_t*>(srcRow);
+                          r = std::max(0.0f, DirectX::PackedVector::XMConvertHalfToFloat(p16[x * 4 + 0]) * exposure * toneMapSettings.exposureGain);
+                          g = std::max(0.0f, DirectX::PackedVector::XMConvertHalfToFloat(p16[x * 4 + 1]) * exposure * toneMapSettings.exposureGain);
+                          b = std::max(0.0f, DirectX::PackedVector::XMConvertHalfToFloat(p16[x * 4 + 2]) * exposure * toneMapSettings.exposureGain);
+                          a = std::clamp(DirectX::PackedVector::XMConvertHalfToFloat(p16[x * 4 + 3]), 0.0f, 1.0f);
                       } else {
                           const float* pf = reinterpret_cast<const float*>(srcRow);
                           r = std::max(0.0f, pf[x * 4 + 0] * exposure * toneMapSettings.exposureGain);

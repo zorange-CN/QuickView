@@ -4853,7 +4853,7 @@ HRESULT CImageLoader::LoadToMemory(LPCWSTR filePath, IWICBitmap** ppBitmap, std:
                     finalW = actualW;
                     finalH = actualH;
                     
-                    WICPixelFormatGUID requestedFormat = isHdrSource ? GUID_WICPixelFormat64bppRGBA : GUID_WICPixelFormat32bppPBGRA;
+                    WICPixelFormatGUID requestedFormat = isHdrSource ? GUID_WICPixelFormat64bppRGBAHalf : GUID_WICPixelFormat32bppPBGRA;
                     WICPixelFormatGUID decodeFormat = requestedFormat;
                     if (SUCCEEDED(pTransform->GetClosestPixelFormat(&decodeFormat))) {
                         ComPtr<IWICBitmap> tempBitmap;
@@ -4898,12 +4898,12 @@ HRESULT CImageLoader::LoadToMemory(LPCWSTR filePath, IWICBitmap** ppBitmap, std:
     hr = m_wicFactory->CreateFormatConverter(&converter);
     if (FAILED(hr)) return hr;
 
-    // Re-evaluate high precision to include 16-bit integers like HEIC (64bppRGBA)
-    // so we retain 10-bit color data by converting them to 64bppRGBA.
+    // Re-evaluate high precision to include 16-bit integers like HEIC
+    // so we retain HDR dynamic range via 64bppRGBAHalf (FP16 linear scRGB).
     bool isHighPrecision = isHdrSource;
 
     // Restore HDR for thumbnails! 
-    WICPixelFormatGUID targetFormat = isHighPrecision ? GUID_WICPixelFormat64bppRGBA : GUID_WICPixelFormat32bppPBGRA;
+    WICPixelFormatGUID targetFormat = isHighPrecision ? GUID_WICPixelFormat64bppRGBAHalf : GUID_WICPixelFormat32bppPBGRA;
 
     hr = converter->Initialize(
         finalSource.Get(), // Use frame source
@@ -7143,8 +7143,8 @@ namespace QuickView {
 
                 WICPixelFormatGUID targetFmt = GUID_WICPixelFormat32bppPBGRA;
                 if (isHighBitDepth && !PrefersSdrTarget(ctx)) {
-                    targetFmt = GUID_WICPixelFormat64bppRGBA;
-                    result.format = PixelFormat::R16G16B16A16_UNORM;
+                    targetFmt = GUID_WICPixelFormat64bppRGBAHalf;
+                    result.format = PixelFormat::R16G16B16A16_FLOAT;
                 } else {
                     result.format = PixelFormat::BGRA8888;
                 }
@@ -7169,20 +7169,27 @@ namespace QuickView {
                     : L"WIC HEIF (Native Accelerated)";
                 
                 if (isHighBitDepth && !PrefersSdrTarget(ctx)) {
-                    result.metadata.colorInfo.dataSpace = QuickView::PixelDataSpace::SceneLinearScRgb;
-                    result.metadata.colorInfo.transfer = QuickView::TransferFunction::Linear;
-                    result.metadata.colorInfo.primaries = QuickView::ColorPrimaries::SRGB;
+                    result.metadata.colorInfo.dataSpace = QuickView::PixelDataSpace::EncodedHdr;
+                    result.metadata.colorInfo.transfer = result.metadata.hdrMetadata.transfer;
+                    if (result.metadata.colorInfo.transfer == QuickView::TransferFunction::Unknown) {
+                        result.metadata.colorInfo.transfer = QuickView::TransferFunction::PQ;
+                    }
+                    result.metadata.colorInfo.primaries = result.metadata.hdrMetadata.primaries;
+                    if (result.metadata.colorInfo.primaries == QuickView::ColorPrimaries::Unknown) {
+                        result.metadata.colorInfo.primaries = QuickView::ColorPrimaries::Rec2020;
+                    }
+                    
                     result.metadata.colorInfo.nominalBitDepth =
                         (srcFormat == GUID_WICPixelFormat64bppRGBAHalf || srcFormat == GUID_WICPixelFormat64bppRGBA)
                             ? 16
                             : 32;
 
                     result.metadata.FormatDetails = L"High Precision HEIF";
-                    if (result.metadata.hdrMetadata.transfer == QuickView::TransferFunction::PQ) result.metadata.FormatDetails += L" / PQ";
-                    else if (result.metadata.hdrMetadata.transfer == QuickView::TransferFunction::HLG) result.metadata.FormatDetails += L" / HLG";
+                    if (result.metadata.colorInfo.transfer == QuickView::TransferFunction::PQ) result.metadata.FormatDetails += L" / PQ";
+                    else if (result.metadata.colorInfo.transfer == QuickView::TransferFunction::HLG) result.metadata.FormatDetails += L" / HLG";
                     
-                    if (result.metadata.hdrMetadata.primaries == QuickView::ColorPrimaries::Rec2020) result.metadata.FormatDetails += L" / P2020";
-                    else if (result.metadata.hdrMetadata.primaries == QuickView::ColorPrimaries::DisplayP3) result.metadata.FormatDetails += L" / P3";
+                    if (result.metadata.colorInfo.primaries == QuickView::ColorPrimaries::Rec2020) result.metadata.FormatDetails += L" / P2020";
+                    else if (result.metadata.colorInfo.primaries == QuickView::ColorPrimaries::DisplayP3) result.metadata.FormatDetails += L" / P3";
                 } else {
                     result.metadata.colorInfo.dataSpace = QuickView::PixelDataSpace::EncodedSdr;
                     result.metadata.colorInfo.transfer = QuickView::TransferFunction::SRGB;
@@ -11382,9 +11389,12 @@ ctx.allocator.ctx = arena;
     WICPixelFormatGUID outWicFormat;
     wicBitmap->GetPixelFormat(&outWicFormat);
     bool isFloat = IsEqualGUID(outWicFormat, GUID_WICPixelFormat128bppRGBAFloat);
+    bool isHalfFloat = IsEqualGUID(outWicFormat, GUID_WICPixelFormat64bppRGBAHalf);
     bool isHighBitDepth = IsEqualGUID(outWicFormat, GUID_WICPixelFormat64bppRGBA) || IsEqualGUID(outWicFormat, GUID_WICPixelFormat64bppPRGBA);
-    int bpp = isFloat ? 16 : (isHighBitDepth ? 8 : 4);
-    QuickView::PixelFormat outPixelFormat = isFloat ? QuickView::PixelFormat::R32G32B32A32_FLOAT : (isHighBitDepth ? QuickView::PixelFormat::R16G16B16A16_UNORM : QuickView::PixelFormat::BGRA8888);
+    int bpp = isFloat ? 16 : (isHighBitDepth || isHalfFloat ? 8 : 4);
+    QuickView::PixelFormat outPixelFormat = isFloat ? QuickView::PixelFormat::R32G32B32A32_FLOAT : 
+                                            (isHalfFloat ? QuickView::PixelFormat::R16G16B16A16_FLOAT :
+                                            (isHighBitDepth ? QuickView::PixelFormat::R16G16B16A16_UNORM : QuickView::PixelFormat::BGRA8888));
 
     // Allocate output buffer with aligned stride
     int outStride = CalculateSIMDAlignedStride(finalW, bpp);
@@ -11766,7 +11776,7 @@ static void PopulateAvifHdrStaticMetadata(const avifImage* image, QuickView::Hdr
     }
 }
 
-static float DecodeTransferToLinear(float value, QuickView::TransferFunction tf) {
+[[maybe_unused]] static float DecodeTransferToLinear(float value, QuickView::TransferFunction tf) {
     switch (tf) {
         case QuickView::TransferFunction::Linear: return value;
         case QuickView::TransferFunction::PQ: return DecodePqToLinearScRgb(value);

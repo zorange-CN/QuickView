@@ -159,8 +159,8 @@ void CSToneMap(uint3 id : SV_DispatchThreadID)
         color.rgb = pow(color.rgb, float3(2.2f, 2.2f, 2.2f));
     }
 
-    // Color Matrix (e.g. Rec.2020 to ScRGB)
-    color.rgb = mul((float3x3)ColorMatrix, color.rgb);
+    // Color Matrix (e.g. Rec.2020 to ScRGB) — row-major C++ fill, so vector * matrix
+    color.rgb = mul(color.rgb, (float3x3)ColorMatrix);
 
     float paperWhite = max(PaperWhiteScRgb, 1.0);
     float displayPeak = max(DisplayPeakScRgb, paperWhite);
@@ -338,8 +338,8 @@ void CSToneMapHDR(uint3 id : SV_DispatchThreadID)
         color.rgb = pow(color.rgb, float3(2.2f, 2.2f, 2.2f));
     }
 
-    // Color Matrix
-    color.rgb = mul((float3x3)ColorMatrix, color.rgb);
+    // Color Matrix — row-major C++ fill, so vector * matrix
+    color.rgb = mul(color.rgb, (float3x3)ColorMatrix);
 
     float contentPeak = max(ContentPeakScRgb, 1.0f);
     float displayPeak = max(DisplayPeakScRgb, 1.0f);
@@ -436,6 +436,7 @@ static const char* HLSL_GamutLut = R"(
 Texture2D<float4> SrcTex : register(t0);
 Texture3D<float> OverflowLut : register(t1);
 RWTexture2D<uint> MaskTex : register(u0);
+RWStructuredBuffer<uint> GlobalCounter : register(u1);
 SamplerState LinearSampler : register(s0);
 
 cbuffer GamutLutParams : register(b0)
@@ -446,17 +447,34 @@ cbuffer GamutLutParams : register(b0)
     uint LutEdge;
 };
 
+groupshared uint groupOverflowCount;
+
 [numthreads(8, 8, 1)]
-void CSGamutLut(uint3 id : SV_DispatchThreadID)
+void CSGamutLut(uint3 id : SV_DispatchThreadID, uint GI : SV_GroupIndex)
 {
-    if (id.x >= Width || id.y >= Height) {
-        return;
+    // 1. Initialize group-local counter in fast LDS memory
+    if (GI == 0) groupOverflowCount = 0;
+    GroupMemoryBarrierWithGroupSync();
+
+    bool isOverflow = false;
+    if (id.x < Width && id.y < Height) {
+        float3 encoded = saturate(SrcTex[id.xy].rgb);
+        float overflow = OverflowLut.SampleLevel(LinearSampler, encoded, 0);
+        isOverflow = (overflow > 0.5f);
+        // Write per-pixel mask for visualization
+        MaskTex[id.xy] = isOverflow ? 255u : 0u;
     }
 
-    float3 encoded = saturate(SrcTex[id.xy].rgb);
-    float overflow = OverflowLut.SampleLevel(LinearSampler, encoded, 0);
-    // Use strict > 0.5f threshold to prevent trilinear interpolation bleeding
-    MaskTex[id.xy] = (overflow > 0.5f) ? 255u : 0u;
+    // 2. Group-level reduction in LDS (zero global memory contention)
+    if (isOverflow) {
+        InterlockedAdd(groupOverflowCount, 1);
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    // 3. Single representative writes to global counter — reduces atomics from millions to thousands
+    if (GI == 0 && groupOverflowCount > 0) {
+        InterlockedAdd(GlobalCounter[0], groupOverflowCount);
+    }
 }
 )";
 
@@ -564,6 +582,25 @@ HRESULT ComputeEngine::CompileShaders() {
     hr = m_d3dDevice->CreateBuffer(&cbDesc, nullptr, &m_gamutLutConstantBuffer);
     if (FAILED(hr)) return hr;
 
+    // GPU atomic counter for gamut overflow reduction (RWStructuredBuffer<uint>)
+    {
+        D3D11_BUFFER_DESC counterDesc = {};
+        counterDesc.ByteWidth = sizeof(uint32_t);
+        counterDesc.Usage = D3D11_USAGE_DEFAULT;
+        counterDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS;
+        counterDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+        counterDesc.StructureByteStride = sizeof(uint32_t);
+        hr = m_d3dDevice->CreateBuffer(&counterDesc, nullptr, &m_gamutCounterBuffer);
+        if (FAILED(hr)) return hr;
+
+        D3D11_BUFFER_DESC stagingDesc = {};
+        stagingDesc.ByteWidth = sizeof(uint32_t);
+        stagingDesc.Usage = D3D11_USAGE_STAGING;
+        stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+        hr = m_d3dDevice->CreateBuffer(&stagingDesc, nullptr, &m_gamutCounterStaging);
+        if (FAILED(hr)) return hr;
+    }
+
     // Linear sampler for bilinear gain map interpolation
     D3D11_SAMPLER_DESC sampDesc = {};
     sampDesc.Filter = D3D11_FILTER_MIN_MAG_LINEAR_MIP_POINT;
@@ -587,14 +624,17 @@ HRESULT ComputeEngine::UploadAndConvert(const uint8_t* srcPixels, int width, int
     srcDesc.Height = height;
     srcDesc.MipLevels = 1;
     srcDesc.ArraySize = 1;
-    srcDesc.Format = (srcFormat == PixelFormat::R32G32B32A32_FLOAT) ? DXGI_FORMAT_R32G32B32A32_FLOAT : ((srcFormat == PixelFormat::R16G16B16A16_UNORM) ? DXGI_FORMAT_R16G16B16A16_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM);
+    srcDesc.Format = (srcFormat == PixelFormat::R32G32B32A32_FLOAT) ? DXGI_FORMAT_R32G32B32A32_FLOAT : 
+                     (srcFormat == PixelFormat::R16G16B16A16_FLOAT) ? DXGI_FORMAT_R16G16B16A16_FLOAT :
+                     ((srcFormat == PixelFormat::R16G16B16A16_UNORM) ? DXGI_FORMAT_R16G16B16A16_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM);
     srcDesc.SampleDesc.Count = 1;
     srcDesc.Usage = D3D11_USAGE_IMMUTABLE;
     srcDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
     
     D3D11_SUBRESOURCE_DATA initData = {};
     initData.pSysMem = srcPixels;
-    initData.SysMemPitch = stride > 0 ? stride : width * ((srcFormat == PixelFormat::R32G32B32A32_FLOAT) ? 16 : ((srcFormat == PixelFormat::R16G16B16A16_UNORM) ? 8 : 4));
+    initData.SysMemPitch = stride > 0 ? stride : width * ((srcFormat == PixelFormat::R32G32B32A32_FLOAT) ? 16 : 
+                                                          ((srcFormat == PixelFormat::R16G16B16A16_UNORM || srcFormat == PixelFormat::R16G16B16A16_FLOAT) ? 8 : 4));
     
     ComPtr<ID3D11Texture2D> pSrc;
     HRESULT hr = m_d3dDevice->CreateTexture2D(&srcDesc, &initData, &pSrc);
@@ -843,20 +883,55 @@ HRESULT ComputeEngine::DispatchGamutMaskLut(
     m_d3dContext->CSSetShader(m_csGamutLut.Get(), nullptr, 0);
     ID3D11ShaderResourceView* srvs[] = { srcSrv.Get(), overflowLut };
     m_d3dContext->CSSetShaderResources(0, 2, srvs);
-    ID3D11UnorderedAccessView* uavs[] = { maskUav.Get() };
-    m_d3dContext->CSSetUnorderedAccessViews(0, 1, uavs, nullptr);
+
+    // Create UAV for atomic overflow counter (u1)
+    D3D11_UNORDERED_ACCESS_VIEW_DESC counterUavDesc = {};
+    counterUavDesc.Format = DXGI_FORMAT_UNKNOWN;
+    counterUavDesc.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
+    counterUavDesc.Buffer.FirstElement = 0;
+    counterUavDesc.Buffer.NumElements = 1;
+    ComPtr<ID3D11UnorderedAccessView> counterUav;
+    hr = m_d3dDevice->CreateUnorderedAccessView(m_gamutCounterBuffer.Get(), &counterUavDesc, &counterUav);
+    if (FAILED(hr)) return hr;
+
+    // Clear atomic counter to 0
+    const UINT zero = 0;
+    m_d3dContext->UpdateSubresource(m_gamutCounterBuffer.Get(), 0, nullptr, &zero, 0, 0);
+
+    // Bind both UAVs: u0=mask, u1=counter
+    ID3D11UnorderedAccessView* uavs[] = { maskUav.Get(), counterUav.Get() };
+    m_d3dContext->CSSetUnorderedAccessViews(0, 2, uavs, nullptr);
     ID3D11Buffer* cbs[] = { m_gamutLutConstantBuffer.Get() };
     m_d3dContext->CSSetConstantBuffers(0, 1, cbs);
     ID3D11SamplerState* samplers[] = { m_linearSampler.Get() };
     m_d3dContext->CSSetSamplers(0, 1, samplers);
     m_d3dContext->Dispatch((srcDesc.Width + 7) / 8, (srcDesc.Height + 7) / 8, 1);
 
-    ID3D11UnorderedAccessView* nullUav[] = { nullptr };
-    m_d3dContext->CSSetUnorderedAccessViews(0, 1, nullUav, nullptr);
+    ID3D11UnorderedAccessView* nullUav[] = { nullptr, nullptr };
+    m_d3dContext->CSSetUnorderedAccessViews(0, 2, nullUav, nullptr);
     ID3D11ShaderResourceView* nullSrvs[] = { nullptr, nullptr };
     m_d3dContext->CSSetShaderResources(0, 2, nullSrvs);
 
-    return ReadbackMaskTexture(maskTexture.Get(), outReadback);
+    // Fast path: Read back 4-byte counter instead of full texture
+    m_d3dContext->CopyResource(m_gamutCounterStaging.Get(), m_gamutCounterBuffer.Get());
+    D3D11_MAPPED_SUBRESOURCE counterMapped = {};
+    hr = m_d3dContext->Map(m_gamutCounterStaging.Get(), 0, D3D11_MAP_READ, 0, &counterMapped);
+    if (FAILED(hr)) return hr;
+    const uint32_t overflowCount = *static_cast<const uint32_t*>(counterMapped.pData);
+    m_d3dContext->Unmap(m_gamutCounterStaging.Get(), 0);
+
+    outReadback->overflowCount = overflowCount;
+    outReadback->hasOverflow = (overflowCount > 0);
+
+    // Only do expensive mask texture readback if visualization is needed
+    if (outReadback->hasOverflow) {
+        return ReadbackMaskTexture(maskTexture.Get(), outReadback);
+    }
+
+    outReadback->width = static_cast<int>(srcDesc.Width);
+    outReadback->height = static_cast<int>(srcDesc.Height);
+    outReadback->mask.clear();
+    return S_OK;
 }
 
 HRESULT ComputeEngine::ToneMapHdrToSdr(const uint8_t* srcPixels, int width, int height, int stride, const ToneMapSettings& settings, ID3D11Texture2D** outTexture, PixelFormat srcFormat) {
@@ -867,7 +942,8 @@ HRESULT ComputeEngine::ToneMapHdrToSdr(const uint8_t* srcPixels, int width, int 
     srcDesc.Height = static_cast<UINT>(height);
     srcDesc.MipLevels = 1;
     srcDesc.ArraySize = 1;
-    srcDesc.Format = srcFormat == PixelFormat::R16G16B16A16_UNORM ? DXGI_FORMAT_R16G16B16A16_UNORM : DXGI_FORMAT_R32G32B32A32_FLOAT;
+    srcDesc.Format = srcFormat == PixelFormat::R16G16B16A16_UNORM ? DXGI_FORMAT_R16G16B16A16_UNORM : 
+                     (srcFormat == PixelFormat::R16G16B16A16_FLOAT ? DXGI_FORMAT_R16G16B16A16_FLOAT : DXGI_FORMAT_R32G32B32A32_FLOAT);
     srcDesc.SampleDesc.Count = 1;
     srcDesc.Usage = D3D11_USAGE_IMMUTABLE;
     srcDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
@@ -939,7 +1015,8 @@ HRESULT ComputeEngine::ToneMapHdrToHdr(const uint8_t* srcPixels, int width, int 
     srcDesc.Height = static_cast<UINT>(height);
     srcDesc.MipLevels = 1;
     srcDesc.ArraySize = 1;
-    srcDesc.Format = srcFormat == PixelFormat::R16G16B16A16_UNORM ? DXGI_FORMAT_R16G16B16A16_UNORM : DXGI_FORMAT_R32G32B32A32_FLOAT;
+    srcDesc.Format = srcFormat == PixelFormat::R16G16B16A16_UNORM ? DXGI_FORMAT_R16G16B16A16_UNORM : 
+                     (srcFormat == PixelFormat::R16G16B16A16_FLOAT ? DXGI_FORMAT_R16G16B16A16_FLOAT : DXGI_FORMAT_R32G32B32A32_FLOAT);
     srcDesc.SampleDesc.Count = 1;
     srcDesc.Usage = D3D11_USAGE_IMMUTABLE;
     srcDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;

@@ -31,9 +31,9 @@ struct alignas(16) ToneMapSettings {
     float realHardwarePeakScRgb;    // Actual display peak in ScRGB
     uint32_t transferFunction;      // Enum QuickView::TransferFunction
 
-    float colorMatrix[12];          // 3x4 layout for structured float3x3 mapping (requires 48 bytes)
+    float colorMatrix[16];          // float4x4 layout: 3x3 matrix stored as 4 rows of float4 for HLSL alignment
 };
-static_assert(sizeof(ToneMapSettings) % 16 == 0, "CB size must be multiple of 16 bytes");
+static_assert(sizeof(ToneMapSettings) == 128, "CB must be exactly 128 bytes to match HLSL float4x4 layout");
 
 
 struct GamutMaskReadback {
@@ -41,6 +41,7 @@ struct GamutMaskReadback {
     int height = 0;
     std::vector<uint8_t> mask;
     bool hasOverflow = false;
+    uint32_t overflowCount = 0;     // GPU atomic counter result
 };
 
 // ============================================================================
@@ -155,6 +156,8 @@ private:
     ComPtr<ID3D11Buffer> m_gainMapConstantBuffer;
 
     ComPtr<ID3D11Buffer> m_gamutLutConstantBuffer;
+    ComPtr<ID3D11Buffer> m_gamutCounterBuffer;       // GPU atomic overflow counter (RWStructuredBuffer<uint>)
+    ComPtr<ID3D11Buffer> m_gamutCounterStaging;      // Staging buffer for CPU readback of counter
     ComPtr<ID3D11SamplerState> m_linearSampler;
     ComPtr<ID3D11SamplerState> m_pointSampler;
 
