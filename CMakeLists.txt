@@ -40,6 +40,7 @@ set(QUICKVIEW_SOURCES
     QuickView/GeekIconRenderer.cpp
     QuickView/GeekIconData.cpp
     QuickView/exif.cpp
+    QuickView/ArchiveVFS.cpp
     QuickView/RenderEngine.cpp
     QuickView/ImageLoader.cpp
     QuickView/LosslessTransform.cpp

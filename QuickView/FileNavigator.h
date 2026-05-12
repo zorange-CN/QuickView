@@ -9,6 +9,7 @@
 #include "EditState.h" // for g_runtime
 #include "exif.h"      // for easyexif
 #include "SupportedExtensions.h" // Unified supported extensions
+#include "ArchiveVFS.h"
 
 #pragma comment(lib, "Shlwapi.lib")
 
@@ -29,6 +30,10 @@ public:
         fs::path p(currentPath);
         if (!fs::exists(p)) return;
 
+        // VFS State Teardown
+        m_archive.reset();
+        m_archivePath.clear();
+
         m_files.clear();
         m_currentIndex = -1;
 
@@ -47,17 +52,56 @@ public:
         }
 
         m_sizes.clear();
-        for (const auto& entry : fs::directory_iterator(dir, ec)) {
-            if (entry.is_regular_file(ec)) {
-                std::wstring ext = entry.path().extension().wstring();
-                std::transform(ext.begin(), ext.end(), ext.begin(), [](wchar_t c){ return std::towlower(c); });
-                
-                for (const auto& supp : QuickView::SUPPORTED_EXTENSIONS) {
-                    if (ext == supp) {
-                        m_files.push_back(entry.path().wstring());
-                        // Cache file size for Scout Lane decision
-                        m_sizes.push_back(entry.file_size(ec));
-                        break;
+
+        // VFS Support for Archives
+        std::wstring pExt = p.extension().wstring();
+        std::transform(pExt.begin(), pExt.end(), pExt.begin(), [](wchar_t c){ return std::towlower(c); });
+
+        if (pExt == L".cbz" || pExt == L".zip" || pExt == L".cbr" || pExt == L".rar") {
+            // Load from Archive VFS
+            m_archivePath = p.wstring();
+
+            if (pExt == L".cbz" || pExt == L".zip") {
+                m_archive = std::make_unique<QuickView::ZipArchive>(m_archivePath);
+            }
+            // else if (pExt == L".cbr" || pExt == L".rar") {
+            //     TODO: Instantiate UnRarArchive
+            // }
+
+            if (m_archive && m_archive->IsValid()) {
+                size_t numEntries = m_archive->GetEntryCount();
+                for (size_t i = 0; i < numEntries; ++i) {
+                    const QuickView::ArchiveEntry& entry = m_archive->GetEntry(i);
+                    const std::wstring& name = m_archive->GetEntryName(i);
+
+                    std::wstring ext = std::filesystem::path(name).extension().wstring();
+                    std::transform(ext.begin(), ext.end(), ext.begin(), [](wchar_t c){ return std::towlower(c); });
+
+                    for (const auto& supp : QuickView::SUPPORTED_EXTENSIONS) {
+                        if (ext == supp) {
+                            // Construct virtual path: ArchivePath|Index|InternalName
+                            std::wstring virtualPath = m_archivePath + L"|" + std::to_wstring(i) + L"|" + name;
+                            m_files.push_back(virtualPath);
+                            m_sizes.push_back(entry.uncompSize); // Use uncompressed size
+                            break;
+                        }
+                    }
+                }
+            }
+        } else {
+            // Standard Directory Scan
+            for (const auto& entry : fs::directory_iterator(dir, ec)) {
+                if (entry.is_regular_file(ec)) {
+                    std::wstring ext = entry.path().extension().wstring();
+                    std::transform(ext.begin(), ext.end(), ext.begin(), [](wchar_t c){ return std::towlower(c); });
+
+                    for (const auto& supp : QuickView::SUPPORTED_EXTENSIONS) {
+                        if (ext == supp) {
+                            m_files.push_back(entry.path().wstring());
+                            // Cache file size for Scout Lane decision
+                            m_sizes.push_back(entry.file_size(ec));
+                            break;
+                        }
                     }
                 }
             }
@@ -286,10 +330,41 @@ public:
     }
 
     int FindIndex(const std::wstring& path) const {
+        // Handle virtual path matching where we might be passed just the archive path from OS
+        if (m_archive && m_archive->IsValid()) {
+            if (path == m_archivePath) {
+                return 0; // Return first entry if they try to open the archive itself
+            }
+        }
+
         auto it = std::find(m_files.begin(), m_files.end(), path);
         if (it != m_files.end()) return (int)std::distance(m_files.begin(), it);
         return -1;
     }
+
+    // Virtual file system accessors
+    bool IsVirtualPath(const std::wstring& path) const {
+        return path.find(L"|") != std::wstring::npos;
+    }
+
+    // Parse virtual path
+    static bool ParseVirtualPath(const std::wstring& path, std::wstring& outArchivePath, size_t& outIndex) {
+        size_t firstPipe = path.find(L"|");
+        if (firstPipe == std::wstring::npos) return false;
+
+        size_t secondPipe = path.find(L"|", firstPipe + 1);
+        if (secondPipe == std::wstring::npos) return false;
+
+        outArchivePath = path.substr(0, firstPipe);
+        try {
+            outIndex = std::stoull(path.substr(firstPipe + 1, secondPipe - firstPipe - 1));
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+
+    QuickView::ZipArchive* GetArchive() const { return m_archive.get(); }
 
     const std::vector<std::wstring>& GetAllFiles() const { return m_files; }
 
@@ -315,11 +390,24 @@ public:
     }
 
 private:
+    // Helper to get physical host path from a potentially virtual path, zero allocations
+    static std::wstring_view GetPhysicalHostPath(std::wstring_view vfsPath) {
+        auto pos = vfsPath.find(L'|');
+        if (pos != std::wstring_view::npos) {
+            return vfsPath.substr(0, pos);
+        }
+        return vfsPath;
+    }
+
     std::wstring FindAdjacentFolderImage(bool next) {
         if (m_files.empty()) return L"";
 
         namespace fs = std::filesystem;
-        fs::path currentDir = fs::path(m_files[0]).parent_path();
+
+        // Extract physical path to ensure std::filesystem works correctly
+        std::wstring_view physicalView = GetPhysicalHostPath(m_files[0]);
+        fs::path physicalPath(physicalView);
+        fs::path currentDir = physicalPath.parent_path();
         
         // [Logic Upgrade] Through Subfolders: 
         // 1. If moving forward, check if currentDir has subfolders first.
@@ -327,7 +415,16 @@ private:
             std::error_code ec;
             std::vector<std::wstring> subfolders;
             for (const auto& entry : fs::directory_iterator(currentDir, ec)) {
-                if (entry.is_directory(ec)) subfolders.push_back(entry.path().wstring());
+                if (entry.is_directory(ec)) {
+                    subfolders.push_back(entry.path().wstring());
+                } else if (entry.is_regular_file(ec)) {
+                    // Treat archives as traversable directories
+                    std::wstring ext = entry.path().extension().wstring();
+                    std::transform(ext.begin(), ext.end(), ext.begin(), [](wchar_t c){ return std::towlower(c); });
+                    if (ext == L".cbz" || ext == L".zip" || ext == L".cbr" || ext == L".rar") {
+                        subfolders.push_back(entry.path().wstring());
+                    }
+                }
             }
             if (!subfolders.empty()) {
                 std::sort(subfolders.begin(), subfolders.end(), [](const std::wstring& a, const std::wstring& b) {
@@ -348,7 +445,16 @@ private:
         std::vector<std::wstring> folders;
         std::error_code ec_fold;
         for (const auto& entry : fs::directory_iterator(parentDir, ec_fold)) {
-            if (entry.is_directory(ec_fold)) folders.push_back(entry.path().wstring());
+            if (entry.is_directory(ec_fold)) {
+                folders.push_back(entry.path().wstring());
+            } else if (entry.is_regular_file(ec_fold)) {
+                // Treat archives as sibling directories
+                std::wstring ext = entry.path().extension().wstring();
+                std::transform(ext.begin(), ext.end(), ext.begin(), [](wchar_t c){ return std::towlower(c); });
+                if (ext == L".cbz" || ext == L".zip" || ext == L".cbr" || ext == L".rar") {
+                    folders.push_back(entry.path().wstring());
+                }
+            }
         }
 
         if (folders.empty()) return L"";
@@ -393,4 +499,8 @@ private:
     int m_currentIndex = -1;
     bool m_hitEnd = false;
     std::wstring m_crossFolderMessage;
+
+    // VFS Support
+    std::unique_ptr<QuickView::ZipArchive> m_archive;
+    std::wstring m_archivePath;
 };
