@@ -64,7 +64,8 @@ enum class UIHitResult {
     GPSLink,        // Click to open in Maps
     InfoRow,        // Click to copy row content
     HudToggleLite,  // Click to toggle HUD Lite mode
-    HudToggleExpand // Click to toggle HUD Expand mode
+    HudToggleExpand,// Click to toggle HUD Expand mode
+    InfoPanelDrag   // Drag to move Info Panel
 };
 
 // Window Controls Hit Test Result
@@ -140,6 +141,8 @@ public:
     // ===== Hit Testing (For Click Detection) =====
     HitTestResult HitTest(float x, float y);
     
+    float GetUIScale() const { return m_uiScale; }
+
     // ===== Accessors for Hit Rects =====
     D2D1_RECT_F GetPanelToggleRect() const { return m_panelToggleRect; }
     D2D1_RECT_F GetPanelCloseRect() const { return m_panelCloseRect; }
@@ -263,6 +266,7 @@ private:
     std::vector<D2D1_RECT_F> m_compareRowRects; // Track individual row rects in Compare HUD
     D2D1_RECT_F m_hudToggleLiteRect = {}; // Track HUD lite mode icon area
     D2D1_RECT_F m_hudToggleExpandRect = {}; // Track HUD expand mode icon area
+    D2D1_RECT_F m_lastInfoPanelRect = {};   // Cached bounds of the Info Panel
     
     // Grid Layout Constants
     static constexpr float GRID_ICON_WIDTH = 16.0f;

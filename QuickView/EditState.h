@@ -196,6 +196,10 @@ struct AppConfig {
 
     bool ShowBorderIndicator = true;
 
+    // --- Info Panel Position ---
+    float InfoPanelX = 16.0f;
+    float InfoPanelY = 32.0f;
+
     // --- Control ---
     bool EnableCrossFade = true;        // Enable cross-fade animation when changing images
     int ZoomModeIn = 0;                 // 0=Auto, 1=Linear, 2=Nearest, 3=High Quality Cubic
@@ -375,6 +379,8 @@ struct ViewState {
     bool CompareActive = false;
     int ExifOrientation = 1; // EXIF Orientation (1-8, 1=Normal)
     bool IsPendingFullscreenExitDrag = false; // [Requirement] Exit fullscreen on drag
+    bool IsDraggingInfoPanel = false;
+    POINT InfoPanelDragAnchor = { 0, 0 };
 
     void Reset() {
         Zoom = 1.0f;
@@ -396,6 +402,8 @@ struct ViewState {
         CompareActive = false;
         ExifOrientation = 1;
         IsPendingFullscreenExitDrag = false;
+        IsDraggingInfoPanel = false;
+        InfoPanelDragAnchor = { 0, 0 };
     }
 };
 
@@ -475,6 +483,9 @@ struct RuntimeConfig {
     std::wstring SoftProofProfilePath; // Currently active proofing ICC path
     bool ShowGamutWarningOverlay = false;
 
+    float InfoPanelX = 16.0f;
+    float InfoPanelY = 32.0f;
+
     // Overlay (Tracing) Mode
     OverlayState OverlayModeState = OverlayState::Normal;
     BYTE OverlayAlpha = 128;           // Current opacity (0-255), default ~50%
@@ -510,6 +521,8 @@ struct RuntimeConfig {
         NavTraverse = cfg.NavTraverse;
         SortOrder = cfg.SortOrder;
         SortDescending = cfg.SortDescending;
+        InfoPanelX = cfg.InfoPanelX;
+        InfoPanelY = cfg.InfoPanelY;
     }
 };
 
