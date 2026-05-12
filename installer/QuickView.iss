@@ -83,3 +83,21 @@ Filename: "{app}\{#MyAppExeName}"; Parameters: "--uninstall"; Flags: runhidden
 Type: files; Name: "{app}\QuickView.ini"
 Type: files; Name: "{app}\*.old"
 Type: filesandordirs; Name: "{userappdata}\QuickView"
+
+[Code]
+procedure InitializeWizard;
+var
+  ExistingPath: String;
+  UpgradeMsg: String;
+begin
+  // Check if QuickView is already installed
+  // The AppId is {D175135F-5C7A-4E7B-B41E-C638E75C421A}
+  if RegQueryStringValue(HKLM, 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{D175135F-5C7A-4E7B-B41E-C638E75C421A}_is1', 'InstallLocation', ExistingPath) or
+     RegQueryStringValue(HKCU, 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{D175135F-5C7A-4E7B-B41E-C638E75C421A}_is1', 'InstallLocation', ExistingPath) then
+  begin
+    UpgradeMsg := 'QuickView has detected an existing installation on your system.' + #13#10#13#10 +
+                  'The installer will now update your current version to the latest one while preserving your settings.' + #13#10#13#10 +
+                  'Click Next to continue with the update.';
+    WizardForm.WelcomeLabel2.Caption := UpgradeMsg;
+  end;
+end;
