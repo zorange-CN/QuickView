@@ -187,6 +187,7 @@ CRenderEngine* g_pRenderEngine = nullptr; // Global raw alias for linker compati
 
 bool g_isFullScreen = false;
 bool g_isDraggingAnimSeek = false;
+bool g_windowSizeRestoredFromConfig = false;
 static WINDOWPLACEMENT g_savedWindowPlacement = { sizeof(WINDOWPLACEMENT), 0, 0, {0,0}, {0,0}, {0,0,0,0} };
 
 namespace {
@@ -6019,6 +6020,17 @@ void AdjustWindowForOverlay(HWND hwnd, bool isClosed) {
 void AdjustWindowToImage(HWND hwnd) {
     s_restoredWindowRect = {}; // Clear restored rect so new image sets new initial size
     if (!g_imageResource) return;
+
+    // [Fix] If window size was restored from config, skip the initial auto-resize to fit the image.
+    // This ensures the window stays at the user's saved dimensions on startup.
+    // Subsequent navigation (Next/Prev) will still trigger auto-resize unless KeepWindowSizeOnNav is ON.
+    static bool s_initialLoadProcessed = false;
+    if (g_config.RememberLastWindowSizeAndPosition && !s_initialLoadProcessed && g_windowSizeRestoredFromConfig) {
+        s_initialLoadProcessed = true;
+        return;
+    }
+    s_initialLoadProcessed = true;
+
     if (g_runtime.LockWindowSize && g_config.KeepWindowSizeOnNav) return;  // Don't auto-resize when locked and requested to keep size
     
     // Note: Removed early return for g_settingsOverlay.IsVisible() because GetMinWindowWidth() 
@@ -7075,6 +7087,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, [[maybe_unused]] LPWSTR lpCm
         if (savedW > 0 && savedH > 0) {
             winW = savedW;
             winH = savedH;
+            g_windowSizeRestoredFromConfig = true;
         }
 
         if (savedX != -10000 && savedY != -10000) {
