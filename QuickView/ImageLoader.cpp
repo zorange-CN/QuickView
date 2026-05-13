@@ -603,9 +603,15 @@ bool ShouldProbeAnimatedBufferCodec(const std::wstring& fmt) {
     return fmt == L"WebP" || fmt == L"GIF" || fmt == L"PNG" || fmt == L"AVIF" || fmt == L"JXL";
 }
 
-bool PrefersSdrTarget(const QuickView::Codec::DecodeContext& ctx) {
-    return ctx.targetHdrHeadroomStops >= 0.0f && ctx.targetHdrHeadroomStops <= 0.01f;
-}
+ bool PrefersSdrTarget(const QuickView::Codec::DecodeContext& ctx) {
+     // [v6.1.4.28] Only force FP16 retention if AdvancedColorMode is explicitly ON (2).
+     // For 'Auto' (1) or 'Disabled' (0), we stick to the efficient SDR collapse path 
+     // unless we are on an actual HDR display (where headroom > 0.01).
+     if (g_config.AdvancedColorMode == 2) {
+         return false; 
+     }
+     return ctx.targetHdrHeadroomStops >= 0.0f && ctx.targetHdrHeadroomStops <= 0.01f;
+ }
 
 HRESULT CollapseFloatResultToSdr(const QuickView::Codec::DecodeContext& ctx,
                                  QuickView::Codec::DecodeResult& result) {
@@ -624,9 +630,9 @@ HRESULT CollapseFloatResultToSdr(const QuickView::Codec::DecodeContext& ctx,
     uint8_t* dstPixels = ctx.allocator(dstSize);
     if (!dstPixels) return E_OUTOFMEMORY;
 
-    // SDR targets do not need to carry float HDR buffers through cache and upload.
-    // Collapsing once at decode time is much cheaper than re-tonemapping every navigation.
-    constexpr float kSdrExposure = 1.0f;
+    // [v6.1.4.27] SDR targets now use the 100-nit baseline (1.0 / 1.25 = 0.8)
+    // to match the high-fidelity GPU path and professional standards.
+    const float kSdrExposure = 0.8f; 
     const bool useClip = (g_config.HdrToneMappingMode == 1) || (!result.metadata.hdrMetadata.isHdr);
     if (useClip) { // 1 = Colorimetric (Clip) or Non-HDR SDR
         ImageLoaderSimd::ToneMapClipBatch(
@@ -6299,6 +6305,7 @@ namespace QuickView {
                         : QuickView::PixelDataSpace::EncodedSdr;
                 result.metadata.hdrMetadata.isHdr =
                     result.metadata.colorInfo.dataSpace == QuickView::PixelDataSpace::EncodedHdr;
+
                 if (decoder->image->icc.data && decoder->image->icc.size > 0) {
                     result.metadata.iccProfileData.assign(
                         decoder->image->icc.data,
@@ -9059,6 +9066,9 @@ HRESULT CImageLoader::ReadMetadata(LPCWSTR filePath, ImageMetadata* pMetadata, b
         QuickView::MappedFile mapping(filePath);
         if (mapping.IsValid()) {
             ProbeHdrMetadataNative(mapping.data(), mapping.size(), &pMetadata->hdrMetadata);
+            if (pMetadata->hdrMetadata.isValid && pMetadata->hdrMetadata.primaries != QuickView::ColorPrimaries::Unknown) {
+                pMetadata->ColorSpace = QuickView::ToString(pMetadata->hdrMetadata.primaries);
+            }
         }
     }
     

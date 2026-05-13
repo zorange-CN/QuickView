@@ -522,7 +522,13 @@ static inline float AcesToneMap(float v) {
 }
 
 static inline uint8_t LinearToSdr8(float v) {
-    v = std::pow((v > 0.0f ? v : 0.0f), 1.0f / 2.2f);
+    v = (v > 0.0f ? v : 0.0f);
+    // [v6.1.4.27] High-precision piece-wise sRGB OETF
+    if (v <= 0.0031308f) {
+        v *= 12.92f;
+    } else {
+        v = 1.055f * std::pow(v, 1.0f / 2.4f) - 0.055f;
+    }
     v = (v < 0.0f) ? 0.0f : (v > 1.0f ? 1.0f : v);
     return static_cast<uint8_t>(v * 255.0f + 0.5f);
 }

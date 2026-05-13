@@ -234,6 +234,9 @@ struct AppConfig {
     int HdrToneMappingMode = 0;          // 0=Spline, 1=Colorimetric, 2=Legacy Reinhard
     float HdrPeakNitsOverride = 0.0f;    // 0 = Auto. >0 overrides display peak luminance.
     int AdvancedColorMode = 2;           // 0=Off, 1=On, 2=Auto (HDR / FP16 scRGB pipeline)
+    float Exposure = 1.0f;               // Exposure Compensation (0.18 - 10.0)
+    float HdrDesatThreshold = 0.7f;      // Highlight Desaturation Threshold (0.0 - 1.0)
+    float HdrMaxDesat = 0.5f;            // Maximum Desaturation Strength (0.0 - 1.0)
     int CmsDefaultFallback = 0;          // Fallback for untagged images: 0=sRGB, 1=P3, 2=AdobeRGB, 3=ProPhoto
     std::wstring CustomSoftProofProfile; // Path to user-selected ICC file for soft proofing
     int GamutWarningMode = 1;             // 0=Off, 1=SoftProof, 2=All (Default: 1)
@@ -502,6 +505,9 @@ struct RuntimeConfig {
     
     // [Phase 2] Cross-Monitor Runtime State
     bool CrossMonitorMode = false;
+
+    // [HUD V4] Pipeline Status
+    bool LastFrameGpuToneMapped = false;
     
     // CMS Helper
     int GetEffectiveCmsMode(bool masterToggle) const {

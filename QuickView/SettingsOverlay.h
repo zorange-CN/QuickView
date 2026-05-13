@@ -55,6 +55,7 @@ struct SettingsItem {
     
     std::function<void()> onChange = nullptr;
     std::function<void()> onChange2 = nullptr; 
+    std::function<void()> onReset = nullptr;
 
     D2D1_RECT_F rect = {}; 
     D2D1_RECT_F interactRect = {};

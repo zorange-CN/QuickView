@@ -1830,6 +1830,68 @@ void SettingsOverlay::BuildMenu() {
     };
     tabImage.items.push_back(itemHdrPeak);
 
+    SettingsItem itemExposure = {AppStrings::Settings_Label_Exposure,
+                                 OptionType::Slider, nullptr,
+                                 &g_config.Exposure};
+    itemExposure.tooltipText = AppStrings::Settings_Tooltip_Exposure;
+    itemExposure.minVal = 0.18f;
+    itemExposure.maxVal = 10.0f;
+    itemExposure.displayFormat = L"%.2fx";
+    itemExposure.onChange = []() {
+      extern HWND g_mainHwnd;
+      extern void RefreshImageDisplay(HWND hwnd);
+      RefreshImageDisplay(g_mainHwnd);
+      SaveConfig();
+    };
+    itemExposure.onReset = []() {
+      g_config.Exposure = 1.0f;
+      SaveConfig();
+      extern HWND g_mainHwnd;
+      extern void RefreshImageDisplay(HWND hwnd);
+      RefreshImageDisplay(g_mainHwnd);
+    };
+    tabImage.items.push_back(itemExposure);
+
+    SettingsItem itemDesatRange = { L"去饱和范围 (Range)", OptionType::Slider, nullptr, &g_config.HdrDesatThreshold };
+    itemDesatRange.tooltipText = L"设置去饱和开始介入的阈值. 越小表示只作用于极亮处 (防止褪色), 越大表示更早介入 (防止霓虹蓝).";
+    itemDesatRange.minVal = 0.0f;
+    itemDesatRange.maxVal = 1.0f;
+    itemDesatRange.displayFormat = L"%.2f";
+    itemDesatRange.onChange = []() {
+      extern HWND g_mainHwnd;
+      extern void RefreshImageDisplay(HWND hwnd);
+      RefreshImageDisplay(g_mainHwnd);
+      SaveConfig();
+    };
+    itemDesatRange.onReset = []() {
+      g_config.HdrDesatThreshold = 0.7f;
+      SaveConfig();
+      extern HWND g_mainHwnd;
+      extern void RefreshImageDisplay(HWND hwnd);
+      RefreshImageDisplay(g_mainHwnd);
+    };
+    tabImage.items.push_back(itemDesatRange);
+
+    SettingsItem itemDesatStrength = { L"去饱和强度 (Strength)", OptionType::Slider, nullptr, &g_config.HdrMaxDesat };
+    itemDesatStrength.tooltipText = L"设置极端高光处最大去饱和力度. 0.5 表示保留一半色彩, 1.0 表示彻底变成纯白.";
+    itemDesatStrength.minVal = 0.0f;
+    itemDesatStrength.maxVal = 1.0f;
+    itemDesatStrength.displayFormat = L"%.2f";
+    itemDesatStrength.onChange = []() {
+      extern HWND g_mainHwnd;
+      extern void RefreshImageDisplay(HWND hwnd);
+      RefreshImageDisplay(g_mainHwnd);
+      SaveConfig();
+    };
+    itemDesatStrength.onReset = []() {
+      g_config.HdrMaxDesat = 0.5f;
+      SaveConfig();
+      extern HWND g_mainHwnd;
+      extern void RefreshImageDisplay(HWND hwnd);
+      RefreshImageDisplay(g_mainHwnd);
+    };
+    tabImage.items.push_back(itemDesatStrength);
+
     SettingsItem itemCmsFallback = { AppStrings::Settings_Label_CmsFallback, OptionType::ComboBox, nullptr, nullptr, BindEnum(&g_config.CmsDefaultFallback), nullptr, 0, 0, {AppStrings::Settings_Option_CmssRGB, AppStrings::Settings_Option_CmsP3, AppStrings::Settings_Option_CmsAdobeRGB, AppStrings::Settings_Option_CmsProPhoto} };
     itemCmsFallback.onChange = []() {
         SaveConfig();
@@ -2810,19 +2872,60 @@ void SettingsOverlay::Render(ID2D1DeviceContext* pRT, float winW, float winH) {
                         }
                     }
                     break;
-                case OptionType::Slider:
-                    item.interactRect = D2D1::RectF(controlRect.right - (150.0f + 12.0f) * s, item.rect.top, controlRect.right, item.rect.bottom);
-                    if (item.isDisabled) {
-                        // Grayed out slider
-                        DrawSlider(pRT, controlRect, (item.pFloatVal ? *item.pFloatVal : 0.0f), item.minVal, item.maxVal, false, item.displayFormat, true);
-                        if (!item.disabledText.empty()) {
-                            D2D1_RECT_F textRect = D2D1::RectF(controlRect.left, contentY, controlRect.right - 180.0f * s, contentY + rowHeight);
-                            pRT->DrawText(item.disabledText.c_str(), (UINT32)item.disabledText.length(), m_textFormatItem.Get(), textRect, m_brushTextDim.Get());
-                        }
-                    } else {
-                        DrawSlider(pRT, controlRect, (item.pFloatVal ? *item.pFloatVal : 0.0f), item.minVal, item.maxVal, isHovered, item.displayFormat);
-                    }
-                    break;
+                case OptionType::Slider: {
+                  const float s = m_uiScale;
+                  const float trackW = 150.0f * s;
+                  const float padding = 12.0f * s;
+                  const float valueW = 80.0f * s;
+                  const float buttonW = 28.0f * s;
+
+                  // Standard slider rect (Track + Padding)
+                  item.interactRect = D2D1::RectF(
+                      controlRect.right - (trackW + padding), item.rect.top,
+                      controlRect.right, item.rect.bottom);
+
+                  if (item.onReset) {
+                    float buttonX = controlRect.right -
+                                    (trackW + padding + valueW + buttonW);
+                    item.interactRect2 =
+                        D2D1::RectF(buttonX, item.rect.top, buttonX + buttonW,
+                                    item.rect.bottom);
+
+                    // Draw Reset Emoji (↺)
+                    m_textFormatItem->SetTextAlignment(
+                        DWRITE_TEXT_ALIGNMENT_CENTER);
+                    m_textFormatItem->SetParagraphAlignment(
+                        DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+
+                    // Visual baseline adjustment: Emojis often sit slightly
+                    // higher than text
+                    D2D1_RECT_F emojiRect = item.interactRect2;
+                    emojiRect.top += 1.0f * s;
+                    emojiRect.bottom += 1.0f * s;
+                    pRT->DrawText(L"↺", 1, m_textFormatItem.Get(), emojiRect,
+                                  item.isHovered2 ? m_brushText.Get()
+                                                  : m_brushTextDim.Get());
+
+                    // [Fix] Restore default alignment (CENTER for vertical,
+                    // LEADING for horizontal)
+                    m_textFormatItem->SetTextAlignment(
+                        DWRITE_TEXT_ALIGNMENT_LEADING);
+                    m_textFormatItem->SetParagraphAlignment(
+                        DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+                  }
+
+                  if (item.isDisabled) {
+                    DrawSlider(pRT, controlRect,
+                               (item.pFloatVal ? *item.pFloatVal : 0.0f),
+                               item.minVal, item.maxVal, false,
+                               item.displayFormat, true);
+                  } else {
+                    DrawSlider(pRT, controlRect,
+                               (item.pFloatVal ? *item.pFloatVal : 0.0f),
+                               item.minVal, item.maxVal, isHovered,
+                               item.displayFormat);
+                  }
+                } break;
                 case OptionType::Segment:
                     item.interactRect = controlRect;
                     if (item.isDisabled) {
@@ -3028,11 +3131,23 @@ void SettingsOverlay::Render(ID2D1DeviceContext* pRT, float winW, float winH) {
                      break;
                 }
                 case OptionType::ComboBox: {
-                    item.interactRect = controlRect;
-                    // Render Closed State
-                    bool isOpen = (m_pActiveCombo == &item);
-                    DrawComboBox(pRT, controlRect, (item.pIntVal ? *item.pIntVal : 0), item.options, isOpen);
-                    break;
+                  // [UX Fix] Align ComboBox width with Sliders (Track + Padding
+                  // + Value = 150 + 12 + 80 = 242) This ensures the right-hand
+                  // side of the UI feels structured and aligned.
+                  const float standardControlW =
+                      (150.0f + 12.0f + 80.0f) * m_uiScale;
+                  D2D1_RECT_F comboRect = controlRect;
+                  if (comboRect.right - comboRect.left > standardControlW) {
+                    comboRect.left = comboRect.right - standardControlW;
+                  }
+                  item.interactRect = comboRect;
+
+                  // Render Closed State
+                  bool isOpen = (m_pActiveCombo == &item);
+                  DrawComboBox(pRT, comboRect,
+                               (item.pIntVal ? *item.pIntVal : 0), item.options,
+                               isOpen);
+                  break;
                 }
 
 
@@ -3580,6 +3695,13 @@ SettingsAction SettingsOverlay::OnLButtonDown(float x, float y) {
         // Slider
         if (m_pHoverItem->type == OptionType::Slider && m_pHoverItem->pFloatVal) {
             if (m_pHoverItem->isDisabled) return SettingsAction::RepaintStatic;
+
+            // Check for Reset Button click (interactRect2)
+            if (m_pHoverItem->onReset && m_pHoverItem->isHovered2) {
+              m_pHoverItem->onReset();
+              return SettingsAction::RepaintAll;
+            }
+
             m_pActiveSlider = m_pHoverItem;
             OnMouseMove(x, y);
             return SettingsAction::RepaintStatic;
