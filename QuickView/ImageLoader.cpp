@@ -5910,7 +5910,7 @@ namespace QuickView {
                     }
                     else if (status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
                         if (useHighBitDepthOutput) {
-                            format.data_type = JXL_TYPE_UINT16;
+                            format.data_type = JXL_TYPE_FLOAT16;
                         }
 
                         size_t bufferSize = 0;
@@ -6008,7 +6008,7 @@ namespace QuickView {
                         result.height = finalH;
                         if (useHighBitDepthOutput) {
                             result.stride = finalW * 8;
-                            result.format = PixelFormat::R16G16B16A16_UNORM;
+                            result.format = PixelFormat::R16G16B16A16_FLOAT;
                             result.metadata.colorInfo.dataSpace = QuickView::PixelDataSpace::EncodedHdr;
                             result.metadata.colorInfo.transfer = transfer;
                             result.metadata.colorInfo.primaries = primaries;
