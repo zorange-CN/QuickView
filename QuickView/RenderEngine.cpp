@@ -6,10 +6,10 @@
 #include <algorithm>
 #include <array>
 #include <fstream>
-#include <sstream>
+
 #include "RenderEngine.h"
+#define CURRENT_MODULE "RenderEngine"
 #include "QuickViewETW.h"
-static constexpr const char* CURRENT_MODULE = "RenderEngine";
 #include "EditState.h"
 #include "ImageTypes.h" // [Direct D2D] RawImageFrame
 #include "ImageLoaderSimd.h"
@@ -708,14 +708,6 @@ constexpr float PQ_C2 = (2413.0f / 4096.0f) * 32.0f;
 constexpr float PQ_C3 = (2392.0f / 4096.0f) * 32.0f;
 
 // Maps ScRGB (1.0 = 80 nits) to PQ [0, 1] (1.0 = 10000 nits)
-static __forceinline float PL_MIX(float a, float b, float x) { return x * b + (1.0f - x) * a; }
-static __forceinline float pl_smoothstep(float edge0, float edge1, float x) {
-    if (edge0 == edge1) return x >= edge0 ? 1.0f : 0.0f;
-    x = (x - edge0) / (edge1 - edge0);
-    x = std::clamp(x, 0.0f, 1.0f);
-    return x * x * (3.0f - 2.0f * x);
-}
-
 [[maybe_unused]] float LinearToPQ(float L) {
   L = (std::max)(0.0f, L);
   float L_normalized = L / 125.0f; // (L * 80) / 10000
@@ -724,7 +716,7 @@ static __forceinline float pl_smoothstep(float edge0, float edge1, float x) {
 }
 
 // Maps PQ [0, 1] to ScRGB (1.0 = 80 nits)
-[[maybe_unused]] float PQToLinear(float V) {
+float PQToLinear(float V) {
   V = (std::max)(0.0f, (std::min)(1.0f, V));
   float V_pow = powf(V, 1.0f / PQ_M2);
   float L_norm = powf((std::max)(0.0f, V_pow - PQ_C1) / (PQ_C2 - PQ_C3 * V_pow),
@@ -732,45 +724,14 @@ static __forceinline float pl_smoothstep(float edge0, float edge1, float x) {
   return L_norm * 125.0f;
 }
 
-// Ported from libplacebo's st2094_pick_knee (src/tone_mapping.c)
-static void PickKnee(float src_min, float src_max, float src_avg, float dst_min,
-              float dst_max, float *out_src_pivot, float *out_dst_pivot) {
-  const float knee_adaptation = 0.4f; // Scientific default from libplacebo
-  const float knee_minimum = 0.1f;
-  const float knee_maximum = 0.8f;
-  const float knee_default = 0.4f; // Scientific default
-
-  const float src_knee_min = PL_MIX(src_min, src_max, knee_minimum);
-  const float src_knee_max = PL_MIX(src_min, src_max, knee_maximum);
-  const float dst_knee_min = PL_MIX(dst_min, dst_max, knee_minimum);
-  const float dst_knee_max = PL_MIX(dst_min, dst_max, knee_maximum);
-
-  float src_range = src_max - src_min;
-  if (src_range <= 1e-6f) {
-      *out_src_pivot = src_max;
-      *out_dst_pivot = dst_max;
-      return;
-  }
-
-  // Choose source knee based on source scene brightness
-  float src_knee = (src_avg > 0.0f) ? src_avg : PL_MIX(src_min, src_max, knee_default);
-  src_knee = std::clamp(src_knee, src_knee_min, src_knee_max);
-
-  // Choose target adaptation point based on linearly re-scaling source knee
-  float target = (src_knee - src_min) / src_range;
-  float adapted = PL_MIX(dst_min, dst_max, target);
-
-  // Choose the destination knee by picking the perceptual adaptation point
-  float tuning = 1.0f - pl_smoothstep(knee_maximum, knee_default, target) *
-                        pl_smoothstep(knee_minimum, knee_default, target);
-  float adaptation = PL_MIX(knee_adaptation, 1.0f, tuning);
-  float dst_knee = PL_MIX(src_knee, adapted, adaptation);
-  dst_knee = std::clamp(dst_knee, dst_knee_min, dst_knee_max);
-
-  *out_src_pivot = src_knee;
-  *out_dst_pivot = dst_knee;
+// libplacebo-compatible smoothstep (edge0 > edge1 maps to decreasing ramp)
+float SmoothStep(float edge0, float edge1, float x) {
+  x = std::clamp((x - edge0) / (edge1 - edge0 + 1e-9f), 0.0f, 1.0f);
+  return x * x * (3.0f - 2.0f * x);
 }
 } // namespace
+
+
 
 float InternalEstimateFramePeakScRgb(const QuickView::RawImageFrame &frame) {
   if (frame.measuredPeakScRgb > 0.0f) {
@@ -981,84 +942,111 @@ BuildToneMapSettings(const QuickView::RawImageFrame &frame,
   settings.paperWhiteScRgb = paperWhiteScRgb;
   settings.mode = g_config.HdrToneMappingMode;
 
-  // Phase 2: Dual Track Physics Reference (HDR-to-SDR vs HDR-to-HDR)
-  float exposureGain = 1.0f;
-  if (!displayState.advancedColorActive || peakNits < 750.0f) {
-      // HDR -> SDR Path: Map 203 nits (BT.2408 SDR reference white) to 80 nits
-      // This aligns the midtone brightness with standard BT.2408 viewing conditions.
-      exposureGain = 203.0f / 80.0f;
-  } else {
-      // HDR -> HDR Path: Strict physical light transmission
-      exposureGain = 1.0f;
-  }
-  settings.exposureGain = exposureGain;
-  if (settings.mode == 1) {
+  // Phase 2: Exposure Gain Routing
+  // Spline (mode 0) and Colorimetric (mode 1) operate on the raw signal — no pre-scaling.
+  // Reinhard (mode 2) uses BT.2408 exposure gain for SDR midtone alignment.
+  if (settings.mode == 0 || settings.mode == 1) {
       settings.exposureGain = 1.0f;
+  } else {
+      float exposureGain = 1.0f;
+      if (!displayState.advancedColorActive || peakNits < 750.0f) {
+          exposureGain = 203.0f / 80.0f;
+      }
+      settings.exposureGain = exposureGain;
   }
 
-  if (settings.mode == 0) { // Spline
-    const float spline_contrast = 0.5f;
-    const float slope_tuning = 1.5f;
-    const float slope_offset = 0.2f;
+  if (settings.mode == 0) { // Spline (libplacebo pl_tone_map_spline port — PQ space)
+    // Save linear values before overwriting CB fields with PQ
+    const float contentPeakLinear = settings.contentPeakScRgb;
+    const float displayPeakLinear = settings.displayPeakScRgb;
 
-    const float pq_black = LinearToPQ(0.0f);
-    // Match VideoLAN/libplacebo's tonemapper: pick the knee in perceptual PQ
-    // space, then solve/apply the spline in linear light. ScRGB uses
-    // 1.0 == 80 nits; use at least 1000 nits as the nominal HDR source range.
-    float src_max_linear = std::max(settings.contentPeakScRgb, 1000.0f / 80.0f);
-    src_max_linear = std::max(src_max_linear, settings.displayPeakScRgb);
-    const float src_max = LinearToPQ(src_max_linear);
-    const float src_avg = (contentAverageScRgb > 0.0f) ? LinearToPQ(contentAverageScRgb) : 0.0f;
-    const float dst_max = LinearToPQ(settings.displayPeakScRgb);
+    // --- Convert all luminance bounds to PQ space [0, 1] ---
+    const float input_min  = 0.0f;
+    const float input_max  = LinearToPQ(contentPeakLinear);
+    const float output_min = 0.0f;
+    const float output_max = LinearToPQ(displayPeakLinear);
 
-    float src_pivot_pq, dst_pivot_pq;
-    PickKnee(pq_black, src_max, src_avg, pq_black, dst_max, &src_pivot_pq, &dst_pivot_pq);
+    // Scene average in PQ (from metadata or measured, fallback to default knee)
+    float input_avg = 0.0f;
+    if (contentAverageScRgb > 0.001f) {
+      input_avg = LinearToPQ(contentAverageScRgb);
+    }
 
-    const float src_pivot = PQToLinear(src_pivot_pq);
-    const float dst_pivot = PQToLinear(dst_pivot_pq);
+    // --- st2094_pick_knee (libplacebo port, PQ space) ---
+    constexpr float knee_adaptation = 0.4f;
+    constexpr float knee_minimum    = 0.1f;
+    constexpr float knee_maximum    = 0.8f;
+    constexpr float knee_default    = 0.4f;
 
-    settings.splineSrcPivot = src_pivot;
-    settings.splineDstPivot = dst_pivot;
+    const float src_knee_min = input_min + knee_minimum * (input_max - input_min);
+    const float src_knee_max = input_min + knee_maximum * (input_max - input_min);
+    const float dst_knee_min = output_min + knee_minimum * (output_max - output_min);
+    const float dst_knee_max = output_min + knee_maximum * (output_max - output_min);
 
-    // Solve for linear knee (Pa = 0)
-    float in_min = -src_pivot;
-    float out_min = -dst_pivot;
-    float slope = out_min / (in_min - 1e-9f);
+    // Source knee from scene average brightness (clamped to safe range)
+    float src_knee = (input_avg > 0.0f)
+        ? input_avg
+        : (input_min + knee_default * (input_max - input_min));
+    src_knee = std::clamp(src_knee, src_knee_min, src_knee_max);
 
-    // Tune the slope at the knee point slightly
-    float ratio = src_max_linear / (settings.displayPeakScRgb + 1e-9f) - 1.0f;
+    // Target adaptation: linear rescale + perceptual weighting
+    const float target = (src_knee - input_min) / (input_max - input_min + 1e-9f);
+    const float adapted = output_min + target * (output_max - output_min);
+
+    // Increase adaptation strength near extreme knee positions
+    const float tuning = 1.0f - SmoothStep(knee_maximum, knee_default, target)
+                               * SmoothStep(knee_minimum, knee_default, target);
+    const float adaptation = knee_adaptation + (1.0f - knee_adaptation) * tuning;
+    float dst_knee = src_knee + (adapted - src_knee) * adaptation;
+    dst_knee = std::clamp(dst_knee, dst_knee_min, dst_knee_max);
+
+    // --- Spline slope and polynomial solve (PQ space, identical to libplacebo) ---
+    constexpr float spline_contrast = 0.5f;
+    constexpr float slope_tuning    = 1.5f;
+    constexpr float slope_offset    = 0.2f;
+
+    float slope = (dst_knee - output_min) / (src_knee - input_min + 1e-9f);
+
+    // Tune slope: closer to 1.0 when peak ratio is small, closer to linear when large
+    float ratio = input_max / (output_max + 1e-9f) - 1.0f;
     ratio = std::clamp(slope_tuning * ratio, slope_offset, 1.0f + slope_offset);
     slope = powf(slope, (1.0f - spline_contrast) * ratio);
 
-    const float in_max = src_max_linear - src_pivot;
-    const float out_max = settings.displayPeakScRgb - dst_pivot;
+    // Normalize around pivot for polynomial fitting
+    const float in_min  = input_min  - src_knee;
+    const float in_max  = input_max  - src_knee;
+    const float out_min = output_min - dst_knee;
+    const float out_max = output_max - dst_knee;
 
-    // Solve P of order 2 for:
-    //  P(in_min) = out_min
-    //  P'(0.0) = slope
-    //  P(0.0) = 0.0
-    settings.splinePb = slope;
-    if (std::abs(in_min) > 1e-7f) {
-      settings.splinePa = (out_min - slope * in_min) / (in_min * in_min);
-    } else {
-      settings.splinePa = 0.0f;
-    }
+    // P polynomial (order 2) — shadow region
+    // P(in_min) = out_min, P'(0) = slope, P(0) = 0
+    const float Pa = (std::abs(in_min) > 1e-7f)
+        ? (out_min - slope * in_min) / (in_min * in_min) : 0.0f;
+    const float Pb = slope;
 
-    // Solve Q of order 3 for:
-    //  Q(in_max) = out_max
-    //  Q''(in_max) = 0.0
-    //  Q(0.0) = 0.0
-    //  Q'(0.0) = slope
+    // Q polynomial (order 3) — highlight region
+    // Q(in_max) = out_max, Q''(in_max) = 0, Q(0) = 0, Q'(0) = slope
+    float Qa, Qb, Qc;
     if (std::abs(in_max) > 1e-7f) {
       const float t = 2.0f * in_max * in_max;
-      settings.splineQa = (slope * in_max - out_max) / (in_max * t);
-      settings.splineQb = -3.0f * (slope * in_max - out_max) / t;
-      settings.splineQc = slope;
+      Qa = (slope * in_max - out_max) / (in_max * t);
+      Qb = -3.0f * (slope * in_max - out_max) / t;
+      Qc = slope;
     } else {
-      settings.splineQa = 0.0f;
-      settings.splineQb = 0.0f;
-      settings.splineQc = slope;
+      Qa = 0.0f; Qb = 0.0f; Qc = slope;
     }
+
+    settings.splineSrcPivot = src_knee;   // PQ space
+    settings.splineDstPivot = dst_knee;   // PQ space
+    settings.splinePa = Pa;
+    settings.splinePb = Pb;
+    settings.splineQa = Qa;
+    settings.splineQb = Qb;
+    settings.splineQc = Qc;
+
+    // Overwrite CB peak fields with PQ values for shader (mode 0 only)
+    settings.contentPeakScRgb = input_max;   // input_max_pq
+    settings.displayPeakScRgb = output_max;  // output_max_pq
   }
 
   const float headroom = settings.displayPeakScRgb / settings.paperWhiteScRgb; (void)headroom;
@@ -1450,7 +1438,14 @@ HRESULT CRenderEngine::AnalyzeGamutWarningIcc(
   if (!outResult)
     return E_INVALIDARG;
 
-  *outResult = {};
+  outResult->mask.clear();
+  outResult->width = 0;
+  outResult->height = 0;
+  outResult->cols = 0;
+  outResult->rows = 0;
+  outResult->hasOverflow = false;
+  outResult->backendKind = GamutBackendKind::Unknown;
+  outResult->debugSummary.clear();
   outResult->width = frame.width;
   outResult->height = frame.height;
 
@@ -1977,7 +1972,7 @@ CRenderEngine::UploadRawFrameToGPU(const QuickView::RawImageFrame &frame,
                                     m_bakeCache.auxTexture != nullptr);
 
           QV_LOG("Render_BakeCache",
-              TraceLoggingString(useCachedTextures ? "CACHE MISS - Recompose (headroom changed)" : "CACHE MISS - Full Upload + Bake", "Action"),
+              TraceLoggingString(useCachedTextures ? "CACHE HIT - Reuse textures" : "CACHE MISS - Full Upload", "Action"),
               TraceLoggingFloat32(m_bakeCache.lastHeadroom, "PrevHeadroom"),
               TraceLoggingFloat32(payload.targetHeadroom, "NewHeadroom"),
               TraceLoggingBool(useCachedTextures, "TexturesCached"));
@@ -2108,8 +2103,8 @@ CRenderEngine::UploadRawFrameToGPU(const QuickView::RawImageFrame &frame,
   // [Diagnostic] Pixel color info
   QV_LOG("Render_PixelColorInfo",
       TraceLoggingInt32((int)frame.colorInfo.dataSpace, "DataSpace"),
-      TraceLoggingInt32((int)frame.colorInfo.transfer, "Transfer"),
-      TraceLoggingInt32((int)frame.colorInfo.primaries, "Primaries"),
+      TraceLoggingWideString(ToString(frame.colorInfo.transfer), "Transfer"),
+      TraceLoggingWideString(ToString(frame.colorInfo.primaries), "Primaries"),
       TraceLoggingInt32((int)frame.colorInfo.nominalBitDepth, "BitDepth"),
       TraceLoggingBool(frame.colorInfo.hasEmbeddedIcc, "HasICC"));
 
@@ -2301,34 +2296,46 @@ CRenderEngine::UploadRawFrameToGPU(const QuickView::RawImageFrame &frame,
                           premulR = std::min(1.0f, r / toneMapSettings.displayPeakScRgb) * a;
                           premulG = std::min(1.0f, g / toneMapSettings.displayPeakScRgb) * a;
                           premulB = std::min(1.0f, b / toneMapSettings.displayPeakScRgb) * a;
-                      } else if (toneMapSettings.mode == 0) { // Spline
+                      } else if (toneMapSettings.mode == 0) { // Spline (PQ space)
                           float L = std::max({r, g, b});
-                          float x = L - toneMapSettings.splineSrcPivot;
-                          float targetL;
-                          if (x > 0) {
-                              targetL = ((toneMapSettings.splineQa * x + toneMapSettings.splineQb) * x + toneMapSettings.splineQc) * x + toneMapSettings.splineDstPivot;
+                          if (L <= 0.0f) {
+                              premulR = premulG = premulB = 0.0f;
                           } else {
-                              targetL = (toneMapSettings.splinePa * x + toneMapSettings.splinePb) * x + toneMapSettings.splineDstPivot;
-                          }
-                          targetL = std::max(0.0f, targetL);
+                              // Convert max-channel luminance to PQ for spline evaluation
+                              float L_pq = LinearToPQ(L);
+                              float sx = L_pq - toneMapSettings.splineSrcPivot;
+                              float targetL_pq;
+                              if (sx > 0.0f) {
+                                  sx = std::min(sx, toneMapSettings.contentPeakScRgb - toneMapSettings.splineSrcPivot);
+                                  targetL_pq = ((toneMapSettings.splineQa * sx + toneMapSettings.splineQb) * sx + toneMapSettings.splineQc) * sx + toneMapSettings.splineDstPivot;
+                              } else {
+                                  sx = std::max(sx, -toneMapSettings.splineSrcPivot);
+                                  targetL_pq = (toneMapSettings.splinePa * sx + toneMapSettings.splinePb) * sx + toneMapSettings.splineDstPivot;
+                              }
+                              targetL_pq = std::clamp(targetL_pq, 0.0f, toneMapSettings.displayPeakScRgb);
 
-                          // Highlight Desaturation (CPU)
-                          float desat = std::clamp((targetL - toneMapSettings.displayPeakScRgb * 0.7f) / (std::max(1e-6f, toneMapSettings.displayPeakScRgb * 0.3f)), 0.0f, 1.0f);
-                          float ratio = (targetL / std::max(1e-6f, L));
-                          
-                          float outR = r * ratio;
-                          float outG = g * ratio;
-                          float outB = b * ratio;
+                              // Convert back to linear for ratio-based color mapping
+                              float targetL = PQToLinear(targetL_pq);
+                              float outPeakLinear = PQToLinear(toneMapSettings.displayPeakScRgb);
 
-                          if (desat > 0.0f) {
-                              outR = outR * (1.0f - desat) + targetL * desat;
-                              outG = outG * (1.0f - desat) + targetL * desat;
-                              outB = outB * (1.0f - desat) + targetL * desat;
+                              // Highlight Desaturation (CPU)
+                              float desat = std::clamp((targetL - outPeakLinear * 0.7f) / (std::max(1e-6f, outPeakLinear * 0.3f)), 0.0f, 1.0f);
+                              float ratio = (targetL / std::max(1e-6f, L));
+                              
+                              float outR = r * ratio;
+                              float outG = g * ratio;
+                              float outB = b * ratio;
+
+                              if (desat > 0.0f) {
+                                  outR = outR * (1.0f - desat) + targetL * desat;
+                                  outG = outG * (1.0f - desat) + targetL * desat;
+                                  outB = outB * (1.0f - desat) + targetL * desat;
+                              }
+                              
+                              premulR = (outR / outPeakLinear) * a;
+                              premulG = (outG / outPeakLinear) * a;
+                              premulB = (outB / outPeakLinear) * a;
                           }
-                          
-                          premulR = (outR / toneMapSettings.displayPeakScRgb) * a;
-                          premulG = (outG / toneMapSettings.displayPeakScRgb) * a;
-                          premulB = (outB / toneMapSettings.displayPeakScRgb) * a;
                       } else { // Reinhard Extended (index 2)
                           float mapR, mapG, mapB;
                           float Lwhite = toneMapSettings.displayPeakScRgb * exposure * toneMapSettings.exposureGain;

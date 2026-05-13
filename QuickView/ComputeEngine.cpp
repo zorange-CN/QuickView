@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "QuickViewETW.h"
 static constexpr const char* CURRENT_MODULE = "ComputeEngine";
-#include "DebugMetrics.h"
+
 #include "ComputeEngine.h"
 #include <d3dcompiler.h>
 #include <algorithm>
@@ -166,25 +166,48 @@ void CSToneMap(uint3 id : SV_DispatchThreadID)
     float displayPeak = max(DisplayPeakScRgb, paperWhite);
 
     if (Mode == 0) {
+        // PQ-space spline tone mapping (libplacebo pl_tone_map_spline port)
+        // CB fields are PQ-encoded when Mode==0:
+        //   ContentPeakScRgb = input_max_pq, DisplayPeakScRgb = output_max_pq
+        //   SplineSrcPivot/DstPivot = PQ-space knee points
         float3 exposed = color.rgb * Exposure * ExposureGain;
         float L = max(exposed.r, max(exposed.g, exposed.b));
-        float x = L - SplineSrcPivot;
-        float targetL;
-        if (x > 0.0f) {
-            targetL = ((SplineQa * x + SplineQb) * x + SplineQc) * x + SplineDstPivot;
-        } else {
-            targetL = (SplinePa * x + SplinePb) * x + SplineDstPivot;
+        if (L <= 0.0f) {
+            DstTex[id.xy] = float4(0.0f, 0.0f, 0.0f, color.a);
+            return;
         }
-        targetL = max(0.0f, targetL);
+
+        // Convert max-channel luminance to PQ for spline evaluation
+        float L_pq = LinearToPQ(L);
+
+        float x = L_pq - SplineSrcPivot;
+        float targetL_pq;
+        if (x > 0.0f) {
+            // Safety Clamping: Prevent cubic spline inversion beyond input_max_pq
+            x = min(x, ContentPeakScRgb - SplineSrcPivot);
+            // Horner's Method: Optimized polynomial evaluation (FMA friendly)
+            targetL_pq = ((SplineQa * x + SplineQb) * x + SplineQc) * x + SplineDstPivot;
+        } else {
+            // Safety Clamping: Ensure lower bound stability
+            x = max(x, -SplineSrcPivot);
+            targetL_pq = (SplinePa * x + SplinePb) * x + SplineDstPivot;
+        }
+        targetL_pq = clamp(targetL_pq, 0.0f, DisplayPeakScRgb);
+
+        // Convert spline output back to linear for ratio-based color mapping
+        float targetL = PQToLinear(targetL_pq);
         float3 mapped = exposed * (targetL / max(1e-6f, L));
 
-        float desat = saturate((targetL - displayPeak * 0.7f) / (max(1e-6f, displayPeak * 0.3f)));
+        // Highlight desaturation (in linear, using output peak in linear)
+        float outPeakLinear = PQToLinear(DisplayPeakScRgb);
+        float desat = saturate((targetL - outPeakLinear * 0.7f) / (max(1e-6f, outPeakLinear * 0.3f)));
         if (desat > 0.0f) {
             float3 grayscale = float3(targetL, targetL, targetL);
             mapped = lerp(mapped, grayscale, desat);
         }
 
-        float3 normalized = mapped / DisplayPeakScRgb;
+        // Normalize to SDR output [0, 1] and encode sRGB
+        float3 normalized = mapped / outPeakLinear;
         float3 encoded = LinearToSrgb(normalized) * color.a;
         DstTex[id.xy] = float4(encoded.r, encoded.g, encoded.b, color.a);
     } else if (Mode == 1) {
@@ -269,17 +292,30 @@ float3 ToneMapHDR(float3 color, float displayPeak, float paperWhite, uint mode)
     if (L <= 0.0) return color;
 
     if (mode == 0) {
-        float x = L - SplineSrcPivot;
-        float targetL;
+        // PQ-space spline tone mapping (libplacebo port)
+        float L_pq = LinearToPQ(L);
+
+        float x = L_pq - SplineSrcPivot;
+        float targetL_pq;
         if (x > 0.0f) {
-            targetL = ((SplineQa * x + SplineQb) * x + SplineQc) * x + SplineDstPivot;
+            // Safety Clamping: Prevent cubic spline inversion beyond input_max_pq
+            x = min(x, ContentPeakScRgb - SplineSrcPivot);
+            // Horner's Method: Optimized polynomial evaluation (FMA friendly)
+            targetL_pq = ((SplineQa * x + SplineQb) * x + SplineQc) * x + SplineDstPivot;
         } else {
-            targetL = (SplinePa * x + SplinePb) * x + SplineDstPivot;
+            // Safety Clamping: Ensure lower bound stability
+            x = max(x, -SplineSrcPivot);
+            targetL_pq = (SplinePa * x + SplinePb) * x + SplineDstPivot;
         }
-        targetL = max(0.0f, targetL);
-        
+        targetL_pq = clamp(targetL_pq, 0.0f, DisplayPeakScRgb);
+
+        // Convert back to linear for ratio-based color mapping
+        float targetL = PQToLinear(targetL_pq);
         float3 mapped = color.rgb * (targetL / L);
-        float desat = saturate((targetL - displayPeak * 0.7f) / (max(1e-6f, displayPeak * 0.3f)));
+
+        // Highlight desaturation (linear domain, output peak converted from PQ)
+        float outPeakLinear = PQToLinear(DisplayPeakScRgb);
+        float desat = saturate((targetL - outPeakLinear * 0.7f) / (max(1e-6f, outPeakLinear * 0.3f)));
         if (desat > 0.0f) {
             float3 grayscale = float3(targetL, targetL, targetL);
             mapped = lerp(mapped, grayscale, desat);
@@ -339,8 +375,10 @@ void CSToneMapHDR(uint3 id : SV_DispatchThreadID)
     // Color Matrix — row-major C++ fill, so vector * matrix
     color.rgb = mul(color.rgb, (float3x3)ColorMatrix);
 
-    float contentPeak = max(ContentPeakScRgb, 1.0f);
-    float displayPeak = max(DisplayPeakScRgb, 1.0f);
+    // When Mode==0 (spline), CB peak fields are in PQ space [0, 1] — no linear clamp.
+    // For other modes they are linear ScRGB, clamp to >= 1.0 (80 nits floor).
+    float contentPeak = (Mode == 0) ? ContentPeakScRgb : max(ContentPeakScRgb, 1.0f);
+    float displayPeak = (Mode == 0) ? DisplayPeakScRgb : max(DisplayPeakScRgb, 1.0f);
 
     if (contentPeak <= displayPeak && Exposure >= 0.999f && Exposure <= 1.001f && ExposureGain >= 0.999f && ExposureGain <= 1.001f && TransferFunction == 2) {
         DstTex[id.xy] = color;
