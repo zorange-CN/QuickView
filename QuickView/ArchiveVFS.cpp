@@ -1,19 +1,10 @@
 #include "ArchiveVFS.h"
-#include <algorithm>
 #include <cstring>
 #include <cwchar>
 
 namespace QuickView {
 
-    // Fast FNV-1a hash for UTF-8 bytes (Zero allocation string hashing)
-    static uint16_t HashUtf8(const char* str, size_t len) {
-        uint32_t hash = 2166136261u;
-        for (size_t i = 0; i < len; ++i) {
-            hash ^= (uint8_t)(str[i]);
-            hash *= 16777619;
-        }
-        return (uint16_t)(hash & 0xFFFF);
-    }
+
 
     ZipArchive::ZipArchive(const std::wstring& path) : m_mappedFile(path) {
         if (m_mappedFile.IsValid()) {
@@ -73,22 +64,19 @@ namespace QuickView {
 
             // Filter out directories instantly by looking at the last char of the name
             bool isFile = false;
-            uint16_t nameHash = 0;
             if (nameLen > 0 && currentOffset + 46 + nameLen <= size) {
                 const char* namePtr = (const char*)(data + currentOffset + 46);
                 if (namePtr[nameLen - 1] != '/') {
                     isFile = true;
-                    nameHash = HashUtf8(namePtr, nameLen);
                 }
             }
 
             if (isFile && uncompSize > 0) {
                 ArchiveEntry entry;
                 entry.headerOffset = headerOffset;
+                entry.nameOffset = (uint32_t)(currentOffset + 46); // Absolute offset in mapped file
                 entry.compSize = compSize;
                 entry.uncompSize = uncompSize;
-                entry.nameHash = nameHash;
-                entry.nameOffset = (uint16_t)46; // Offset relative to current CD record start
                 entry.nameLen = nameLen;
                 entry.method = method;
 
@@ -109,31 +97,26 @@ namespace QuickView {
         const uint8_t* data = m_mappedFile.data();
         size_t size = m_mappedFile.size();
 
-        // In the CD parsing phase, we just saved the string length. To actually get the string,
-        // we need to re-find the CD record. Since we don't save the CD offset per entry to save memory,
-        // we can actually just read the name from the Local File Header instead!
-        // The Local File Header starts at entry.headerOffset.
+        if (entry.nameOffset + entry.nameLen > size) return L"";
 
-        size_t lfhOffset = entry.headerOffset;
-        if (lfhOffset + 30 > size) return L"";
-
-        if (data[lfhOffset] != 0x50 || data[lfhOffset+1] != 0x4b ||
-            data[lfhOffset+2] != 0x03 || data[lfhOffset+3] != 0x04) {
-            return L"";
-        }
-
-        uint16_t nameLen = *(uint16_t*)(data + lfhOffset + 26);
-        if (nameLen == 0 || lfhOffset + 30 + nameLen > size) return L"";
-
-        const char* namePtr = (const char*)(data + lfhOffset + 30);
+        const char* namePtr = (const char*)(data + entry.nameOffset);
 
         // Lazy UTF-8 to UTF-16 conversion
-        int size_needed = MultiByteToWideChar(CP_UTF8, 0, namePtr, (int)nameLen, NULL, 0);
+        int size_needed = MultiByteToWideChar(CP_UTF8, 0, namePtr, (int)entry.nameLen, NULL, 0);
         if (size_needed <= 0) return L"";
 
         std::wstring wstrTo(size_needed, 0);
-        MultiByteToWideChar(CP_UTF8, 0, namePtr, (int)nameLen, &wstrTo[0], size_needed);
+        MultiByteToWideChar(CP_UTF8, 0, namePtr, (int)entry.nameLen, &wstrTo[0], size_needed);
         return wstrTo;
+    }
+
+    std::string_view ZipArchive::GetEntryNameView(size_t index) const {
+        if (index >= m_entries.size() || !m_mappedFile.IsValid()) return std::string_view();
+
+        const ArchiveEntry& entry = m_entries[index];
+        if (entry.nameOffset + entry.nameLen > m_mappedFile.size()) return std::string_view();
+
+        return std::string_view((const char*)(m_mappedFile.data() + entry.nameOffset), entry.nameLen);
     }
 
     bool ZipArchive::ExtractEntry(size_t index, uint8_t* externalBuffer, size_t bufferSize) const {

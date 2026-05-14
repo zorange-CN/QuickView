@@ -9,6 +9,7 @@
 #include "EditState.h" // for g_runtime
 #include "exif.h"      // for easyexif
 #include "SupportedExtensions.h" // Unified supported extensions
+#include "ArchiveVFS.h"
 
 #pragma comment(lib, "Shlwapi.lib")
 
@@ -65,19 +66,29 @@ public:
                 size_t numEntries = m_archive->GetEntryCount();
                 for (size_t i = 0; i < numEntries; ++i) {
                     const QuickView::ArchiveEntry& entry = m_archive->GetEntry(i);
-                    // Use lazy evaluation for strings
-                    std::wstring name = m_archive->GetEntryName(i);
+                    // Zero-allocation extension check using string_view
+                    std::string_view nameView = m_archive->GetEntryNameView(i);
 
-                    std::wstring ext = std::filesystem::path(name).extension().wstring();
-                    std::transform(ext.begin(), ext.end(), ext.begin(), [](wchar_t c){ return std::towlower(c); });
+                    size_t lastDot = nameView.find_last_of('.');
+                    if (lastDot != std::string_view::npos) {
+                        std::string_view extUtf8 = nameView.substr(lastDot);
+                        
+                        // Fast ASCII to wide lower-case conversion for extension
+                        std::wstring ext;
+                        ext.reserve(extUtf8.length());
+                        for (char c : extUtf8) {
+                            ext.push_back(std::towlower((wchar_t)(uint8_t)c));
+                        }
 
-                    for (const auto& supp : QuickView::SUPPORTED_EXTENSIONS) {
-                        if (ext == supp) {
-                            // Construct virtual path: ArchivePath|Index|InternalName
-                            std::wstring virtualPath = m_archivePath + L"|" + std::to_wstring(i) + L"|" + name;
-                            m_files.push_back(virtualPath);
-                            m_sizes.push_back(entry.uncompSize); // Use uncompressed size
-                            break;
+                        for (const auto& supp : QuickView::SUPPORTED_EXTENSIONS) {
+                            if (ext == supp) {
+                                // Full conversion only for supported image types
+                                std::wstring name = m_archive->GetEntryName(i);
+                                std::wstring virtualPath = m_archivePath + L"|" + std::to_wstring(i) + L"|" + name;
+                                m_files.push_back(virtualPath);
+                                m_sizes.push_back(entry.uncompSize);
+                                break;
+                            }
                         }
                     }
                 }
@@ -328,6 +339,15 @@ public:
         static std::wstring empty;
         if (index < 0 || index >= (int)m_files.size()) return empty;
         return m_files[index];
+    }
+
+    std::wstring GetResolvedPath(const std::wstring& requestedPath) const {
+        if (m_archive && m_archive->IsValid() && requestedPath == m_archivePath) {
+            if (!m_files.empty() && m_currentIndex >= 0 && m_currentIndex < (int)m_files.size()) {
+                return m_files[m_currentIndex];
+            }
+        }
+        return requestedPath;
     }
 
     int FindIndex(const std::wstring& path) const {

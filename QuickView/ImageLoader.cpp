@@ -10652,7 +10652,7 @@ CImageLoader::ImageHeaderInfo CImageLoader::PeekHeader(LPCWSTR filePath) {
         size_t lastDot = pathStr.find_last_of(L".");
         if (lastDot != std::wstring::npos) {
             std::wstring ext = pathStr.substr(lastDot);
-            std::transform(ext.begin(), ext.end(), ext.begin(), [](wchar_t c){ return std::towlower(c); });
+            std::transform(ext.begin(), ext.end(), ext.begin(), ::towlower);
             if (ext == L".png") result.format = L"PNG";
             else if (ext == L".webp") result.format = L"WEBP";
             else if (ext == L".avif") result.format = L"AVIF";

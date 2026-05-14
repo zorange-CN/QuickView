@@ -3608,7 +3608,7 @@ static bool OpenPathOrDirectory(HWND hwnd, const std::wstring& path, bool clearT
     if (isDirectory) {
         ShowGallery(hwnd);
     } else {
-        LoadImageAsync(hwnd, path);
+        LoadImageAsync(hwnd, g_navigator.GetResolvedPath(path).c_str());
     }
 
     RequestRepaint(PaintLayer::All);
@@ -7231,7 +7231,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, [[maybe_unused]] LPWSTR lpCm
         }
         if (!isTitanCandidate) {
           g_navigator.Initialize(initialImagePath);
-          LoadImageAsync(hwnd, initialImagePath);
+          LoadImageAsync(hwnd, g_navigator.GetResolvedPath(initialImagePath).c_str());
           startedInitialLoadEarly = true;
           deferStartupShow = true;
         }
@@ -7316,7 +7316,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, [[maybe_unused]] LPWSTR lpCm
         ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
         if (GetOpenFileNameW(&ofn)) {
             g_navigator.Initialize(szFile);
-            LoadImageAsync(hwnd, szFile);
+            LoadImageAsync(hwnd, g_navigator.GetResolvedPath(szFile).c_str());
             // [Fix Race] Force check here too
              PostMessageW(hwnd, WM_ENGINE_EVENT, 0, 0); 
         }
@@ -8930,7 +8930,7 @@ SKIP_EDGE_NAV:;
                          // Only load if different from current image
                          if (path != g_imagePath) {
                              g_navigator.Initialize(path);
-                             LoadImageAsync(hwnd, path.c_str());
+                             LoadImageAsync(hwnd, g_navigator.GetResolvedPath(path).c_str());
                          }
                     }
                     RequestRepaint(PaintLayer::All);
@@ -9215,7 +9215,7 @@ SKIP_EDGE_NAV:;
                      if (idx >= 0 && idx < (int)g_navigator.Count()) {
                          std::wstring path = g_navigator.GetFile(idx);
                          g_navigator.Initialize(path);
-                         LoadImageAsync(hwnd, path.c_str());
+                         LoadImageAsync(hwnd, g_navigator.GetResolvedPath(path).c_str());
                      }
                      RequestRepaint(PaintLayer::All);
                 } else {
@@ -9779,7 +9779,7 @@ SKIP_EDGE_NAV:;
                          // Only load if different from current image
                          if (path != g_imagePath) {
                              g_navigator.Initialize(path); 
-                             LoadImageAsync(hwnd, path.c_str());
+                             LoadImageAsync(hwnd, g_navigator.GetResolvedPath(path).c_str());
                          }
                     }
                     RequestRepaint(PaintLayer::All);
@@ -10298,7 +10298,7 @@ SKIP_EDGE_NAV:;
                         g_viewState.Reset();
                         g_navigator.Initialize(szFile);
                         g_thumbMgr.ClearCache(); // Fix: Clear old thumbnails on folder switch
-                    LoadImageAsync(hwnd, szFile);
+                    LoadImageAsync(hwnd, g_navigator.GetResolvedPath(szFile).c_str());
                 }
             }
             break;
@@ -10555,7 +10555,7 @@ SKIP_EDGE_NAV:;
                         // Reload image from new path
                         g_preservedViewState = g_viewState;
                         g_preserveViewStateOnNextLoad = true;
-                        LoadImageAsync(hwnd, newPath); 
+                        LoadImageAsync(hwnd, g_navigator.GetResolvedPath(newPath).c_str()); 
                         
                         g_osd.Show(hwnd, L"Renamed", false);
                     } else {
@@ -10708,7 +10708,7 @@ SKIP_EDGE_NAV:;
                              // NavigateTo doesn't init navigator. 
                              // Let's call Initialize(nextPath) to refresh list and set index.
                              g_navigator.Initialize(nextPath);
-                             LoadImageAsync(hwnd, nextPath);
+                             LoadImageAsync(hwnd, g_navigator.GetResolvedPath(nextPath).c_str());
                              if (IsCompareModeActive()) {
                                  MarkCompareDirty();
                              }

@@ -2,7 +2,7 @@
 #include "MappedFile.h"
 #include <vector>
 #include <string>
-#include <memory>
+#include <string_view>
 #include <cstdint>
 #include <zlib.h>
 
@@ -14,12 +14,11 @@ namespace QuickView {
     #pragma pack(push, 1)
     struct ArchiveEntry {
         uint32_t headerOffset;
+        uint32_t nameOffset; // Absolute offset in mapped file to UTF-8 name
         uint32_t compSize;
         uint32_t uncompSize;
-        uint16_t nameHash; // Fast hash of the original UTF-8 filename
-        uint16_t nameOffset; // Offset of the name within the Central Directory record
         uint16_t nameLen;    // Length of the UTF-8 name
-        uint16_t method;   // Compression method
+        uint16_t method;     // Compression method
     };
     #pragma pack(pop)
 
@@ -38,6 +37,9 @@ namespace QuickView {
 
         // Lazy Evaluation: Decodes the UTF-8 name from the memory-mapped file on demand
         std::wstring GetEntryName(size_t index) const;
+
+        // Zero-allocation UTF-8 string view directly into the mapped file
+        std::string_view GetEntryNameView(size_t index) const;
 
         // Extract a specific entry directly into the provided external buffer.
         // Requires externalBuffer to be pre-allocated with a size >= entry.uncompSize

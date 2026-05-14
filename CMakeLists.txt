@@ -46,6 +46,7 @@ set(QUICKVIEW_SOURCES
     QuickView/StbLoader.cpp
     QuickView/TinyExrLoader.cpp
     QuickView/WuffsImpl.cpp
+    QuickView/ArchiveVFS.cpp
     QuickView/ContextMenu.cpp
     QuickView/GalleryOverlay.cpp
     QuickView/ThumbnailManager.cpp
