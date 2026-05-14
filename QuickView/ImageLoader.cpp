@@ -2062,6 +2062,15 @@ HRESULT CImageLoader::FullDecodeToMMF(const uint8_t* data, size_t size,
 
             if (st == JXL_DEC_BASIC_INFO) {
                 if (JXL_DEC_SUCCESS != JxlDecoderGetBasicInfo(dec, &info)) break;
+
+                // Force sRGB output
+                JxlColorEncoding ce = {};
+                ce.color_space = JXL_COLOR_SPACE_RGB;
+                ce.white_point = JXL_WHITE_POINT_D65;
+                ce.primaries = JXL_PRIMARIES_SRGB;
+                ce.transfer_function = JXL_TRANSFER_FUNCTION_SRGB;
+                ce.rendering_intent = JXL_RENDERING_INTENT_PERCEPTUAL;
+                JxlDecoderSetOutputColorProfile(dec, &ce, NULL, 0);
             }
             else if (st == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
                 size_t needed = 0;
@@ -2540,6 +2549,17 @@ HRESULT CImageLoader::LoadJxlRegionToFrame(LPCWSTR filePath, QuickView::RegionRe
                  QV_LOG("JXL_ROI", TraceLoggingString("GetBasicInfo Failed", "Action"));
                  break;
             }
+
+            // Force sRGB output to match full-decode color behavior.
+            JxlColorEncoding ce = {};
+            ce.color_space = JXL_COLOR_SPACE_RGB;
+            ce.white_point = JXL_WHITE_POINT_D65;
+            ce.primaries = JXL_PRIMARIES_SRGB;
+            ce.transfer_function = JXL_TRANSFER_FUNCTION_SRGB;
+            ce.rendering_intent = JXL_RENDERING_INTENT_PERCEPTUAL;
+            // [Fix] Non-fatal: match full-decode path (line ~6865) which ignores this return value.
+            // libjxl may reject sRGB override for some images but still decode correctly with native profile.
+            JxlDecoderSetOutputColorProfile(dec, &ce, NULL, 0);
 
             if (!BuildRegionScalePlan(srcRect, (int)info.xsize, (int)info.ysize, scale,
                                       explicitTargetW, explicitTargetH, &plan)) {
@@ -3178,6 +3198,13 @@ static HRESULT LoadThumbJXL_Sampled(const uint8_t* pFile,
                 return cleanup(E_FAIL);
             }
 
+            JxlColorEncoding colorEncoding = {};
+            colorEncoding.color_space = JXL_COLOR_SPACE_RGB;
+            colorEncoding.white_point = JXL_WHITE_POINT_D65;
+            colorEncoding.primaries = JXL_PRIMARIES_SRGB;
+            colorEncoding.transfer_function = JXL_TRANSFER_FUNCTION_SRGB;
+            colorEncoding.rendering_intent = JXL_RENDERING_INTENT_PERCEPTUAL;
+            JxlDecoderSetOutputColorProfile(dec, &colorEncoding, NULL, 0);
 
             int origW = static_cast<int>(info.xsize);
             int origH = static_cast<int>(info.ysize);
@@ -4308,7 +4335,7 @@ HRESULT CImageLoader::LoadJXL(LPCWSTR filePath, IWICBitmap** ppBitmap, ImageMeta
     JxlDecoderSetInput(dec, jxlBuf.data(), jxlBuf.size());
 
     JxlBasicInfo info = {};
-    JxlPixelFormat format = { 4, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0 }; // RGBA
+    JxlPixelFormat format = { 4, JXL_TYPE_FLOAT16, JXL_LITTLE_ENDIAN, 0 }; // RGBA
     
     std::vector<uint8_t> pixels;
     HRESULT hr = E_FAIL;
@@ -4337,7 +4364,7 @@ HRESULT CImageLoader::LoadJXL(LPCWSTR filePath, IWICBitmap** ppBitmap, ImageMeta
             // Removed Force sRGB output color profile so original color gets preserved.
 
             // [Optimization] Create WIC Bitmap Early and Lock
-            hr = m_wicFactory->CreateBitmap(info.xsize, info.ysize, GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnDemand, &pWicBitmap);
+            hr = m_wicFactory->CreateBitmap(info.xsize, info.ysize, GUID_WICPixelFormat64bppRGBAHalf, WICBitmapCacheOnDemand, &pWicBitmap);
             if (SUCCEEDED(hr)) {
                 WICRect rc = { 0, 0, (INT)info.xsize, (INT)info.ysize };
                 hr = pWicBitmap->Lock(&rc, WICBitmapLockWrite, &pLock);
@@ -4354,7 +4381,12 @@ HRESULT CImageLoader::LoadJXL(LPCWSTR filePath, IWICBitmap** ppBitmap, ImageMeta
                 size_t icc_size = 0;
                 if (JXL_DEC_SUCCESS == JxlDecoderGetICCProfileSize(dec, JXL_COLOR_PROFILE_TARGET_DATA, &icc_size) && icc_size > 0) {
                     pMetadata->iccProfileData.resize(icc_size);
-                    JxlDecoderGetColorAsICCProfile(dec, JXL_COLOR_PROFILE_TARGET_DATA, pMetadata->iccProfileData.data(), icc_size);
+                    if (JXL_DEC_SUCCESS == JxlDecoderGetColorAsICCProfile(dec, JXL_COLOR_PROFILE_TARGET_DATA, pMetadata->iccProfileData.data(), icc_size)) {
+                        std::wstring desc = CImageLoader::ParseICCProfileName(pMetadata->iccProfileData.data(), icc_size);
+                        if (!desc.empty()) pMetadata->ColorSpace = desc;
+                    } else {
+                        pMetadata->iccProfileData.clear();
+                    }
                 }
 
                 JxlColorEncoding colorEncoding = {};
@@ -4390,7 +4422,7 @@ HRESULT CImageLoader::LoadJXL(LPCWSTR filePath, IWICBitmap** ppBitmap, ImageMeta
             }
             
             // [Optimization] Use WIC buffer if stride matches
-            if (pWicBuf && wicStride == info.xsize * 4) {
+            if (pWicBuf && wicStride == info.xsize * 8) {
                  if (JXL_DEC_SUCCESS != JxlDecoderSetImageOutBuffer(dec, &format, pWicBuf, bufferSize)) {
                       hr = E_FAIL; break;
                  }
@@ -4419,14 +4451,15 @@ HRESULT CImageLoader::LoadJXL(LPCWSTR filePath, IWICBitmap** ppBitmap, ImageMeta
     if (SUCCEEDED(hr)) {
         if (!pixels.empty()) {
              // Fallback: Intermediate buffer used
-             ImageLoaderSimd::SwizzleRGBAToBGRA(pixels.data(), (size_t)info.xsize * info.ysize);
-             hr = CreateWICBitmapFromMemory(info.xsize, info.ysize, GUID_WICPixelFormat32bppPBGRA, info.xsize * 4, (UINT)pixels.size(), pixels.data(), ppBitmap);
+             hr = CreateWICBitmapFromMemory(info.xsize, info.ysize, GUID_WICPixelFormat64bppRGBAHalf, info.xsize * 8, (UINT)pixels.size(), pixels.data(), ppBitmap);
         } else if (pWicBitmap) {
              // Optimization: Direct WIC buffer used
-             // In-place Swizzle
-             ImageLoaderSimd::SwizzleRGBAToBGRA(pWicBuf, (size_t)info.xsize * info.ysize);
              pLock.Reset(); // Unlock
              *ppBitmap = pWicBitmap.Detach();
+        }
+
+        if (pMetadata && SUCCEEDED(hr)) {
+            CImageLoader::PopulateFormatDetails(pMetadata, L"JXL", info.bits_per_sample, info.uses_original_profile, info.alpha_bits > 0, info.have_animation == JXL_TRUE);
         }
     }
     
@@ -5756,12 +5789,10 @@ namespace QuickView {
                              size_t iccSize = 0;
                              if (JXL_DEC_SUCCESS == JxlDecoderGetICCProfileSize(dec, JXL_COLOR_PROFILE_TARGET_DATA, &iccSize)) {
                                  if (iccSize > 0) {
-                                     ctx.pMetadata->iccProfileData.resize(iccSize);
-                                     if (JXL_DEC_SUCCESS == JxlDecoderGetColorAsICCProfile(dec, JXL_COLOR_PROFILE_TARGET_DATA, ctx.pMetadata->iccProfileData.data(), iccSize)) {
-                                         std::wstring desc = CImageLoader::ParseICCProfileName(ctx.pMetadata->iccProfileData.data(), iccSize);
+                                     std::vector<uint8_t> icc(iccSize);
+                                     if (JXL_DEC_SUCCESS == JxlDecoderGetColorAsICCProfile(dec, JXL_COLOR_PROFILE_TARGET_DATA, icc.data(), iccSize)) {
+                                         std::wstring desc = CImageLoader::ParseICCProfileName(icc.data(), iccSize);
                                          if (!desc.empty()) ctx.pMetadata->ColorSpace = desc;
-                                     } else {
-                                         ctx.pMetadata->iccProfileData.clear();
                                      }
                                  }
                              }
@@ -5792,7 +5823,7 @@ namespace QuickView {
                                  ctx.pMetadata->hdrMetadata.isValid = true;
                                  ctx.pMetadata->hdrMetadata.transfer = transfer;
                                  ctx.pMetadata->hdrMetadata.primaries = primaries;
-                                 ctx.pMetadata->hdrMetadata.isSceneLinear = useHighBitDepthOutput ? true : (transfer == QuickView::TransferFunction::Linear);
+                                 ctx.pMetadata->hdrMetadata.isSceneLinear = (transfer == QuickView::TransferFunction::Linear);
                                  ctx.pMetadata->hdrMetadata.isHdr =
                                      transfer == QuickView::TransferFunction::Linear ||
                                      transfer == QuickView::TransferFunction::PQ ||
@@ -5885,7 +5916,7 @@ namespace QuickView {
                     }
                     else if (status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
                         if (useHighBitDepthOutput) {
-                            format.data_type = JXL_TYPE_FLOAT16;
+                            format.data_type = JXL_TYPE_UINT16;
                         }
 
                         size_t bufferSize = 0;
@@ -5983,13 +6014,13 @@ namespace QuickView {
                         result.height = finalH;
                         if (useHighBitDepthOutput) {
                             result.stride = finalW * 8;
-                            result.format = PixelFormat::R16G16B16A16_FLOAT;
-                            result.metadata.colorInfo.dataSpace = QuickView::PixelDataSpace::SceneLinear;
+                            result.format = PixelFormat::R16G16B16A16_UNORM;
+                            result.metadata.colorInfo.dataSpace = QuickView::PixelDataSpace::EncodedHdr;
                             result.metadata.colorInfo.transfer = transfer;
                             result.metadata.colorInfo.primaries = primaries;
                             result.metadata.colorInfo.nominalBitDepth =
                                 static_cast<uint8_t>((std::min)(info.bits_per_sample, 255u));
-                            result.metadata.hdrMetadata.isSceneLinear = true;
+                            result.metadata.hdrMetadata.isSceneLinear = false;
                         } else {
                             // [v8.6] Fix: JXL outputs RGBA Straight, D2D needs BGRA Premultiplied.
                             ImageLoaderSimd::SwizzleRGBAToBGRA(pixels, (size_t)finalW * finalH);
@@ -9763,6 +9794,13 @@ HRESULT CImageLoader::LoadThumbJXL_DC(const uint8_t* pFile, size_t fileSize, Thu
         else if (status == JXL_DEC_BASIC_INFO) {
             if (JXL_DEC_SUCCESS != JxlDecoderGetBasicInfo(dec, &info)) return cleanup(E_FAIL);
             
+            JxlColorEncoding color_encoding = {};
+            color_encoding.color_space = JXL_COLOR_SPACE_RGB;
+            color_encoding.white_point = JXL_WHITE_POINT_D65;
+            color_encoding.primaries = JXL_PRIMARIES_SRGB;
+            color_encoding.transfer_function = JXL_TRANSFER_FUNCTION_SRGB;
+            color_encoding.rendering_intent = JXL_RENDERING_INTENT_PERCEPTUAL;
+            JxlDecoderSetOutputColorProfile(dec, &color_encoding, NULL, 0);
 
             pData->origWidth = static_cast<int>(info.xsize);
             pData->origHeight = static_cast<int>(info.ysize);

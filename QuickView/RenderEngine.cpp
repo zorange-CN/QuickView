@@ -1801,7 +1801,7 @@ HRESULT CRenderEngine::ResolveSourceColorContext(
     return E_INVALIDARG;
   *outContext = nullptr;
 
-  if (frame.format == QuickView::PixelFormat::R32G32B32A32_FLOAT) {
+  if (frame.format == QuickView::PixelFormat::R32G32B32A32_FLOAT || frame.format == QuickView::PixelFormat::R16G16B16A16_FLOAT || frame.format == QuickView::PixelFormat::R16G16B16A16_UNORM) {
     const QuickView::ColorPrimaries primaries =
         frame.colorInfo.primaries != QuickView::ColorPrimaries::Unknown
             ? frame.colorInfo.primaries
