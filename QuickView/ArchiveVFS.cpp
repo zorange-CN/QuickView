@@ -251,47 +251,89 @@ namespace QuickView {
     bool RarArchive::ExtractEntry(size_t index, uint8_t* externalBuffer, size_t bufferSize) const {
         if (index >= m_entries.size() || !externalBuffer) return false;
         
-        // [Fix] unrar library is not thread-safe for concurrent extraction on the same archive instance
+        // [Fix] unrar library is not thread-safe for concurrent extraction on the same archive instance.
+        // Even with local Archive/Unpack objects, we use a global lock to prevent potential shared resource issues in the core.
         std::lock_guard<std::mutex> lock(m_extractMutex);
         
-        const ArchiveEntry& entry = m_entries[index];
-
-
         Archive arc;
         arc.SetMemoryBuffer(const_cast<uint8_t*>(m_mappedFile.data()), m_mappedFile.size());
         
-        // [Fix] Initialize archive format and SFX offset
         if (!arc.IsArchive(true)) {
             return false;
         }
 
-        arc.Seek(entry.headerOffset, SEEK_SET);
-        if (arc.ReadHeader() <= 0) {
-            return false;
-        }
-
-
         ComprDataIO dataIO;
         dataIO.SetMemorySource(const_cast<uint8_t*>(m_mappedFile.data()), m_mappedFile.size());
-        dataIO.SetMemoryPos((size_t)arc.Tell());
-        dataIO.SetMemoryDest(externalBuffer, bufferSize);
         dataIO.SetFiles(&arc, nullptr);
-        dataIO.SetPackedSize(arc.FileHead.PackSize);
 
-        if (arc.FileHead.Method == 0) {
-            // [Optimize] Direct memcpy for Store method
-            dataIO.UnpWrite(const_cast<uint8_t*>(m_mappedFile.data()) + arc.Tell(), arc.FileHead.UnpSize);
+        Unpack unpack(&dataIO);
+
+        if (m_isSolid) {
+            // [Solid Support] Sequential skip to maintain dictionary state
+            size_t currentIndex = 0;
+            while (currentIndex <= index && arc.ReadHeader() > 0) {
+                HEADER_TYPE type = arc.GetHeaderType();
+                if (type == HEAD_FILE || type == HEAD3_FILE) {
+                    if (currentIndex == index) {
+                        dataIO.SetMemoryDest(externalBuffer, bufferSize);
+                        dataIO.SetMemoryPos((size_t)arc.Tell());
+                        dataIO.SetPackedSize(arc.FileHead.PackSize);
+
+                        if (arc.FileHead.Method == 0) {
+                            dataIO.UnpWrite(const_cast<uint8_t*>(m_mappedFile.data()) + arc.Tell(), arc.FileHead.UnpSize);
+                        } else {
+                            unpack.Init(arc.FileHead.WinSize, arc.Solid);
+                            unpack.SetDestSize(arc.FileHead.UnpSize);
+                            unpack.DoUnpack(arc.FileHead.UnpVer, arc.Solid);
+                        }
+                        return dataIO.GetWrittenSize() > 0;
+                    } else {
+                        // Skip this entry but update dictionary if compressed
+                        if (arc.FileHead.Method == 0) {
+                            arc.Seek(arc.FileHead.PackSize, SEEK_CUR);
+                        } else {
+                            // Must unpack to dummy to keep dictionary state
+                            uint8_t dummy[1024]; 
+                            dataIO.SetMemoryDest(dummy, sizeof(dummy));
+                            dataIO.SetMemoryPos((size_t)arc.Tell());
+                            dataIO.SetPackedSize(arc.FileHead.PackSize);
+                            
+                            unpack.Init(arc.FileHead.WinSize, arc.Solid);
+                            unpack.SetDestSize(arc.FileHead.UnpSize);
+                            // DoUnpack will call UnpWrite, which will wrap around our tiny dummy buffer
+                            // We rely on ComprDataIO to handle the wrap/discard if we don't care about the output.
+                            unpack.DoUnpack(arc.FileHead.UnpVer, arc.Solid);
+                        }
+                        currentIndex++;
+                    }
+                }
+                arc.SeekToNext();
+            }
         } else {
-            Unpack unpack(&dataIO);
-            unpack.Init(arc.FileHead.WinSize, arc.Solid);
-            unpack.SetDestSize(arc.FileHead.UnpSize);
-            unpack.DoUnpack(arc.FileHead.UnpVer, arc.Solid);
+            // Standard non-solid random access
+            const ArchiveEntry& entry = m_entries[index];
+            arc.Seek(entry.headerOffset, SEEK_SET);
+            if (arc.ReadHeader() <= 0) {
+                return false;
+            }
+
+            dataIO.SetMemoryDest(externalBuffer, bufferSize);
+            dataIO.SetMemoryPos((size_t)arc.Tell());
+            dataIO.SetPackedSize(arc.FileHead.PackSize);
+            dataIO.SetFiles(&arc, nullptr);
+
+            if (arc.FileHead.Method == 0) {
+                dataIO.UnpWrite(const_cast<uint8_t*>(m_mappedFile.data()) + arc.Tell(), arc.FileHead.UnpSize);
+            } else {
+                unpack.Init(arc.FileHead.WinSize, arc.Solid);
+                unpack.SetDestSize(arc.FileHead.UnpSize);
+                unpack.DoUnpack(arc.FileHead.UnpVer, arc.Solid);
+            }
+
+            return dataIO.GetWrittenSize() > 0;
         }
 
-        size_t written = dataIO.GetWrittenSize();
-
-        // Verify that we actually extracted data
-        return written > 0;
+        return false;
     }
 
 

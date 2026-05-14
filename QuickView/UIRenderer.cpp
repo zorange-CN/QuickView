@@ -511,7 +511,7 @@ void UIRenderer::OnResize(UINT width, UINT height) {
 // Main Render Entry Point
 // ============================================================================
 
-bool UIRenderer::RenderAll(HWND hwnd) {
+bool UIRenderer::RenderAll(HWND hwnd, float deltaTime) {
     if (!m_compEngine || !m_compEngine->IsInitialized()) return false;
     
     bool rendered = false;
@@ -537,7 +537,7 @@ bool UIRenderer::RenderAll(HWND hwnd) {
     if (m_isGalleryDirty) {
         ID2D1DeviceContext* dc = m_compEngine->BeginLayerUpdate(UILayer::Gallery, nullptr);
         if (dc) {
-            RenderGalleryLayer(dc);
+            RenderGalleryLayer(dc, deltaTime);
             m_compEngine->EndLayerUpdate(UILayer::Gallery);
             m_isGalleryDirty = false;
             rendered = true;
@@ -754,8 +754,8 @@ void UIRenderer::RenderDynamicLayer(ID2D1DeviceContext* dc, HWND hwnd) {
 // Gallery Layer: Gallery Overlay
 // ============================================================================
 
-void UIRenderer::RenderGalleryLayer(ID2D1DeviceContext* dc) {
-    g_gallery.Update(0.016f);
+void UIRenderer::RenderGalleryLayer(ID2D1DeviceContext* dc, float deltaTime) {
+    g_gallery.Update(deltaTime);
     
     if (g_gallery.IsVisible()) {
         D2D1_SIZE_F rtSize = D2D1::SizeF((float)m_width, (float)m_height);

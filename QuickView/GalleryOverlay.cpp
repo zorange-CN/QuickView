@@ -10,6 +10,7 @@
 extern void RequestRepaint(QuickView::PaintLayer layerMask);
 
 extern AppConfig g_config;
+extern HWND g_mainHwnd;
 
 
 
@@ -53,6 +54,11 @@ void GalleryOverlay::Update(float deltaTime) {
         
         // [Fix] Keep the animation driving even if no mouse move
         RequestRepaint(QuickView::PaintLayer::Gallery);
+        
+        // Force a new message into the queue to guarantee the loop continues during animation
+        if (g_mainHwnd) {
+            ::PostMessageW(g_mainHwnd, WM_APP + 4, 0, 0); // WM_DEFERRED_REPAINT
+        }
     }
 }
 

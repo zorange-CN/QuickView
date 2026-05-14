@@ -8854,7 +8854,7 @@ SKIP_EDGE_NAV:;
         return 0;
 
     case WM_APP + 4: // WM_DEFERRED_REPAINT
-        RequestRepaint(PaintLayer::Image);
+        ::InvalidateRect(hwnd, nullptr, FALSE);
         return 0;
 
     case WM_LBUTTONDOWN: {
@@ -12746,6 +12746,17 @@ void Navigate(HWND hwnd, int direction) {
 }
 
 void OnPaint(HWND hwnd) {
+    static LARGE_INTEGER lastTick = {};
+    static LARGE_INTEGER freq = {};
+    if (freq.QuadPart == 0) QueryPerformanceFrequency(&freq);
+    LARGE_INTEGER now; QueryPerformanceCounter(&now);
+    float dt = 0.016f; // Default
+    if (lastTick.QuadPart > 0) {
+        dt = (float)((double)(now.QuadPart - lastTick.QuadPart) / freq.QuadPart);
+        if (dt > 0.2f) dt = 0.016f; // Cap spike (e.g. after long pause)
+    }
+    lastTick = now;
+
     ValidateRect(hwnd, nullptr); // Validate early so deferred Repaint requests survive
     if (!g_renderEngine) return;
     
@@ -13090,7 +13101,7 @@ void OnPaint(HWND hwnd) {
             g_toolbar.UpdateLayout((float)rc.right, (float)rc.bottom);
         }
         
-        g_uiRenderer->Render(hwnd);
+        g_uiRenderer->Render(hwnd, dt);
     }
     
     // Commit DirectComposition (Required for UI layer visibility)
