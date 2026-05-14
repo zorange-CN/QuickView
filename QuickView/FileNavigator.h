@@ -449,21 +449,22 @@ private:
 
         namespace fs = std::filesystem;
 
-        // Extract physical path to ensure std::filesystem works correctly
-        std::wstring_view physicalView = GetPhysicalHostPath(m_files[0]);
-        fs::path physicalPath(physicalView);
-        fs::path currentDir = physicalPath.parent_path();
-        
-        // [Logic Upgrade] Through Subfolders: 
-        // 1. If moving forward, check if currentDir has subfolders first.
-        if (next) {
+        // Determine logical "current container" (directory or archive)
+        fs::path currentContainer;
+        if (m_archive && m_archive->IsValid()) {
+            currentContainer = m_archivePath;
+        } else {
+            currentContainer = fs::path(m_files[0]).parent_path();
+        }
+
+        // 1. Through Subfolders: Only if current is a real directory
+        if (next && fs::is_directory(currentContainer)) {
             std::error_code ec;
             std::vector<std::wstring> subfolders;
-            for (const auto& entry : fs::directory_iterator(currentDir, ec)) {
+            for (const auto& entry : fs::directory_iterator(currentContainer, ec)) {
                 if (entry.is_directory(ec)) {
                     subfolders.push_back(entry.path().wstring());
                 } else if (entry.is_regular_file(ec)) {
-                    // Treat archives as traversable directories
                     std::wstring ext = entry.path().extension().wstring();
                     std::transform(ext.begin(), ext.end(), ext.begin(), [](wchar_t c){ return std::towlower(c); });
                     if (ext == L".cbz" || ext == L".zip" || ext == L".cbr" || ext == L".rar") {
@@ -483,53 +484,51 @@ private:
             }
         }
 
-        // 2. Siblings navigation
-        fs::path parentDir = currentDir.parent_path();
-        if (parentDir.empty() || parentDir == currentDir) return L"";
+        // 2. Siblings navigation: Find next folder/archive in the parent directory
+        fs::path parentDir = currentContainer.parent_path();
+        if (parentDir.empty() || parentDir == currentContainer) return L"";
 
-        std::vector<std::wstring> folders;
+        std::vector<std::wstring> siblings;
         std::error_code ec_fold;
         for (const auto& entry : fs::directory_iterator(parentDir, ec_fold)) {
             if (entry.is_directory(ec_fold)) {
-                folders.push_back(entry.path().wstring());
+                siblings.push_back(entry.path().wstring());
             } else if (entry.is_regular_file(ec_fold)) {
-                // Treat archives as sibling directories
                 std::wstring ext = entry.path().extension().wstring();
                 std::transform(ext.begin(), ext.end(), ext.begin(), [](wchar_t c){ return std::towlower(c); });
                 if (ext == L".cbz" || ext == L".zip" || ext == L".cbr" || ext == L".rar") {
-                    folders.push_back(entry.path().wstring());
+                    siblings.push_back(entry.path().wstring());
                 }
             }
         }
 
-        if (folders.empty()) return L"";
+        if (siblings.empty()) return L"";
 
-        std::sort(folders.begin(), folders.end(), [](const std::wstring& a, const std::wstring& b){
+        std::sort(siblings.begin(), siblings.end(), [](const std::wstring& a, const std::wstring& b){
              return StrCmpLogicalW(a.c_str(), b.c_str()) < 0;
         });
 
-        std::wstring currentStr = currentDir.wstring();
-        auto it = std::find(folders.begin(), folders.end(), currentStr);
-        int idx = (it == folders.end()) ? -1 : (int)std::distance(folders.begin(), it);
+        std::wstring currentStr = currentContainer.wstring();
+        auto it = std::find(siblings.begin(), siblings.end(), currentStr);
+        int idx = (it == siblings.end()) ? -1 : (int)std::distance(siblings.begin(), it);
 
         int startIdx = idx;
         while (true) {
             if (next) idx++; else idx--;
 
             // Boundary logic
-            if (idx < 0 || idx >= (int)folders.size()) {
+            if (idx < 0 || idx >= (int)siblings.size()) {
                 if (g_runtime.NavLoop) {
-                    // Loop globally: wrap around
-                    idx = (idx < 0) ? (int)folders.size() - 1 : 0;
+                    idx = (idx < 0) ? (int)siblings.size() - 1 : 0;
                 } else {
-                    return L""; // Stop at global boundary
+                    return L""; 
                 }
             }
             
-            if (idx == startIdx) break; // Wrapped full circle and found nothing
+            if (idx == startIdx) break; 
 
             FileNavigator tempNav;
-            tempNav.Initialize(folders[idx]);
+            tempNav.Initialize(siblings[idx]);
             if (tempNav.Count() > 0) {
                  return next ? tempNav.First() : tempNav.Last();
             }
