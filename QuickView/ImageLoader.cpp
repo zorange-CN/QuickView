@@ -39,6 +39,8 @@ using namespace QuickView;
 #include <thread>
 #include <shobjidl.h> // [Add] for IShellItemImageFactory
 #include "MappedFile.h" // [Opt]
+#include "FileNavigator.h" 
+extern FileNavigator g_navigator;
 
 
 // Forward declaration
@@ -431,8 +433,41 @@ namespace QuickView {
         // File I/O Helpers
         // ------------------------------------------------------------------------
         
+        // Helper to get raw data from VFS or physical file
+        static bool GetVfsFileData(LPCWSTR filePath, std::vector<uint8_t>& buffer) {
+            std::wstring pathStr(filePath);
+            if (pathStr.find(L"|") == std::wstring::npos) return false;
+            
+            std::wstring archivePath;
+            size_t entryIndex;
+            if (FileNavigator::ParseVirtualPath(pathStr, archivePath, entryIndex)) {
+                QuickView::IArchive* archive = g_navigator.GetArchive();
+                std::unique_ptr<QuickView::IArchive> tempArchive;
+                if (!archive || archivePath != g_navigator.m_archivePath) {
+                    std::wstring ext = std::filesystem::path(archivePath).extension().wstring();
+                    std::transform(ext.begin(), ext.end(), ext.begin(), [](wchar_t c){ return std::towlower(c); });
+                    if (ext == L".cbr" || ext == L".rar") tempArchive = std::make_unique<QuickView::RarArchive>(archivePath);
+                    else tempArchive = std::make_unique<QuickView::ZipArchive>(archivePath);
+                    archive = tempArchive.get();
+                }
+                if (archive && archive->IsValid() && entryIndex < archive->GetEntryCount()) {
+                    const auto& entry = archive->GetEntry(entryIndex);
+                    buffer.resize(entry.uncompSize);
+                    return archive->ExtractEntry(entryIndex, buffer.data(), buffer.size());
+                }
+            }
+            return false;
+        }
+
         // Peek first 4KB of file (for format detection)
         static size_t PeekHeader(LPCWSTR filePath, uint8_t* buffer, size_t bufferSize) {
+            std::vector<uint8_t> vfsData;
+            if (GetVfsFileData(filePath, vfsData)) {
+                size_t toCopy = (std::min)(bufferSize, vfsData.size());
+                if (toCopy > 0) memcpy(buffer, vfsData.data(), toCopy);
+                return toCopy;
+            }
+
             HANDLE hFile = CreateFileW(filePath, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
             if (hFile == INVALID_HANDLE_VALUE) return 0;
             
@@ -1534,6 +1569,8 @@ static void PopulateMetadataFromEasyExif_Refined(const easyexif::EXIFInfo& exif,
 
 // Helper to read file to vector
 bool ReadFileToVector(LPCWSTR filePath, std::vector<uint8_t>& buffer) {
+    if (QuickView::Codec::GetVfsFileData(filePath, buffer)) return true;
+
     HANDLE hFile = CreateFileW(filePath, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (hFile == INVALID_HANDLE_VALUE) return false;
 
@@ -3424,16 +3461,55 @@ HRESULT CImageLoader::LoadThumbnail(LPCWSTR filePath, int targetSize, ThumbData*
     if (SUCCEEDED(LoadShellThumbnail(filePath, targetSize, pData))) {
         return S_OK;
     }
-
     const ImageHeaderInfo headerInfo = PeekHeader(filePath);
     const uint64_t fallbackFileSize = static_cast<uint64_t>(headerInfo.fileSize);
-    std::wstring format = headerInfo.format.empty() ? DetectFormatFromContent(filePath) : headerInfo.format;
+    
+    std::vector<uint8_t> extractedData;
+    const uint8_t* mappedData = nullptr;
+    size_t mappedSize = 0;
+    std::unique_ptr<QuickView::MappedFile> mapping;
+
+    std::wstring pathStr(filePath);
+    if (pathStr.find(L"|") != std::wstring::npos) {
+        std::wstring archivePath;
+        size_t entryIndex;
+        if (FileNavigator::ParseVirtualPath(pathStr, archivePath, entryIndex)) {
+            QuickView::IArchive* archive = g_navigator.GetArchive();
+            std::unique_ptr<QuickView::IArchive> tempArchive;
+            if (!archive || archivePath != g_navigator.m_archivePath) {
+                std::wstring ext = std::filesystem::path(archivePath).extension().wstring();
+                std::transform(ext.begin(), ext.end(), ext.begin(), [](wchar_t c){ return std::towlower(c); });
+                if (ext == L".cbr" || ext == L".rar") tempArchive = std::make_unique<QuickView::RarArchive>(archivePath);
+                else tempArchive = std::make_unique<QuickView::ZipArchive>(archivePath);
+                archive = tempArchive.get();
+            }
+            if (archive && archive->IsValid() && entryIndex < archive->GetEntryCount()) {
+                const auto& entry = archive->GetEntry(entryIndex);
+                extractedData.resize(entry.uncompSize);
+                if (archive->ExtractEntry(entryIndex, extractedData.data(), extractedData.size())) {
+                    mappedData = extractedData.data();
+                    mappedSize = extractedData.size();
+                }
+            }
+        }
+    }
+
+    if (!mappedData) {
+        mapping = std::make_unique<QuickView::MappedFile>(filePath);
+        if (mapping->IsValid()) {
+            mappedData = mapping->data();
+            mappedSize = mapping->size();
+        }
+    }
+
+    std::wstring format = headerInfo.format;
+    if (format.empty()) {
+        if (mappedData) format = DetectFormatFromContent(mappedData, std::min<size_t>(mappedSize, 1024));
+        else format = DetectFormatFromContent(filePath);
+    }
+
     std::wstring pathLower = filePath;
     std::transform(pathLower.begin(), pathLower.end(), pathLower.begin(), ::towlower);
-
-    QuickView::MappedFile mapping(filePath);
-    const uint8_t* mappedData = mapping.IsValid() ? mapping.data() : nullptr;
-    size_t mappedSize = mapping.IsValid() ? mapping.size() : 0;
 
     auto tryEmbeddedPreview = [&](const wchar_t* loaderName,
                                   auto extractor) -> bool {
@@ -7601,7 +7677,12 @@ HRESULT CImageLoader::GetImageInfoFast(LPCWSTR filePath, ImageInfo* pInfo) {
     // 1. Get file size (cheap filesystem call)
     std::error_code ec_size;
     pInfo->fileSize = std::filesystem::file_size(filePath, ec_size);
-    if (ec_size) return E_FAIL;
+    if (ec_size) {
+        // Fallback for VFS
+        CImageLoader::ImageHeaderInfo vfsPeek = PeekHeader(filePath);
+        if (vfsPeek.fileSize > 0) pInfo->fileSize = vfsPeek.fileSize;
+        else return E_FAIL;
+    }
 
     // 2. Read first 64KB for initial detection
     size_t chunkStep = 64 * 1024;
@@ -10648,6 +10729,18 @@ CImageLoader::ImageHeaderInfo CImageLoader::PeekHeader(LPCWSTR filePath) {
     if (pathStr.find(L"|") != std::wstring::npos) {
         result.type = ImageType::TypeA_Sprint; // VFS entries route through memory decoder usually small enough
 
+        std::wstring archivePath;
+        size_t entryIndex;
+        if (FileNavigator::ParseVirtualPath(pathStr, archivePath, entryIndex)) {
+            QuickView::IArchive* archive = g_navigator.GetArchive();
+            // Thread-safety: Reading from already valid archive metadata is generally safe
+            if (archive && archive->IsValid() && archivePath == g_navigator.m_archivePath) {
+                if (entryIndex < archive->GetEntryCount()) {
+                    result.fileSize = archive->GetEntry(entryIndex).uncompSize;
+                }
+            }
+        }
+
         // Zero-allocation extension extraction for format guessing
         size_t lastDot = pathStr.find_last_of(L".");
         if (lastDot != std::wstring::npos) {
@@ -10827,8 +10920,9 @@ CImageLoader::ImageHeaderInfo CImageLoader::PeekHeader(LPCWSTR filePath) {
 // ============================================================================
 
 
-#include "FileNavigator.h" // For ParseVirtualPath
-extern FileNavigator g_navigator;
+// Removed from here - moved to top of file
+// #include "FileNavigator.h" // For ParseVirtualPath
+// extern FileNavigator g_navigator;
 
 HRESULT CImageLoader::LoadToFrame(LPCWSTR filePath, QuickView::RawImageFrame* outFrame,
                                    QuantumArena* arena,
