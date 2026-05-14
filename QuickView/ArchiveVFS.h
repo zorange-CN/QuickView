@@ -5,6 +5,7 @@
 #include <string_view>
 #include <cstdint>
 #include <zlib.h>
+#include <mutex>
 
 
 namespace QuickView {
@@ -84,6 +85,7 @@ namespace QuickView {
         bool m_isSolid = false;
         std::vector<ArchiveEntry> m_entries;
         std::vector<char> m_namesBuffer;
+        mutable std::mutex m_extractMutex;
     };
 
 }

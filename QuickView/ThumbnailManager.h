@@ -93,6 +93,7 @@ private:
         std::wstring path;
         int priorityDistance; // 0 = highest (center)
         bool isFastLane;      // Tag to verify lane if needed
+        uint64_t generation;   // [Fix] Track when this task was created
         
         bool operator>(const Task& other) const {
             return priorityDistance > other.priorityDistance; // Min-heap
@@ -111,6 +112,7 @@ private:
     
     std::unordered_map<size_t, bool> m_pendingTasks; 
     std::atomic<bool> m_running = false;
+    std::atomic<uint64_t> m_currentGeneration{ 0 };
 
     void WorkerLoopFast();
     void WorkerLoopSlow();

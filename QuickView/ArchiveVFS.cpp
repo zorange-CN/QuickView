@@ -1,8 +1,7 @@
 #include "ArchiveVFS.h"
 #include <cstring>
 #include <cwchar>
-#include <cstdarg>
-#include "rar.hpp"
+#include "../third_party/unrar_core/rar.hpp"
 
 namespace QuickView {
 
@@ -186,7 +185,10 @@ namespace QuickView {
         Archive arc;
         arc.SetMemoryBuffer(const_cast<uint8_t*>(m_mappedFile.data()), m_mappedFile.size());
         
-        
+        // [Fix] Must call IsArchive to initialize SFX offset and archive format
+        if (!arc.IsArchive(true)) {
+            return false;
+        }
         
         m_isSolid = arc.Solid;
         
@@ -248,6 +250,10 @@ namespace QuickView {
 
     bool RarArchive::ExtractEntry(size_t index, uint8_t* externalBuffer, size_t bufferSize) const {
         if (index >= m_entries.size() || !externalBuffer) return false;
+        
+        // [Fix] unrar library is not thread-safe for concurrent extraction on the same archive instance
+        std::lock_guard<std::mutex> lock(m_extractMutex);
+        
         const ArchiveEntry& entry = m_entries[index];
 
 
@@ -273,11 +279,8 @@ namespace QuickView {
         dataIO.SetPackedSize(arc.FileHead.PackSize);
 
         if (arc.FileHead.Method == 0) {
-            byte buffer[16384];
-            int read;
-            while ((read = dataIO.UnpRead(buffer, sizeof(buffer))) > 0) {
-                dataIO.UnpWrite(buffer, read);
-            }
+            // [Optimize] Direct memcpy for Store method
+            dataIO.UnpWrite(const_cast<uint8_t*>(m_mappedFile.data()) + arc.Tell(), arc.FileHead.UnpSize);
         } else {
             Unpack unpack(&dataIO);
             unpack.Init(arc.FileHead.WinSize, arc.Solid);

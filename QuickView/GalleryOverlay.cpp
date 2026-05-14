@@ -1,10 +1,13 @@
 #include "pch.h"
 #include "GalleryOverlay.h"
 #include "ThumbnailManager.h"
+#include "ImageTypes.h"
 #include "FileNavigator.h"
 #include "EditState.h"
 #include <algorithm>
 #include <cmath>
+
+extern void RequestRepaint(QuickView::PaintLayer layerMask);
 
 extern AppConfig g_config;
 
@@ -47,6 +50,9 @@ void GalleryOverlay::Update(float deltaTime) {
     if (m_isVisible && m_opacity < 1.0f && g_config.GlassUIAnimations) {
         m_opacity += deltaTime * 5.0f; // 0.2s fade in
         if (m_opacity > 1.0f) m_opacity = 1.0f;
+        
+        // [Fix] Keep the animation driving even if no mouse move
+        RequestRepaint(QuickView::PaintLayer::Gallery);
     }
 }
 
@@ -220,7 +226,7 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size) {
             if (bmp) {
                 D2D1_SIZE_F bmpSize = bmp->GetSize();
                 D2D1_RECT_F src = GetCenterCropRect(bmpSize, cellRect);
-                pDC->DrawBitmap(bmp.Get(), cellRect, m_opacity, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, src);
+                pDC->DrawBitmap(bmp.Get(), cellRect, m_opacity, D2D1_INTERPOLATION_MODE_LINEAR, src);
             } else {
                 // Placeholder (Gray Box) call QueueRequest
                 D2D1_COLOR_F phBase =

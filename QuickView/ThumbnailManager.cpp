@@ -36,6 +36,7 @@ void ThumbnailManager::ClearCache() {
     
     // Also clear queue?
     std::lock_guard<std::mutex> queueLock(m_queueMutex);
+    m_currentGeneration++; // Invalidate pending work
     m_pendingTasks.clear();
     m_fastQueue = std::priority_queue<Task, std::vector<Task>, std::greater<Task>>();
     m_slowQueue = std::priority_queue<Task, std::vector<Task>, std::greater<Task>>();
@@ -183,21 +184,31 @@ void ThumbnailManager::WorkerLoopFast() {
             
         }
         
+        // [Fix] Check if task is still valid for current view state
+        if (task.generation != m_currentGeneration) {
+            std::lock_guard<std::mutex> lock(m_queueMutex);
+            m_pendingTasks.erase(task.imageId);
+            continue;
+        }
+
         int targetSize = 300; 
         CImageLoader::ThumbData data;
         if (SUCCEEDED(m_pLoader->LoadThumbnail(task.path.c_str(), targetSize, &data)) && data.isValid) {
-            {
-                std::lock_guard<std::mutex> lock(m_cacheMutex);
-                size_t size = data.pixels.size();
-                size_t previousSize = 0;
-                auto existing = m_l1Cache.find(task.imageId);
-                if (existing != m_l1Cache.end()) {
-                    previousSize = existing->second.pixels.size();
+            // Re-check generation after potentially long extraction
+            if (task.generation == m_currentGeneration) {
+                {
+                    std::lock_guard<std::mutex> lock(m_cacheMutex);
+                    size_t size = data.pixels.size();
+                    size_t previousSize = 0;
+                    auto existing = m_l1Cache.find(task.imageId);
+                    if (existing != m_l1Cache.end()) {
+                        previousSize = existing->second.pixels.size();
+                    }
+                    m_l1Cache[task.imageId] = std::move(data);
+                    AddToLRU(task.imageId, size, previousSize);
                 }
-                m_l1Cache[task.imageId] = std::move(data);
-                AddToLRU(task.imageId, size, previousSize);
+                PostMessage(m_hwnd, WM_THUMB_KEY_READY, (WPARAM)task.imageId, 0);
             }
-            PostMessage(m_hwnd, WM_THUMB_KEY_READY, (WPARAM)task.imageId, 0);
         }
         {
             std::lock_guard<std::mutex> lock(m_queueMutex);
@@ -229,21 +240,31 @@ void ThumbnailManager::WorkerLoopSlow() {
             
         }
         
+        // [Fix] Check if task is still valid for current view state
+        if (task.generation != m_currentGeneration) {
+            std::lock_guard<std::mutex> lock(m_queueMutex);
+            m_pendingTasks.erase(task.imageId);
+            continue;
+        }
+
         int targetSize = 300; 
         CImageLoader::ThumbData data;
         if (SUCCEEDED(m_pLoader->LoadThumbnail(task.path.c_str(), targetSize, &data)) && data.isValid) {
-            {
-                std::lock_guard<std::mutex> lock(m_cacheMutex);
-                size_t size = data.pixels.size();
-                size_t previousSize = 0;
-                auto existing = m_l1Cache.find(task.imageId);
-                if (existing != m_l1Cache.end()) {
-                    previousSize = existing->second.pixels.size();
+            // Re-check generation after potentially long extraction
+            if (task.generation == m_currentGeneration) {
+                {
+                    std::lock_guard<std::mutex> lock(m_cacheMutex);
+                    size_t size = data.pixels.size();
+                    size_t previousSize = 0;
+                    auto existing = m_l1Cache.find(task.imageId);
+                    if (existing != m_l1Cache.end()) {
+                        previousSize = existing->second.pixels.size();
+                    }
+                    m_l1Cache[task.imageId] = std::move(data);
+                    AddToLRU(task.imageId, size, previousSize);
                 }
-                m_l1Cache[task.imageId] = std::move(data);
-                AddToLRU(task.imageId, size, previousSize);
+                PostMessage(m_hwnd, WM_THUMB_KEY_READY, (WPARAM)task.imageId, 0);
             }
-            PostMessage(m_hwnd, WM_THUMB_KEY_READY, (WPARAM)task.imageId, 0);
         }
         {
             std::lock_guard<std::mutex> lock(m_queueMutex);
@@ -280,6 +301,7 @@ void ThumbnailManager::QueueRequest(size_t imageId, LPCWSTR path, int priority) 
     t.imageId = imageId;
     t.path = path;
     t.priorityDistance = priority;
+    t.generation = m_currentGeneration;
 
     // Detect format for Lane Selection
     std::wstring ext = path;
@@ -312,6 +334,7 @@ void ThumbnailManager::QueueRequest(size_t imageId, LPCWSTR path, int priority) 
 
 void ThumbnailManager::ClearQueue() {
     std::lock_guard<std::mutex> lock(m_queueMutex);
+    m_currentGeneration++; // [Fix] Increment generation to invalidate pending background extractions
     m_fastQueue = std::priority_queue<Task, std::vector<Task>, std::greater<Task>>();
     m_slowQueue = std::priority_queue<Task, std::vector<Task>, std::greater<Task>>();
     m_pendingTasks.clear();
