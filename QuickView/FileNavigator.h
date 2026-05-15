@@ -349,6 +349,12 @@ public:
     // Status info
     size_t Count() const { return m_files.size(); }
     int Index() const { return m_currentIndex; }
+    void SetIndex(int index) {
+        if (index >= 0 && index < (int)m_files.size()) {
+            m_currentIndex = index;
+            m_hitEnd = false;
+        }
+    }
 
     // Random Access (For Gallery Virtualization)
     const std::wstring& GetFile(int index) const {

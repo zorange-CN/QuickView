@@ -25,6 +25,9 @@ extern SettingsOverlay g_settingsOverlay;
 extern HelpOverlay g_helpOverlay;
 extern ImageEngine* g_pImageEngine; // [v3.1] Accessor (renamed from g_imageEngine)
 
+#include "FileNavigator.h"
+extern FileNavigator g_navigator;
+
 // DrawDialog is still in main.cpp (modal dialog handling)
 extern void DrawDialog(ID2D1DeviceContext* context, const RECT& clientRect);
 
@@ -2606,6 +2609,16 @@ void UIRenderer::DrawCompactInfo(ID2D1DeviceContext* dc) {
         info = frameBuf;
     } else {
         info = g_imagePath.substr(g_imagePath.find_last_of(L"\\/") + 1);
+
+        // Add Comic Page Info if in Archive
+        if (g_navigator.GetArchive() != nullptr) {
+            int currentPage = g_navigator.Index() + 1;
+            size_t totalPages = g_navigator.Count();
+            if (totalPages > 0) {
+                wchar_t sz[64]; swprintf_s(sz, L"   [%d / %zu]", currentPage, totalPages);
+                info += sz;
+            }
+        }
     
         // Add Size
         if (g_currentMetadata.Width > 0) {

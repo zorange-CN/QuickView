@@ -180,9 +180,14 @@ void Toolbar::UpdateLayout(float winW, float winH) {
       if (isAlwaysVisible(btn.id)) return true;
       return false;
     }
-    if (m_overlayMode) {
-      if (isOverlayButton(btn.id) || isAlwaysVisible(btn.id)) return true;
-      return false;
+    if (m_comicMode) {
+      // In comic mode, we hide rotate and flip, and compare toolbars
+      // The toggle button is ToolbarButtonID::CompareToggle, which is NOT in isCompareButton
+      if (btn.id == ToolbarButtonID::RotateL || btn.id == ToolbarButtonID::RotateR || btn.id == ToolbarButtonID::FlipH) return false;
+      if (btn.id == ToolbarButtonID::Exif) return false;
+      if (isCompareButton(btn.id)) return false;
+      if (isAnimButton(btn.id) || isOverlayButton(btn.id)) return false;
+      return true;
     }
 
     if (m_compareMode) {
@@ -274,6 +279,14 @@ void Toolbar::UpdateLayout(float winW, float winH) {
         btn.iconGlyph = g_runtime.LockWindowSize ? Icons::Lock : Icons::Unlock;
     }
 
+    if (btn.id == ToolbarButtonID::CompareToggle) {
+      if (m_comicMode) {
+        btn.iconGlyph = Icons::Layout; // Layout looks like a book/dual-page
+      } else {
+        btn.iconGlyph = Icons::CompareToggle;
+      }
+    }
+
     if (visible) {
       btn.rect = D2D1::RectF(cx, cy, cx + buttonSize, cy + buttonSize);
       cx += buttonSize + gap;
@@ -354,6 +367,9 @@ const wchar_t *GetTooltipText(const ToolbarButton &btn) {
     return btn.isToggled ? AppStrings::Toolbar_Tooltip_Unpin
                          : AppStrings::Toolbar_Tooltip_Pin;
   case ToolbarButtonID::CompareToggle:
+    if (g_navigator.GetArchive() != nullptr) {
+      return btn.isToggled ? L"Single Page Mode" : L"Dual Page Mode";
+    }
     return btn.isToggled ? AppStrings::Toolbar_Tooltip_NormalMode : AppStrings::Toolbar_Tooltip_CompareMode;
   case ToolbarButtonID::CompareOpen:
     return AppStrings::Toolbar_Tooltip_CompareOpen;
