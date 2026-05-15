@@ -117,6 +117,11 @@ if(MSVC OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     # [Optimization] Disable compiler identification string to save bytes
     target_compile_options(QuickView PRIVATE /clang:-fno-ident)
 
+    # [Stability] Lock MSVC compatibility version to prevent PCH mismatch in mixed environments
+    if(QUICKVIEW_MSVC_COMPAT_VER)
+        add_compile_options("/clang:-fms-compatibility-version=${QUICKVIEW_MSVC_COMPAT_VER}")
+    endif()
+
     # Disable automatic manifest generation (we provide it via .rc)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /MANIFEST:NO")
     

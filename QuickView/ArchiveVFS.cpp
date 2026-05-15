@@ -18,7 +18,7 @@ namespace QuickView {
         if (g_archiveCache.size() >= 8) g_archiveCache.clear();
 
         ::std::wstring ext = ::std::filesystem::path(path).extension().wstring();
-        ::std::transform(ext.begin(), ext.end(), ext.begin(), [](wchar_t c) { return ::towlower(c); });
+        ::std::transform(ext.begin(), ext.end(), ext.begin(), [](wchar_t c) { return (wchar_t)::towlower(c); });
 
         ::std::shared_ptr<IArchive> res;
         if (ext == L".cbr" || ext == L".rar") res = ::std::make_shared<RarArchive>(path);
@@ -140,9 +140,9 @@ namespace QuickView {
         if (index >= m_entries.size() || !m_mappedFile.IsValid()) return ::std::string_view();
 
         const ArchiveEntry& entry = m_entries[index];
-        if (entry.nameOffset + entry.nameLen > m_mappedFile.size()) return std::string_view();
+        if (entry.nameOffset + entry.nameLen > m_mappedFile.size()) return ::std::string_view();
 
-        return std::string_view((const char*)(m_mappedFile.data() + entry.nameOffset), entry.nameLen);
+        return ::std::string_view((const char*)(m_mappedFile.data() + entry.nameOffset), entry.nameLen);
     }
 
 
@@ -288,12 +288,12 @@ namespace QuickView {
         return !m_entries.empty();
     }
 
-    std::wstring RarArchive::GetEntryName(size_t index) const {
+    ::std::wstring RarArchive::GetEntryName(size_t index) const {
         if (index >= m_entries.size()) return L"";
         const ArchiveEntry& entry = m_entries[index];
         if (entry.nameLen == 0) return L"";
 
-        std::string_view utf8Name(m_namesBuffer.data() + entry.nameOffset, entry.nameLen);
+        ::std::string_view utf8Name(m_namesBuffer.data() + entry.nameOffset, entry.nameLen);
         int wideLen = MultiByteToWideChar(CP_UTF8, 0, utf8Name.data(), (int)utf8Name.length(), nullptr, 0);
         if (wideLen <= 0) return L"";
 
@@ -351,7 +351,7 @@ namespace QuickView {
 
         // --- Solid Archive Logic (Stateful & Single-Context) ---
         if (!m_solidState) {
-            m_solidState = std::make_unique<SolidState>();
+            m_solidState = ::std::make_unique<SolidState>();
             m_solidState->Reset(m_mappedFile.data(), m_mappedFile.size());
         }
 

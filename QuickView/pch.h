@@ -1,4 +1,5 @@
 #pragma once
+// [VFS-STABILITY-FIX] Build: 20260515.2
 
 // Windows headers
 #define WIN32_LEAN_AND_MEAN

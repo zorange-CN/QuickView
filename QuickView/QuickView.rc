@@ -1,7 +1,9 @@
 // QuickView.rc - Resource file
 // Application Icon
 
+#ifndef __INTELLISENSE__
 #include <windows.h>
+#endif
 #include "resource.h"
 
 // Main Application Icon (ID = 1 for default)
@@ -10,8 +12,8 @@
 
 // Version Information - This sets the display name in Windows
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 6,1,4,0
- PRODUCTVERSION 6,1,4,0
+ FILEVERSION 6,1,5,0
+ PRODUCTVERSION 6,1,5,0
 FILEFLAGSMASK 0x3fL
 FILEFLAGS 0x0L
 FILEOS VOS_NT_WINDOWS32
@@ -24,12 +26,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "QuickView"
             VALUE "FileDescription", "QuickView"
-            VALUE "FileVersion", "6.1.4.0"
+            VALUE "FileVersion", "6.1.5.0"
             VALUE "InternalName", "QuickView"
             VALUE "LegalCopyright", "Copyright (C) 2026"
             VALUE "OriginalFilename", "QuickView.exe"
             VALUE "ProductName", "QuickView"
-            VALUE "ProductVersion", "6.1.4.0"
+            VALUE "ProductVersion", "6.1.5.0"
         END
     END
     BLOCK "VarFileInfo"

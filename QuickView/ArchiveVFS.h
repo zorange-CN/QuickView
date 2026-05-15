@@ -40,7 +40,7 @@ namespace QuickView {
 
     class ZipArchive : public IArchive {
     public:
-        ZipArchive(const std::wstring& path);
+        ZipArchive(const ::std::wstring& path);
         ~ZipArchive() = default;
 
         bool IsValid() const override { return m_mappedFile.IsValid() && m_valid; }
@@ -69,19 +69,19 @@ namespace QuickView {
         MappedFile m_mappedFile;
         bool m_valid = false;
 
-        std::vector<ArchiveEntry> m_entries;
+        ::std::vector<ArchiveEntry> m_entries;
     };
 
     class RarArchive : public IArchive {
     public:
-        RarArchive(const std::wstring& path);
+        RarArchive(const ::std::wstring& path);
         ~RarArchive();
 
         bool IsValid() const override { return m_mappedFile.IsValid() && m_valid; }
         size_t GetEntryCount() const override { return m_entries.size(); }
         const ArchiveEntry& GetEntry(size_t index) const override { return m_entries[index]; }
-        std::wstring GetEntryName(size_t index) const override;
-        std::string_view GetEntryNameView(size_t index) const override;
+        ::std::wstring GetEntryName(size_t index) const override;
+        ::std::string_view GetEntryNameView(size_t index) const override;
         size_t ExtractEntry(size_t index, uint8_t* externalBuffer, size_t bufferSize) const override;
         void PurgeState() const override;
 
@@ -108,7 +108,6 @@ namespace QuickView {
         
         mutable ::std::mutex m_solidMutex;
         mutable ::std::unique_ptr<SolidState> m_solidState;
-        ::std::wstring m_archivePath; // Store path for comparison
     };
 
 }
