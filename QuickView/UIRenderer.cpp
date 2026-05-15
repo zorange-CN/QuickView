@@ -540,7 +540,7 @@ bool UIRenderer::RenderAll(HWND hwnd, float deltaTime) {
     if (m_isGalleryDirty) {
         ID2D1DeviceContext* dc = m_compEngine->BeginLayerUpdate(UILayer::Gallery, nullptr);
         if (dc) {
-            RenderGalleryLayer(dc, deltaTime);
+            RenderGalleryLayer(dc);
             m_compEngine->EndLayerUpdate(UILayer::Gallery);
             m_isGalleryDirty = false;
             rendered = true;
@@ -757,7 +757,7 @@ void UIRenderer::RenderDynamicLayer(ID2D1DeviceContext* dc, HWND hwnd) {
 // Gallery Layer: Gallery Overlay
 // ============================================================================
 
-void UIRenderer::RenderGalleryLayer(ID2D1DeviceContext* dc, float deltaTime) {
+void UIRenderer::RenderGalleryLayer(ID2D1DeviceContext* dc) {
     if (g_gallery.IsVisible()) {
         D2D1_SIZE_F rtSize = D2D1::SizeF((float)m_width, (float)m_height);
         g_gallery.Render(dc, rtSize);

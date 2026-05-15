@@ -190,7 +190,7 @@ private:
     // 分层渲染方法
     void RenderStaticLayer(ID2D1DeviceContext* dc, HWND hwnd);
     void RenderDynamicLayer(ID2D1DeviceContext* dc, HWND hwnd);
-    void RenderGalleryLayer(ID2D1DeviceContext* dc, float deltaTime);
+    void RenderGalleryLayer(ID2D1DeviceContext* dc);
     
     // ===== Info Panel Drawing (Migrated from main.cpp) =====
     void BuildInfoGrid();

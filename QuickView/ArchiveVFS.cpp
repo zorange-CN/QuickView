@@ -1,22 +1,7 @@
-#ifndef _WIN_ALL
-#define _WIN_ALL
-#endif
 #include "pch.h"
-#include <windows.h>
-#include <cstring>
-#include <cwchar>
-#include <string>
-#include <vector>
-#include <string_view>
-#include <memory>
-#include <mutex>
-#include <filesystem>
-#include <algorithm>
-#include <unordered_map>
-
 #include "ArchiveVFS.h"
-#include "../third_party/unrar_core/rar.hpp"
 #include "QuickViewETW.h"
+#include "../third_party/unrar_core/rar.hpp"
 
 static constexpr const char* CURRENT_MODULE = "ArchiveVFS";
 

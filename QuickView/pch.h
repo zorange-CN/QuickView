@@ -14,10 +14,26 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <array>
+#include <map>
+#include <unordered_map>
+#include <set>
+#include <unordered_set>
 #include <type_traits>
 #include <utility>
 #include <concepts>
 #include <bit>
+#include <memory>
+#include <mutex>
+#include <shared_mutex>
+#include <atomic>
+#include <thread>
+#include <filesystem>
+#include <algorithm>
+#include <chrono>
+#include <optional>
+#include <expected>
+#include <span>
 
 // [Critical] Resolve Windows macro interference BEFORE Direct2D/DirectWrite headers
 #undef DrawText
