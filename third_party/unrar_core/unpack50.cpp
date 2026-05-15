@@ -272,7 +272,7 @@ bool Unpack::UnpReadBuf()
     // and trees earlier than data in input buffer ends.
     ReadBorder=Min(ReadBorder,BlockHeader.BlockStart+BlockHeader.BlockSize-1);
   }
-  return ReadCode!=-1;
+  return ReadCode > 0;
 }
 
 

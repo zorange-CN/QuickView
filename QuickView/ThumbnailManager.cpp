@@ -43,10 +43,7 @@ void ThumbnailManager::ClearCache() {
     m_fastQueue = std::priority_queue<Task, std::vector<Task>, std::greater<Task>>();
     m_slowQueue = std::priority_queue<Task, std::vector<Task>, std::greater<Task>>();
 
-    // Purge VFS state when cache is cleared
-    if (g_navigator.GetArchive()) {
-        g_navigator.GetArchive()->PurgeState();
-    }
+    m_slowQueue = std::priority_queue<Task, std::vector<Task>, std::greater<Task>>();
 }
 
 ComPtr<ID2D1Bitmap> ThumbnailManager::GetThumbnail(size_t imageId, LPCWSTR /*filePath*/, ID2D1RenderTarget* pRT) {
@@ -335,10 +332,8 @@ void ThumbnailManager::ClearQueue() {
     m_slowQueue = std::priority_queue<Task, std::vector<Task>, std::greater<Task>>();
     m_pendingTasks.clear();
 
-    // Purge VFS state on massive cancellation to free up resources/locks
-    if (g_navigator.GetArchive()) {
-        g_navigator.GetArchive()->PurgeState();
-    }
+    m_slowQueue = std::priority_queue<Task, std::vector<Task>, std::greater<Task>>();
+    m_pendingTasks.clear();
 }
 
 

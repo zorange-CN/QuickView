@@ -515,7 +515,7 @@ bool Unpack::UnpReadBuf30()
   if (ReadCode>0)
     ReadTop+=ReadCode;
   ReadBorder=ReadTop-30;
-  return ReadCode!=-1;
+  return ReadCode > 0;
 }
 
 

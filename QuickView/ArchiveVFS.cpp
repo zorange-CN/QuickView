@@ -1,13 +1,53 @@
-#include "ArchiveVFS.h"
+#ifndef _WIN_ALL
+#define _WIN_ALL
+#endif
+#include "pch.h"
+#include <windows.h>
 #include <cstring>
 #include <cwchar>
+#include <string>
+#include <vector>
+#include <string_view>
+#include <memory>
+#include <mutex>
+#include <filesystem>
+#include <algorithm>
+#include <unordered_map>
+
+#include "ArchiveVFS.h"
 #include "../third_party/unrar_core/rar.hpp"
+#include "QuickViewETW.h"
+
+static constexpr const char* CURRENT_MODULE = "ArchiveVFS";
 
 namespace QuickView {
 
+    static ::std::mutex g_archiveCacheMutex;
+    static ::std::unordered_map<::std::wstring, ::std::shared_ptr<IArchive>> g_archiveCache;
+
+    ::std::shared_ptr<IArchive> IArchive::OpenCached(const ::std::wstring& path) {
+        ::std::lock_guard<::std::mutex> lock(g_archiveCacheMutex);
+        auto it = g_archiveCache.find(path);
+        if (it != g_archiveCache.end()) return it->second;
+
+        if (g_archiveCache.size() >= 8) g_archiveCache.clear();
+
+        ::std::wstring ext = ::std::filesystem::path(path).extension().wstring();
+        ::std::transform(ext.begin(), ext.end(), ext.begin(), [](wchar_t c) { return ::towlower(c); });
+
+        ::std::shared_ptr<IArchive> res;
+        if (ext == L".cbr" || ext == L".rar") res = ::std::make_shared<RarArchive>(path);
+        else res = ::std::make_shared<ZipArchive>(path);
+
+        if (res && res->IsValid()) {
+            g_archiveCache[path] = res;
+        }
+        return res;
+    }
 
 
-    ZipArchive::ZipArchive(const std::wstring& path) : m_mappedFile(path) {
+
+    ZipArchive::ZipArchive(const ::std::wstring& path) : m_mappedFile(path) {
         if (m_mappedFile.IsValid()) {
             m_valid = ParseCentralDirectory();
         }
@@ -91,7 +131,7 @@ namespace QuickView {
         return !m_entries.empty();
     }
 
-    std::wstring ZipArchive::GetEntryName(size_t index) const {
+    ::std::wstring ZipArchive::GetEntryName(size_t index) const {
         if (index >= m_entries.size() || !m_mappedFile.IsValid()) return L"";
 
         const ArchiveEntry& entry = m_entries[index];
@@ -106,13 +146,13 @@ namespace QuickView {
         int size_needed = MultiByteToWideChar(CP_UTF8, 0, namePtr, (int)entry.nameLen, NULL, 0);
         if (size_needed <= 0) return L"";
 
-        std::wstring wstrTo(size_needed, 0);
+        ::std::wstring wstrTo(size_needed, 0);
         MultiByteToWideChar(CP_UTF8, 0, namePtr, (int)entry.nameLen, &wstrTo[0], size_needed);
         return wstrTo;
     }
 
-    std::string_view ZipArchive::GetEntryNameView(size_t index) const {
-        if (index >= m_entries.size() || !m_mappedFile.IsValid()) return std::string_view();
+    ::std::string_view ZipArchive::GetEntryNameView(size_t index) const {
+        if (index >= m_entries.size() || !m_mappedFile.IsValid()) return ::std::string_view();
 
         const ArchiveEntry& entry = m_entries[index];
         if (entry.nameOffset + entry.nameLen > m_mappedFile.size()) return std::string_view();
@@ -121,8 +161,8 @@ namespace QuickView {
     }
 
 
-    bool ZipArchive::ExtractEntry(size_t index, uint8_t* externalBuffer, size_t bufferSize) const {
-        if (index >= m_entries.size() || !m_mappedFile.IsValid() || !externalBuffer) return false;
+    size_t ZipArchive::ExtractEntry(size_t index, uint8_t* externalBuffer, size_t bufferSize) const {
+        if (index >= m_entries.size() || !m_mappedFile.IsValid() || !externalBuffer) return 0;
 
         const ArchiveEntry& entry = m_entries[index];
         const uint8_t* data = m_mappedFile.data();
@@ -170,7 +210,7 @@ namespace QuickView {
             return false;
         }
 
-        return true;
+        return (size_t)entry.uncompSize;
     }
 
     // --- RarArchive Implementation ---
@@ -191,10 +231,10 @@ namespace QuickView {
         unpack = nullptr;
         currentIndex = (size_t)-1;
         
-        arc->SetMemoryBuffer(const_cast<uint8_t*>(data), size);
+        ((::File*)arc)->SetMemoryBuffer((const byte*)data, size);
         if (arc->IsArchive(true)) {
             dataIO->SetMemorySource(const_cast<uint8_t*>(data), size);
-            dataIO->SetFiles(arc, nullptr);
+            dataIO->SetFiles((::File*)arc, nullptr);
             unpack = new ::Unpack(dataIO);
             // Dictionary is initialized in ExtractEntry
         }
@@ -211,15 +251,20 @@ namespace QuickView {
     }
 
     bool RarArchive::ParseArchive() {
-    ::Archive arc;
-        arc.SetMemoryBuffer(const_cast<uint8_t*>(m_mappedFile.data()), m_mappedFile.size());
+        QV_LOG("ParseArchive_Start", TraceLoggingWideString(m_mappedFile.GetPath().c_str(), "Path"));
+        ::Archive arc;
+        static_cast<::File&>(arc).SetMemoryBuffer(const_cast<uint8_t*>(m_mappedFile.data()), m_mappedFile.size());
         
-        // [Fix] Must call IsArchive to initialize SFX offset and archive format
         if (!arc.IsArchive(true)) {
+            QV_LOG("ParseArchive_NotArchive", TraceLoggingWideString(m_mappedFile.GetPath().c_str(), "Path"));
             return false;
         }
         
-        m_isSolid = arc.Solid;
+        QV_LOG("ParseArchive_Format", TraceLoggingInt32((int)arc.Format, "Format"));
+        if (arc.Format == RARFMT_NONE) {
+            QV_LOG("ParseArchive_None", TraceLoggingWideString(m_mappedFile.GetPath().c_str(), "Path"));
+            return false;
+        }
         
         while (arc.ReadHeader() > 0) {
             HEADER_TYPE type = arc.GetHeaderType();
@@ -253,6 +298,8 @@ namespace QuickView {
             }
             arc.SeekToNext();
         }
+        m_isSolid = arc.Solid;
+        QV_LOG("ParseArchive_End", TraceLoggingUInt64(m_entries.size(), "Entries"), TraceLoggingBoolean(m_isSolid, "IsSolid"));
         return !m_entries.empty();
     }
 
@@ -265,70 +312,67 @@ namespace QuickView {
         int wideLen = MultiByteToWideChar(CP_UTF8, 0, utf8Name.data(), (int)utf8Name.length(), nullptr, 0);
         if (wideLen <= 0) return L"";
 
-        std::wstring res(wideLen, L'\0');
+        ::std::wstring res(wideLen, L'\0');
         MultiByteToWideChar(CP_UTF8, 0, utf8Name.data(), (int)utf8Name.length(), &res[0], wideLen);
         return res;
     }
 
-    std::string_view RarArchive::GetEntryNameView(size_t index) const {
-        if (index >= m_entries.size()) return std::string_view();
+    ::std::string_view RarArchive::GetEntryNameView(size_t index) const {
+        if (index >= m_entries.size()) return ::std::string_view();
         const ArchiveEntry& entry = m_entries[index];
-        if (entry.nameLen == 0) return std::string_view();
-        return std::string_view(m_namesBuffer.data() + entry.nameOffset, entry.nameLen);
+        if (entry.nameLen == 0) return ::std::string_view();
+        return ::std::string_view(m_namesBuffer.data() + entry.nameOffset, entry.nameLen);
     }
 
-    bool RarArchive::ExtractEntry(size_t index, uint8_t* externalBuffer, size_t bufferSize) const {
-        if (index >= m_entries.size() || !externalBuffer) return false;
+    size_t RarArchive::ExtractEntry(size_t index, uint8_t* externalBuffer, size_t bufferSize) const {
+        if (index >= m_entries.size() || !externalBuffer) return 0;
         
         // [Thread Safety] Ensure serial access for stateful decompression
-        std::lock_guard<std::mutex> lock(m_solidMutex);
+        ::std::lock_guard<::std::mutex> lock(m_solidMutex);
 
-        auto now = std::chrono::steady_clock::now();
+        QV_LOG("ExtractEntry_Start", TraceLoggingUInt64(index, "Index"), TraceLoggingBoolean(m_isSolid, "IsSolid"));
+        auto now = ::std::chrono::steady_clock::now();
         
         // --- Solid State Management ---
         if (!m_isSolid) {
             // Standard non-solid random access (Still use a local state or simplified path)
             ::Archive arc;
-            arc.SetMemoryBuffer(const_cast<uint8_t*>(m_mappedFile.data()), m_mappedFile.size());
-            if (!arc.IsArchive(true)) return false;
+            static_cast<::File&>(arc).SetMemoryBuffer(const_cast<uint8_t*>(m_mappedFile.data()), m_mappedFile.size());
+            if (!arc.IsArchive(true)) return 0;
             
             const ArchiveEntry& entry = m_entries[index];
             arc.Seek(entry.headerOffset, SEEK_SET);
-            if (arc.ReadHeader() <= 0) return false;
+            if (arc.ReadHeader() <= 0) return 0;
 
             ::ComprDataIO dataIO;
             dataIO.SetMemorySource(const_cast<uint8_t*>(m_mappedFile.data()), m_mappedFile.size());
             dataIO.SetMemoryDest(externalBuffer, bufferSize);
             dataIO.SetMemoryPos((size_t)arc.Tell());
-            dataIO.SetPackedSize(arc.FileHead.PackSize);
+            dataIO.SetPackedSize(m_mappedFile.size()); // [v6.0.8.2] No hard limit to allow look-ahead
             dataIO.SetFiles(&arc, nullptr);
 
             if (arc.FileHead.Method == 0) {
                 dataIO.UnpWrite(const_cast<uint8_t*>(m_mappedFile.data()) + arc.Tell(), arc.FileHead.UnpSize);
             } else {
                 ::Unpack unpack(&dataIO);
-                unpack.Init(arc.FileHead.WinSize, arc.Solid);
+                unpack.Init(arc.FileHead.WinSize, arc.FileHead.Solid);
                 unpack.SetDestSize(arc.FileHead.UnpSize);
-                unpack.DoUnpack(arc.FileHead.UnpVer, arc.Solid);
+                unpack.DoUnpack(arc.FileHead.UnpVer, arc.FileHead.Solid);
             }
-            return dataIO.GetWrittenSize() > 0;
+            size_t written = (size_t)dataIO.GetWrittenSize();
+            QV_LOG("ExtractEntry_End", TraceLoggingUInt64(index, "Index"), TraceLoggingBoolean(written > 0, "Success"), TraceLoggingUInt64(written, "Written"));
+            return written;
         }
 
-        // --- Solid Archive Logic (Stateful & Thread-Aware) ---
-        std::thread::id tid = std::this_thread::get_id();
-        
-        // 1. Get or Create context for this thread
-        auto it = m_threadStates.find(tid);
-        if (it == m_threadStates.end()) {
-            auto newState = std::make_unique<SolidState>();
-            newState->Reset(m_mappedFile.data(), m_mappedFile.size());
-            m_threadStates[tid] = std::move(newState);
-            it = m_threadStates.find(tid);
+        // --- Solid Archive Logic (Stateful & Single-Context) ---
+        if (!m_solidState) {
+            m_solidState = std::make_unique<SolidState>();
+            m_solidState->Reset(m_mappedFile.data(), m_mappedFile.size());
         }
 
-        SolidState& ss = *it->second;
+        SolidState& ss = *m_solidState;
 
-        // 2. Check for stale state or backward jump (within THIS thread's context)
+        // 2. Check for stale state or backward jump
         if (index < ss.currentIndex + 1) {
             ss.Reset(m_mappedFile.data(), m_mappedFile.size());
         } else if (std::chrono::duration_cast<std::chrono::seconds>(now - ss.lastAccessed).count() > 60) {
@@ -350,10 +394,10 @@ namespace QuickView {
         while (nextToRead <= index) {
             if (++skippedCount > MAX_SKIP_ENTRIES) {
                 ss.Reset(m_mappedFile.data(), m_mappedFile.size());
-                return false;
+                return 0;
             }
 
-            if (arc.ReadHeader() <= 0) return false;
+            if (arc.ReadHeader() <= 0) return 0;
             HEADER_TYPE type = arc.GetHeaderType();
             
             if (type == HEAD_FILE || type == HEAD3_FILE) {
@@ -361,30 +405,32 @@ namespace QuickView {
                     // Extract goal
                     dataIO.SetMemoryDest(externalBuffer, bufferSize);
                     dataIO.SetMemoryPos((size_t)arc.Tell());
-                    dataIO.SetPackedSizeToRead(arc.FileHead.PackSize);
+                    dataIO.SetPackedSizeToRead(m_mappedFile.size()); // [v6.0.8.2] No hard limit to allow look-ahead
 
                     if (arc.FileHead.Method == 0) {
                         dataIO.UnpWrite(const_cast<uint8_t*>(m_mappedFile.data()) + arc.Tell(), arc.FileHead.UnpSize);
                     } else {
-                        unpack.Init(arc.FileHead.WinSize, arc.Solid);
+                        unpack.Init(arc.FileHead.WinSize, arc.FileHead.Solid);
                         unpack.SetDestSize(arc.FileHead.UnpSize);
-                        unpack.DoUnpack(arc.FileHead.UnpVer, arc.Solid);
+                        unpack.DoUnpack(arc.FileHead.UnpVer, arc.FileHead.Solid);
                     }
                     ss.currentIndex = index;
                     arc.SeekToNext(); 
-                    return dataIO.GetWrittenSize() > 0;
+                    size_t written = (size_t)dataIO.GetWrittenSize();
+                    QV_LOG("ExtractEntry_End", TraceLoggingUInt64(index, "Index"), TraceLoggingBoolean(written > 0, "Success"), TraceLoggingUInt64(written, "Written"));
+                    return written;
                 } else {
                     // Fast Skip intermediate
                     dataIO.SetMemoryDest(nullptr, 0); 
                     dataIO.SetMemoryPos((size_t)arc.Tell());
-                    dataIO.SetPackedSizeToRead(arc.FileHead.PackSize);
+                    dataIO.SetPackedSizeToRead(m_mappedFile.size()); // [v6.0.8.2] No hard limit to allow look-ahead
 
                     if (arc.FileHead.Method == 0) {
                         arc.Seek(arc.FileHead.PackSize, SEEK_CUR);
                     } else {
-                        unpack.Init(arc.FileHead.WinSize, arc.Solid); // [Fix] Initialize Window before unpacking skipped block
+                        unpack.Init(arc.FileHead.WinSize, arc.FileHead.Solid);
                         unpack.SetDestSize(arc.FileHead.UnpSize);
-                        unpack.DoUnpack(arc.FileHead.UnpVer, arc.Solid);
+                        unpack.DoUnpack(arc.FileHead.UnpVer, arc.FileHead.Solid);
                     }
                     nextToRead++;
                     ss.currentIndex++; 
@@ -394,12 +440,12 @@ namespace QuickView {
             arc.SeekToNext();
         }
 
-        return false;
+        return 0;
     }
 
     void RarArchive::PurgeState() const {
-        std::lock_guard<std::mutex> lock(m_solidMutex);
-        m_threadStates.clear();
+        ::std::lock_guard<::std::mutex> lock(m_solidMutex);
+        m_solidState.reset();
     }
 
 

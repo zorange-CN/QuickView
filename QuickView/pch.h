@@ -11,7 +11,9 @@
 #include <cstdint>
 #include <cstddef>
 #include <cwchar>
+#include <string>
 #include <string_view>
+#include <vector>
 #include <type_traits>
 #include <utility>
 #include <concepts>
@@ -30,7 +32,9 @@
 
 // COM smart pointers
 #include <wrl/client.h>
+#ifndef ComPtr
 using Microsoft::WRL::ComPtr;
+#endif
 
 // Pragmas for linking
 #pragma comment(lib, "d2d1.lib")

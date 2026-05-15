@@ -1,15 +1,14 @@
 #pragma once
-#include "MappedFile.h"
-#include <vector>
 #include <string>
+#include <vector>
 #include <string_view>
 #include <cstdint>
-#include <zlib.h>
 #include <mutex>
-#include <chrono>
 #include <memory>
 #include <unordered_map>
 #include <thread>
+#include <zlib.h>
+#include "MappedFile.h"
 
 
 class Archive;
@@ -33,13 +32,16 @@ namespace QuickView {
 
     class IArchive {
     public:
+        // [v6.0.8] Efficient Archive Handle Reuse
+        static ::std::shared_ptr<IArchive> OpenCached(const ::std::wstring& path);
+
         virtual ~IArchive() = default;
         virtual bool IsValid() const = 0;
         virtual size_t GetEntryCount() const = 0;
         virtual const ArchiveEntry& GetEntry(size_t index) const = 0;
-        virtual std::wstring GetEntryName(size_t index) const = 0;
-        virtual std::string_view GetEntryNameView(size_t index) const = 0;
-        virtual bool ExtractEntry(size_t index, uint8_t* externalBuffer, size_t bufferSize) const = 0;
+        virtual ::std::wstring GetEntryName(size_t index) const = 0;
+        virtual ::std::string_view GetEntryNameView(size_t index) const = 0;
+        virtual size_t ExtractEntry(size_t index, uint8_t* externalBuffer, size_t bufferSize) const = 0;
         virtual void PurgeState() const = 0;
     };
 
@@ -64,7 +66,7 @@ namespace QuickView {
 
         // Extract a specific entry directly into the provided external buffer.
         // Requires externalBuffer to be pre-allocated with a size >= entry.uncompSize
-        bool ExtractEntry(size_t index, uint8_t* externalBuffer, size_t bufferSize) const override;
+        size_t ExtractEntry(size_t index, uint8_t* externalBuffer, size_t bufferSize) const override;
 
         void PurgeState() const override {}
 
@@ -87,7 +89,7 @@ namespace QuickView {
         const ArchiveEntry& GetEntry(size_t index) const override { return m_entries[index]; }
         std::wstring GetEntryName(size_t index) const override;
         std::string_view GetEntryNameView(size_t index) const override;
-        bool ExtractEntry(size_t index, uint8_t* externalBuffer, size_t bufferSize) const override;
+        size_t ExtractEntry(size_t index, uint8_t* externalBuffer, size_t bufferSize) const override;
         void PurgeState() const override;
 
     private:
@@ -111,8 +113,9 @@ namespace QuickView {
         std::vector<ArchiveEntry> m_entries;
         std::vector<char> m_namesBuffer;
         
-        mutable std::mutex m_solidMutex;
-        mutable std::unordered_map<std::thread::id, std::unique_ptr<SolidState>> m_threadStates;
+        mutable ::std::mutex m_solidMutex;
+        mutable ::std::unique_ptr<SolidState> m_solidState;
+        ::std::wstring m_archivePath; // Store path for comparison
     };
 
 }

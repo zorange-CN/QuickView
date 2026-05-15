@@ -518,6 +518,9 @@ bool UIRenderer::RenderAll(HWND hwnd, float deltaTime) {
     
     EnsureTextFormats();
     
+    // [v6.0.8.2] Animation Updates (Must run even if layers aren't dirty yet to drive animation flags)
+    g_gallery.Update(deltaTime);
+
     // Note: Dirty flags are now managed by RequestRepaint() system.
     // DO NOT add auto-dirty checks here - they can block initial rendering.
     // RequestRepaint() should be called when UI state changes.
@@ -755,8 +758,6 @@ void UIRenderer::RenderDynamicLayer(ID2D1DeviceContext* dc, HWND hwnd) {
 // ============================================================================
 
 void UIRenderer::RenderGalleryLayer(ID2D1DeviceContext* dc, float deltaTime) {
-    g_gallery.Update(deltaTime);
-    
     if (g_gallery.IsVisible()) {
         D2D1_SIZE_F rtSize = D2D1::SizeF((float)m_width, (float)m_height);
         g_gallery.Render(dc, rtSize);
