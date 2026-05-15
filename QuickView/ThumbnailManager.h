@@ -27,6 +27,7 @@ public:
         int origHeight;
         uint64_t fileSize;
         bool isValid;
+        bool isFailed;
     };
     ImageInfo GetImageInfo(size_t imageId);
 
@@ -82,9 +83,7 @@ private:
     std::unordered_map<size_t, std::list<size_t>::iterator> m_lruMap;
     size_t m_currentCacheSize = 0;
     
-    // Constants
-    const size_t MAX_CACHE_SIZE = 200 * 1024 * 1024; // 200MB
-    const size_t MAX_CACHE_COUNT = 1000;
+    // Constants moved below for organizational clarity
 
     // --- Worker Thread ---
     // --- Worker Threads ---
@@ -128,6 +127,9 @@ private:
     void WorkerLoopSlow();
     
     void EvictLRU();
-    void AddToLRU(size_t imageId, size_t size, size_t previousSize = 0);
+    void AddToLRU(size_t imageId, size_t size);
     void TouchLRU(size_t imageId);
+
+    const size_t MAX_CACHE_SIZE = 512 * 1024 * 1024; // [v6.0.6] Increased to 512MB for 4K/8K assets
+    const size_t MAX_CACHE_COUNT = 2000;
 };

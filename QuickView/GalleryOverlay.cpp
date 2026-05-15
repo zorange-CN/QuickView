@@ -267,8 +267,12 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size) {
         
         std::wstring desc = filename + L"\n";
         if (info.isValid) {
-            desc += std::to_wstring(info.origWidth) + L" x " + std::to_wstring(info.origHeight) + L"\n";
-            desc += std::to_wstring(info.fileSize / 1024) + L" KB";
+            if (info.isFailed) {
+                desc += L"Failed to load";
+            } else {
+                desc += std::to_wstring(info.origWidth) + L" x " + std::to_wstring(info.origHeight) + L"\n";
+                desc += std::to_wstring(info.fileSize / 1024) + L" KB";
+            }
         } else {
             desc += L"Loading...";
         }

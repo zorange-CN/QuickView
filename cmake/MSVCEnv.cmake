@@ -25,18 +25,35 @@ if(WIN32)
 
     # 3. Run vcvarsall.bat
     set(vcvarsall_bat "${vs_install_path}/VC/Auxiliary/Build/vcvarsall.bat")
-    execute_process(
-        COMMAND cmd /c "\"${vcvarsall_bat}\" x64 && set"
-        OUTPUT_VARIABLE vcvars_output
-        ERROR_QUIET
-    )
+    if(NOT EXISTS "${vcvarsall_bat}")
+        message(STATUS "[MSVCEnv] vcvarsall.bat not found at ${vcvarsall_bat}")
+        return()
+    endif()
 
-    # 4. Extract and apply INCLUDE paths for the compiler
-    if(vcvars_output MATCHES "INCLUDE=([^\\r\\n]+)")
-        set(val "${CMAKE_MATCH_1}")
-        string(REPLACE ";" "\n" val_list "${val}")
-        string(REPLACE "\\" "/" val_list "${val_list}")
-        string(REPLACE "\n" ";" val_list "${val_list}")
+    file(TO_NATIVE_PATH "${vcvarsall_bat}" vcvarsall_bat_native)
+
+    execute_process(
+        COMMAND cmd /c ${vcvarsall_bat_native} x64 && set
+        OUTPUT_VARIABLE vcvars_output
+        RESULT_VARIABLE vcvars_result
+        ERROR_VARIABLE vcvars_error
+    )
+    
+    # 4. Extract paths from the output using direct string slicing (regex + semicolons = pain)
+    set(vcvars_output_str "${vcvars_output}")
+    
+    # Extract INCLUDE
+    string(FIND "${vcvars_output_str}" "INCLUDE=" pos)
+    if(NOT pos EQUAL -1)
+        math(EXPR start "${pos} + 8")
+        string(SUBSTRING "${vcvars_output_str}" ${start} -1 tail)
+        string(FIND "${tail}" "\r\n" eol)
+        if(eol EQUAL -1)
+            string(FIND "${tail}" "\n" eol)
+        endif()
+        string(SUBSTRING "${tail}" 0 ${eol} val)
+        file(TO_CMAKE_PATH "${val}" val_list)
+        set(QUICKVIEW_MSVC_INC_PATHS "${val_list}" CACHE INTERNAL "MSVC Include Paths")
         
         foreach(path ${val_list})
             if(EXISTS "${path}")
@@ -44,11 +61,26 @@ if(WIN32)
             endif()
         endforeach()
         set(ENV{INCLUDE} "${val}")
-        message(STATUS "[MSVCEnv] Injected INCLUDE paths from: ${vs_install_path}")
     endif()
-    
-    # Still set LIB env for standard linker probes that might occur
-    if(vcvars_output MATCHES "LIB=([^\\r\\n]+)")
-        set(ENV{LIB} "${CMAKE_MATCH_1}")
+
+    # Extract LIB
+    string(FIND "${vcvars_output_str}" "LIB=" pos)
+    if(NOT pos EQUAL -1)
+        math(EXPR start "${pos} + 4")
+        string(SUBSTRING "${vcvars_output_str}" ${start} -1 tail)
+        string(FIND "${tail}" "\r\n" eol)
+        if(eol EQUAL -1)
+            string(FIND "${tail}" "\n" eol)
+        endif()
+        string(SUBSTRING "${tail}" 0 ${eol} val)
+        file(TO_CMAKE_PATH "${val}" val_list)
+        set(QUICKVIEW_MSVC_LIB_PATHS "${val_list}" CACHE INTERNAL "MSVC Lib Paths")
+        set(ENV{LIB} "${val}")
+    endif()
+
+    if(QUICKVIEW_MSVC_INC_PATHS)
+        message(STATUS "[MSVCEnv] Injected MSVC paths")
+    else()
+        message(WARNING "[MSVCEnv] Failed to extract MSVC paths from vcvarsall output")
     endif()
 endif()

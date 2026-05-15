@@ -8,6 +8,8 @@
 #include <mutex>
 #include <chrono>
 #include <memory>
+#include <unordered_map>
+#include <thread>
 
 
 class Archive;
@@ -110,7 +112,7 @@ namespace QuickView {
         std::vector<char> m_namesBuffer;
         
         mutable std::mutex m_solidMutex;
-        mutable std::unique_ptr<SolidState> m_solidState;
+        mutable std::unordered_map<std::thread::id, std::unique_ptr<SolidState>> m_threadStates;
     };
 
 }
