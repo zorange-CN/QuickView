@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "ArchiveVFS.h"
 #include "QuickViewETW.h"
-#include "../third_party/unrar_core/rar.hpp"
+#include "../third_party/unrar-mini/rar.hpp"
 
 static constexpr const char* CURRENT_MODULE = "ArchiveVFS";
 

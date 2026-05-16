@@ -11,3 +11,6 @@
 	path = third_party/wuffs
 	url = https://github.com/google/wuffs.git
 
+[submodule "third_party/unrar-mini"]
+	path = third_party/unrar-mini
+	url = https://github.com/justnullname/unrar-mini.git

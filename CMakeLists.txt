@@ -83,7 +83,7 @@ set(QUICKVIEW_SOURCES
 # ============================================================================
 # Executable Target
 # ============================================================================
-add_subdirectory(third_party/unrar_core)
+add_subdirectory(third_party/unrar-mini)
 
 add_executable(QuickView WIN32 ${QUICKVIEW_SOURCES})
 
@@ -97,7 +97,7 @@ endif()
 set_target_properties(QuickView PROPERTIES LINK_FLAGS "${QUICKVIEW_LINK_FLAGS}")
 
 # Include paths
-target_include_directories(QuickView PRIVATE QuickView third_party/yyjson third_party/unrar_core)
+target_include_directories(QuickView PRIVATE QuickView third_party/yyjson third_party/unrar-mini)
 
 # Precompiled Headers (PCH) - CXX only to avoid conflict with C source (yyjson.c)
 target_precompile_headers(QuickView PRIVATE $<$<COMPILE_LANGUAGE:CXX>:pch.h>)
@@ -272,7 +272,7 @@ target_link_libraries(QuickView PRIVATE
     libraw::raw
     yuv
     ZLIB::ZLIB
-    unrar_core
+    unrar-mini
     # Windows system libraries
     dwrite.lib
     windowscodecs.lib
