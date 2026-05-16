@@ -129,6 +129,8 @@ namespace AppStrings {
     extern const wchar_t* Toolbar_Tooltip_OverlayZoomOut;
     extern const wchar_t* Toolbar_Tooltip_NormalMode;
     extern const wchar_t* Toolbar_Tooltip_CompareMode;
+    extern const wchar_t* Toolbar_Tooltip_SinglePage;
+    extern const wchar_t* Toolbar_Tooltip_DualPage;
     extern const wchar_t* Toolbar_Tooltip_CompareOpen;
     extern const wchar_t* Toolbar_Tooltip_CompareSwap;
     extern const wchar_t* Toolbar_Tooltip_CompareLayout;

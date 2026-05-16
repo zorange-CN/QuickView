@@ -157,6 +157,8 @@ const wchar_t *Toolbar_Tooltip_Pin = nullptr;
 const wchar_t *Toolbar_Tooltip_Unpin = nullptr;
 const wchar_t *Toolbar_Tooltip_NormalMode = nullptr;
 const wchar_t *Toolbar_Tooltip_CompareMode = nullptr;
+const wchar_t *Toolbar_Tooltip_SinglePage = nullptr;
+const wchar_t *Toolbar_Tooltip_DualPage = nullptr;
 const wchar_t *Toolbar_Tooltip_CompareOpen = nullptr;
 const wchar_t *Toolbar_Tooltip_CompareSwap = nullptr;
 const wchar_t *Toolbar_Tooltip_CompareLayout = nullptr;
@@ -597,6 +599,8 @@ struct EN {
   static constexpr const wchar_t *Toolbar_Tooltip_Unpin = L"Unpin Toolbar";
   static constexpr const wchar_t *Toolbar_Tooltip_NormalMode = L"Normal Mode";
   static constexpr const wchar_t *Toolbar_Tooltip_CompareMode = L"Compare Mode";
+  static constexpr const wchar_t *Toolbar_Tooltip_SinglePage = L"Single Page Mode";
+  static constexpr const wchar_t *Toolbar_Tooltip_DualPage = L"Dual Page Mode";
   static constexpr const wchar_t *Toolbar_Tooltip_CompareOpen =
       L"Open New Image in Selection";
   static constexpr const wchar_t *Toolbar_Tooltip_CompareSwap =
@@ -1529,6 +1533,8 @@ struct CN {
   static constexpr const wchar_t *Toolbar_Tooltip_GamutWarning = L"显示色彩溢出高亮区域";
   static constexpr const wchar_t *Toolbar_Tooltip_NormalMode = L"普通模式";
   static constexpr const wchar_t *Toolbar_Tooltip_CompareMode = L"对比模式";
+  static constexpr const wchar_t *Toolbar_Tooltip_SinglePage = L"单页模式";
+  static constexpr const wchar_t *Toolbar_Tooltip_DualPage = L"双页模式";
   static constexpr const wchar_t *Toolbar_Tooltip_CompareOpen =
       L"在选区打开新图";
   static constexpr const wchar_t *Toolbar_Tooltip_CompareSwap = L"交换左右";
@@ -1771,6 +1777,8 @@ struct TW {
   static constexpr const wchar_t *Toolbar_Tooltip_GamutWarning = L"顯示色彩溢出高亮區域";
   static constexpr const wchar_t *Toolbar_Tooltip_NormalMode = L"普通模式";
   static constexpr const wchar_t *Toolbar_Tooltip_CompareMode = L"對比模式";
+  static constexpr const wchar_t *Toolbar_Tooltip_SinglePage = L"單頁模式";
+  static constexpr const wchar_t *Toolbar_Tooltip_DualPage = L"雙頁模式";
   static constexpr const wchar_t *Toolbar_Tooltip_CompareOpen =
       L"在選區開啟新圖";
   static constexpr const wchar_t *Toolbar_Tooltip_CompareSwap = L"交換左右";
@@ -2329,6 +2337,8 @@ struct JA {
   static constexpr const wchar_t *Toolbar_Tooltip_NormalMode =
       L"ノーマルモード";
   static constexpr const wchar_t *Toolbar_Tooltip_CompareMode = L"比較モード";
+  static constexpr const wchar_t *Toolbar_Tooltip_SinglePage = L"1ページ表示";
+  static constexpr const wchar_t *Toolbar_Tooltip_DualPage = L"2ページ表示";
   static constexpr const wchar_t *Toolbar_Tooltip_CompareOpen =
       L"選択範囲に新しい画像を開く";
   static constexpr const wchar_t *Toolbar_Tooltip_CompareSwap =
@@ -2922,6 +2932,8 @@ struct RU {
   static constexpr const wchar_t *Toolbar_Tooltip_Unpin = L"Открепить панель";
   static constexpr const wchar_t *Toolbar_Tooltip_NormalMode = L"Обычный режим";
   static constexpr const wchar_t *Toolbar_Tooltip_CompareMode = L"Режим сравнения";
+  static constexpr const wchar_t *Toolbar_Tooltip_SinglePage = L"Одностраничный режим";
+  static constexpr const wchar_t *Toolbar_Tooltip_DualPage = L"Двухстраничный режим";
   static constexpr const wchar_t *Toolbar_Tooltip_CompareOpen =
       L"Открыть новое изображение в выделении";
   static constexpr const wchar_t *Toolbar_Tooltip_CompareSwap =
@@ -3537,6 +3549,8 @@ struct DE {
       L"Normaler Modus";
   static constexpr const wchar_t *Toolbar_Tooltip_CompareMode =
       L"Vergleichsmodus";
+  static constexpr const wchar_t *Toolbar_Tooltip_SinglePage = L"Einzelseiten-Modus";
+  static constexpr const wchar_t *Toolbar_Tooltip_DualPage = L"Doppelseiten-Modus";
   static constexpr const wchar_t *Toolbar_Tooltip_CompareOpen =
       L"Neues Bild in Auswahl öffnen";
   static constexpr const wchar_t *Toolbar_Tooltip_CompareSwap =
@@ -4145,6 +4159,8 @@ struct ES {
   static constexpr const wchar_t *Toolbar_Tooltip_NormalMode = L"Modo normal";
   static constexpr const wchar_t *Toolbar_Tooltip_CompareMode =
       L"Modo comparación";
+  static constexpr const wchar_t *Toolbar_Tooltip_SinglePage = L"Modo de página única";
+  static constexpr const wchar_t *Toolbar_Tooltip_DualPage = L"Modo de doble página";
   static constexpr const wchar_t *Toolbar_Tooltip_CompareOpen =
       L"Abrir nueva imagen en la selección";
   static constexpr const wchar_t *Toolbar_Tooltip_CompareSwap =
@@ -4800,6 +4816,8 @@ template <typename T> void ApplyT() {
   Toolbar_Tooltip_GamutWarning = T::Toolbar_Tooltip_GamutWarning;
   Toolbar_Tooltip_NormalMode = T::Toolbar_Tooltip_NormalMode;
   Toolbar_Tooltip_CompareMode = T::Toolbar_Tooltip_CompareMode;
+  Toolbar_Tooltip_SinglePage = T::Toolbar_Tooltip_SinglePage;
+  Toolbar_Tooltip_DualPage = T::Toolbar_Tooltip_DualPage;
   Toolbar_Tooltip_CompareOpen = T::Toolbar_Tooltip_CompareOpen;
   Toolbar_Tooltip_CompareSwap = T::Toolbar_Tooltip_CompareSwap;
   Toolbar_Tooltip_CompareLayout = T::Toolbar_Tooltip_CompareLayout;
@@ -5236,6 +5254,8 @@ struct FR {
   static constexpr const wchar_t *Toolbar_Tooltip_Unpin = L"Unpin Toolbar";
   static constexpr const wchar_t *Toolbar_Tooltip_NormalMode = L"Normal Mode";
   static constexpr const wchar_t *Toolbar_Tooltip_CompareMode = L"Compare Mode";
+  static constexpr const wchar_t *Toolbar_Tooltip_SinglePage = L"Mode page unique";
+  static constexpr const wchar_t *Toolbar_Tooltip_DualPage = L"Mode double page";
   static constexpr const wchar_t *Toolbar_Tooltip_CompareOpen =
       L"Open New Image in Selection";
   static constexpr const wchar_t *Toolbar_Tooltip_CompareSwap =

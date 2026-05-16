@@ -2289,13 +2289,16 @@ static void EnterCompareMode(HWND hwnd) {
         g_osd.Show(hwnd, L"Compare mode is not available for Titan images yet.", true);
         return;
     }
+    g_compare.mode = ViewMode::CompareSideBySide;
+    g_compare.splitRatio = ClampCompareRatio(g_compare.splitRatio);
+
 
     if (g_toolbar.IsComicMode() && g_navigator.Count() > 0) {
         int currentIndex = g_navigator.Index();
 
-        // Force right to be even
-        int rightIndex = (currentIndex + 1) & ~1;
-        int leftIndex = rightIndex - 1;
+        // Standard (0,1), (2,3) pairing
+        int leftIndex = currentIndex & ~1;
+        int rightIndex = leftIndex + 1;
 
         std::wstring leftPath;
         if (leftIndex >= 0 && leftIndex < (int)g_navigator.Count()) {
@@ -2307,33 +2310,49 @@ static void EnterCompareMode(HWND hwnd) {
             rightPath = g_navigator.GetFile(rightIndex);
         }
 
-        if (rightPath.empty()) {
-            rightPath = leftPath;
-            leftPath = L"";
-            g_navigator.SetIndex(leftIndex);
-        } else {
+        if (g_imagePath == leftPath && g_imageResource.bitmap) {
+            // Optimization: Current image is the left page, capture it immediately
+            CaptureCurrentImageAsCompareLeft();
             g_navigator.SetIndex(rightIndex);
+            if (!rightPath.empty()) {
+                LoadImageAsync(hwnd, rightPath, false);
+            }
         }
+        else {
+            // Standard path: Load left page asynchronously
+            if (rightPath.empty()) {
+                rightPath = leftPath;
+                leftPath = L"";
+                g_navigator.SetIndex(leftIndex);
+            }
+            else {
+                g_navigator.SetIndex(rightIndex);
+            }
 
-        if (!leftPath.empty()) {
-            LoadImageIntoCompareLeftSlot(hwnd, leftPath, [hwnd, rightPath](bool success){
-                if (success) {
-                    MarkCompareDirty();
-                }
+            if (!leftPath.empty()) {
+                LoadImageIntoCompareLeftSlot(hwnd, leftPath, [hwnd, rightPath](bool success) {
+                    if (success) {
+                        MarkCompareDirty();
+                    }
+                    if (!rightPath.empty() && rightPath != g_imagePath) {
+                        LoadImageAsync(hwnd, rightPath, false);
+                    }
+                });
+            }
+            else {
+                g_compare.left.Reset();
+                MarkCompareDirty();
                 if (!rightPath.empty() && rightPath != g_imagePath) {
                     LoadImageAsync(hwnd, rightPath, false);
                 }
-            });
-        } else {
-            g_compare.left.Reset();
-            MarkCompareDirty();
-            if (!rightPath.empty() && rightPath != g_imagePath) {
-                LoadImageAsync(hwnd, rightPath, false);
             }
         }
     } else {
         CaptureCurrentImageAsCompareLeft();
-        if (!g_compare.left.valid) return;
+        if (!g_compare.left.valid) {
+            g_compare.mode = ViewMode::Single;
+            return;
+        }
     }
 
     // [v6.8] Special Route: If soft-proofing is enabled, automatically compare Before vs After.
@@ -2356,8 +2375,6 @@ static void EnterCompareMode(HWND hwnd) {
         g_currentMetadata.ExifOrientation = 1;
     }
 
-    g_compare.mode = ViewMode::CompareSideBySide;
-    g_compare.splitRatio = ClampCompareRatio(g_compare.splitRatio);
     g_compare.syncZoom = true;
     g_compare.syncPan = true;
     g_compare.draggingDivider = false;
@@ -12772,13 +12789,10 @@ void Navigate(HWND hwnd, int direction) {
             }
         }
 
-        int step = (direction > 0) ? 2 : -2;
-        int nextRightIndex = currentIndex + step;
-
-        // Force nextRightIndex to be EVEN
-        nextRightIndex = (nextRightIndex + 1) & ~1;
-
-        int nextLeftIndex = nextRightIndex - 1;
+        int baseIndex = currentIndex & ~1;
+        int nextBaseIndex = baseIndex + direction * 2;
+        int nextLeftIndex = nextBaseIndex;
+        int nextRightIndex = nextBaseIndex + 1;
 
         std::wstring rightPath;
         if (nextRightIndex >= 0 && nextRightIndex < (int)g_navigator.Count()) {

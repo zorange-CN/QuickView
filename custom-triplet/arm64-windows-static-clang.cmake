@@ -2,11 +2,15 @@ set(VCPKG_TARGET_ARCHITECTURE arm64)
 set(VCPKG_CRT_LINKAGE static)
 set(VCPKG_LIBRARY_LINKAGE static)
 
-# Toolchain
-set(VCPKG_C_COMPILER clang-cl)
-set(VCPKG_CXX_COMPILER clang-cl)
-set(VCPKG_LINKER lld-link)
-set(VCPKG_AR llvm-lib)
+# Adaptive Toolchain Discovery
+include("${CMAKE_CURRENT_LIST_DIR}/../cmake/AdaptiveToolchain.cmake")
+adaptive_inject_env()
+
+# Toolchain paths
+set(VCPKG_C_COMPILER "${ADAPTIVE_CLANG_CL}")
+set(VCPKG_CXX_COMPILER "${ADAPTIVE_CLANG_CL}")
+set(VCPKG_LINKER "${ADAPTIVE_LLD_LINK}")
+set(VCPKG_AR "${ADAPTIVE_LLVM_LIB}")
 
 # Triple for cross-compilation
 set(VCPKG_C_FLAGS "--target=arm64-pc-windows-msvc /DWIN32 /D_WINDOWS /W3 /utf-8 /Gw")
