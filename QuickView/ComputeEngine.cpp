@@ -42,7 +42,6 @@ void CSGenMips(uint3 id : SV_DispatchThreadID)
     DstMip[id.xy] = (c0 + c1 + c2 + c3) * 0.25;
 }
 )";
-
 static const char* HLSL_ToneMapHdrToSdr = R"(
 Texture2D<float4> SrcTex : register(t0);
 RWTexture2D<unorm float4> DstTex : register(u0);
@@ -53,177 +52,131 @@ cbuffer ToneMapParams : register(b0)
     float DisplayPeakScRgb;
     float PaperWhiteScRgb;
     float Exposure;
-
     float ExposureGain;
     uint  Mode;
     float SplineSrcPivot;
     float SplineDstPivot;
-
     float SplinePa;
     float SplinePb;
     float SplineQa;
     float SplineQb;
-
     float SplineQc;
     uint  IsHdrOutput;
     float RealHardwarePeakScRgb;
     uint  TransferFunction;
-
-    float4x4 ColorMatrix;
+    float DesatThreshold;
+    float DesatStrength;
+    float2 _pad;
+    row_major float4x4 ColorMatrix;
 };
 
-// HLG EOTF inverse (HLG to Linear)
-float3 HLGToLinear(float3 v)
-{
+float3 HLGToLinear(float3 v) {
     float3 e;
     e.r = v.r <= 0.5 ? (v.r * v.r / 3.0) : (exp((v.r - 0.17883277) / 0.28466892) + 0.02372241);
     e.g = v.g <= 0.5 ? (v.g * v.g / 3.0) : (exp((v.g - 0.17883277) / 0.28466892) + 0.02372241);
     e.b = v.b <= 0.5 ? (v.b * v.b / 3.0) : (exp((v.b - 0.17883277) / 0.28466892) + 0.02372241);
     float L_S = 0.2627 * e.r + 0.6780 * e.g + 0.0593 * e.b;
-    float gamma = 1.2;
-    float3 L_D = e * pow(max(L_S, 0.0), gamma - 1.0);
-    return L_D * 12.5;
+    return e * pow(max(L_S, 0.0), 1.2 - 1.0) * 12.5;
 }
 
-float LinearToPQ(float L)
-{
+float LinearToPQ(float L) {
     float L_norm = max(0.0, L) / 125.0;
     float L_pow = pow(L_norm, 2610.0 / 16384.0);
     return pow((0.8359375 + 18.8515625 * L_pow) / (1.0 + 18.6875 * L_pow), (2523.0 / 4096.0) * 128.0);
 }
 
-float PQToLinear(float V)
-{
+float PQToLinear(float V) {
     float V_pow = pow(max(0.0, V), 1.0 / ((2523.0 / 4096.0) * 128.0));
     float L_norm = pow(max(0.0, V_pow - 0.8359375) / (18.8515625 - 18.6875 * V_pow), 1.0 / (2610.0 / 16384.0));
     return L_norm * 125.0;
 }
 
-
-float3 LinearToSrgb(float3 value)
-{
-    float3 cutoff = step(value, float3(0.0031308, 0.0031308, 0.0031308));
-    float3 low = value * 12.92;
-    float3 high = 1.055 * pow(abs(value), 1.0 / 2.4) - 0.055;
-    return lerp(high, low, cutoff);
+float3 SrgbToLinear(float3 c) {
+    return (c <= 0.04045f) ? (c / 12.92f) : pow((c + 0.055f) / 1.055f, 2.4f);
 }
 
-float3 ToneMapAces(float3 value)
-{
-    const float a = 2.51;
-    const float b = 0.03;
-    const float c = 2.43;
-    const float d = 0.59;
-    const float e = 0.14;
-    return saturate((value * (a * value + b)) / (value * (c * value + d) + e));
+float3 LinearToSrgb(float3 c) {
+    c = max(c, 0.0);
+    return (c <= 0.0031308f) ? (c * 12.92f) : (1.055f * pow(c, 1.0f / 2.4f) - 0.055f);
 }
 
-// Reinhard Extended: content-peak-aware perceptual tone mapping.
-// Maps [0, Lwhite] → [0, ~1.0] with smooth highlight roll-off.
-// Mathematically guarantees L=Lwhite → output≈1.0, spreading the full
-// HDR range across the entire SDR output space.
-float3 ReinhardExtended(float3 color, float Lwhite)
-{
+float3 ToneMapSDR(float3 color, float displayPeak, float paperWhite, uint mode) {
     float L = max(color.r, max(color.g, color.b));
-    if (L <= 0.0) return (float3)0;
+    if (L <= 0.0) return color;
+    float targetL = L;
 
-    float LwhiteSq = Lwhite * Lwhite;
-    float mappedL = L * (1.0 + L / LwhiteSq) / (1.0 + L);
-    mappedL = min(mappedL, 1.0);
-
-    return color * (mappedL / L);
-}
-
-[numthreads(8, 8, 1)]
-void CSToneMap(uint3 id : SV_DispatchThreadID)
-{
-    uint width, height;
-    SrcTex.GetDimensions(width, height);
-    if (id.x >= width || id.y >= height) {
-        return;
-    }
-
-    float4 color = SrcTex[id.xy];
-    color.rgb = max(color.rgb, float3(0.0f, 0.0f, 0.0f));
-    color.a = saturate(color.a);
-
-    // EOTF Inverse
-    if (TransferFunction == 3) { // PQ
-        color.r = PQToLinear(color.r);
-        color.g = PQToLinear(color.g);
-        color.b = PQToLinear(color.b);
-    } else if (TransferFunction == 4) { // HLG
-        color.rgb = HLGToLinear(color.rgb);
-    } else if (TransferFunction == 1) { // SRGB
-        // Approximate sRGB to linear
-        color.rgb = pow(color.rgb, float3(2.2f, 2.2f, 2.2f));
-    }
-
-    // Color Matrix (e.g. Rec.2020 to ScRGB) — row-major C++ fill, so vector * matrix
-    color.rgb = mul(color.rgb, (float3x3)ColorMatrix);
-
-    float paperWhite = max(PaperWhiteScRgb, 1.0);
-    float displayPeak = max(DisplayPeakScRgb, paperWhite);
-
-    if (Mode == 0) {
-        // PQ-space spline tone mapping (libplacebo pl_tone_map_spline port)
-        // CB fields are PQ-encoded when Mode==0:
-        //   ContentPeakScRgb = input_max_pq, DisplayPeakScRgb = output_max_pq
-        //   SplineSrcPivot/DstPivot = PQ-space knee points
-        float3 exposed = color.rgb * Exposure * ExposureGain;
-        float L = max(exposed.r, max(exposed.g, exposed.b));
-        if (L <= 0.0f) {
-            DstTex[id.xy] = float4(0.0f, 0.0f, 0.0f, color.a);
-            return;
-        }
-
-        // Convert max-channel luminance to PQ for spline evaluation
+    if (mode == 0) { // Spline
         float L_pq = LinearToPQ(L);
-
         float x = L_pq - SplineSrcPivot;
         float targetL_pq;
         if (x > 0.0f) {
-            // Safety Clamping: Prevent cubic spline inversion beyond input_max_pq
             x = min(x, ContentPeakScRgb - SplineSrcPivot);
-            // Horner's Method: Optimized polynomial evaluation (FMA friendly)
             targetL_pq = ((SplineQa * x + SplineQb) * x + SplineQc) * x + SplineDstPivot;
         } else {
-            // Safety Clamping: Ensure lower bound stability
             x = max(x, -SplineSrcPivot);
             targetL_pq = (SplinePa * x + SplinePb) * x + SplineDstPivot;
         }
-        targetL_pq = clamp(targetL_pq, 0.0f, DisplayPeakScRgb);
-
-        // Convert spline output back to linear for ratio-based color mapping
-        float targetL = PQToLinear(targetL_pq);
-        float3 mapped = exposed * (targetL / max(1e-6f, L));
-
-        // Highlight desaturation (in linear, using output peak in linear)
-        float outPeakLinear = PQToLinear(DisplayPeakScRgb);
-        float desat = saturate((targetL - outPeakLinear * 0.7f) / (max(1e-6f, outPeakLinear * 0.3f)));
-        if (desat > 0.0f) {
-            float3 grayscale = float3(targetL, targetL, targetL);
-            mapped = lerp(mapped, grayscale, desat);
+        targetL = PQToLinear(clamp(targetL_pq, 0.0f, DisplayPeakScRgb));
+    } else if (mode == 2) { // Reinhard
+        float normL = L / paperWhite;
+        float normDisplayPeak = displayPeak / paperWhite;
+        float toe = pow(min(normL, 1.0f), 0.85f);
+        float compressedL = toe;
+        if (normL > 1.0f) {
+            float t = (normL - 1.0f) / (normDisplayPeak - 1.0f + 1e-6);
+            compressedL = 1.0f + (normDisplayPeak - 1.0f) * t / (1.0f + t);
         }
+        targetL = compressedL * paperWhite;
+    }
+    
+    float ratio = targetL / L;
+    float3 mapped = color * ratio;
 
-        // Normalize to SDR output [0, 1] and encode sRGB
-        float3 normalized = mapped / outPeakLinear;
-        float3 encoded = LinearToSrgb(normalized) * color.a;
-        DstTex[id.xy] = float4(encoded.r, encoded.g, encoded.b, color.a);
-    } else if (Mode == 1) {
-        float3 mapped = clamp(color.rgb / DisplayPeakScRgb, 0.0f, 1.0f);
-        float3 encoded = LinearToSrgb(mapped) * color.a;
-        DstTex[id.xy] = float4(encoded.r, encoded.g, encoded.b, color.a);
-    } else {
-        float3 exposed = color.rgb * Exposure * ExposureGain;
-        float Lwhite = DisplayPeakScRgb * Exposure * ExposureGain;
-        float3 mapped = ReinhardExtended(exposed, Lwhite);
-        float3 normalized = mapped;
-        float3 encoded = LinearToSrgb(normalized) * color.a;
-        DstTex[id.xy] = float4(encoded.r, encoded.g, encoded.b, color.a);
+    if (mode != 1 && ratio < DesatThreshold) {
+        float desat = pow((DesatThreshold - ratio) / DesatThreshold, 2.0) * DesatStrength;
+        float luma = dot(mapped, float3(0.2627, 0.6780, 0.0593));
+        mapped = lerp(mapped, (float3)luma, desat);
+    }
+    return mapped;
+}
+
+[numthreads(8, 8, 1)]
+void CSToneMap(uint3 id : SV_DispatchThreadID) {
+    uint width, height;
+    SrcTex.GetDimensions(width, height);
+    if (id.x >= width || id.y >= height) return;
+
+    float4 color = SrcTex[id.xy];
+    color.rgb = max(color.rgb, 0.0);
+
+    if (TransferFunction == 3) { // PQ
+        color.rgb = float3(PQToLinear(color.r), PQToLinear(color.g), PQToLinear(color.b));
+    } else if (TransferFunction == 4) { // HLG
+        color.rgb = HLGToLinear(color.rgb);
+    } else if (TransferFunction == 1) { // SRGB
+        color.rgb = SrgbToLinear(color.rgb);
     }
 
+    color.rgb *= Exposure * ExposureGain;
+    float luma = dot(color.rgb, float3(0.2627, 0.6780, 0.0593));
+    float displayPeak = max(DisplayPeakScRgb, 1.0);
+    float paperWhite = 1.25;
 
+    float3 toneMapped = color.rgb;
+    if (luma > 1e-6) {
+        toneMapped = ToneMapSDR(color.rgb, displayPeak, paperWhite, Mode);
+    }
+
+    float3 finalColor = mul((float3x3)ColorMatrix, toneMapped);
+    
+    float targetLuma = dot(finalColor, float3(0.2126, 0.7152, 0.0722));
+    float minC = min(min(finalColor.r, finalColor.g), finalColor.b);
+    if (minC < 0.0) {
+        float t = targetLuma / (targetLuma - minC + 1e-6);
+        finalColor = lerp((float3)targetLuma, finalColor, saturate(t));
+    }
+
+    DstTex[id.xy] = float4(LinearToSrgb(finalColor), color.a);
 }
 )";
 
@@ -237,158 +190,126 @@ cbuffer ToneMapParams : register(b0)
     float DisplayPeakScRgb;
     float PaperWhiteScRgb;
     float Exposure;
-
     float ExposureGain;
     uint  Mode;
     float SplineSrcPivot;
     float SplineDstPivot;
-
     float SplinePa;
     float SplinePb;
     float SplineQa;
     float SplineQb;
-
     float SplineQc;
     uint  IsHdrOutput;
     float RealHardwarePeakScRgb;
     uint  TransferFunction;
-
-    float4x4 ColorMatrix;
+    float DesatThreshold;
+    float DesatStrength;
+    float2 _pad;
+    row_major float4x4 ColorMatrix;
 };
 
-// HLG EOTF inverse (HLG to Linear)
-float3 HLGToLinear(float3 v)
-{
+float3 HLGToLinear(float3 v) {
     float3 e;
     e.r = v.r <= 0.5 ? (v.r * v.r / 3.0) : (exp((v.r - 0.17883277) / 0.28466892) + 0.02372241);
     e.g = v.g <= 0.5 ? (v.g * v.g / 3.0) : (exp((v.g - 0.17883277) / 0.28466892) + 0.02372241);
     e.b = v.b <= 0.5 ? (v.b * v.b / 3.0) : (exp((v.b - 0.17883277) / 0.28466892) + 0.02372241);
     float L_S = 0.2627 * e.r + 0.6780 * e.g + 0.0593 * e.b;
-    float gamma = 1.2;
-    float3 L_D = e * pow(max(L_S, 0.0), gamma - 1.0);
-    return L_D * 12.5;
+    return e * pow(max(L_S, 0.0), 1.2 - 1.0) * 12.5;
 }
 
-float LinearToPQ(float L)
-{
+float LinearToPQ(float L) {
     float L_norm = max(0.0, L) / 125.0;
     float L_pow = pow(L_norm, 2610.0 / 16384.0);
     return pow((0.8359375 + 18.8515625 * L_pow) / (1.0 + 18.6875 * L_pow), (2523.0 / 4096.0) * 128.0);
 }
 
-float PQToLinear(float V)
-{
+float PQToLinear(float V) {
     float V_pow = pow(max(0.0, V), 1.0 / ((2523.0 / 4096.0) * 128.0));
     float L_norm = pow(max(0.0, V_pow - 0.8359375) / (18.8515625 - 18.6875 * V_pow), 1.0 / (2610.0 / 16384.0));
     return L_norm * 125.0;
 }
 
+float3 SrgbToLinear(float3 c) {
+    return (c <= 0.04045f) ? (c / 12.92f) : pow((c + 0.055f) / 1.055f, 2.4f);
+}
 
-
-// Perceptual TMO: Brightens midtones and smoothly rolls off highlights
-float3 ToneMapHDR(float3 color, float displayPeak, float paperWhite, uint mode)
-{
+float3 ToneMapHDR(float3 color, float displayPeak, float paperWhite, uint mode) {
     float L = max(color.r, max(color.g, color.b));
     if (L <= 0.0) return color;
+    float targetL = L;
 
-    if (mode == 0) {
-        // PQ-space spline tone mapping (libplacebo port)
+    if (mode == 0) { // Spline
         float L_pq = LinearToPQ(L);
-
         float x = L_pq - SplineSrcPivot;
         float targetL_pq;
         if (x > 0.0f) {
-            // Safety Clamping: Prevent cubic spline inversion beyond input_max_pq
             x = min(x, ContentPeakScRgb - SplineSrcPivot);
-            // Horner's Method: Optimized polynomial evaluation (FMA friendly)
             targetL_pq = ((SplineQa * x + SplineQb) * x + SplineQc) * x + SplineDstPivot;
         } else {
-            // Safety Clamping: Ensure lower bound stability
             x = max(x, -SplineSrcPivot);
             targetL_pq = (SplinePa * x + SplinePb) * x + SplineDstPivot;
         }
-        targetL_pq = clamp(targetL_pq, 0.0f, DisplayPeakScRgb);
-
-        // Convert back to linear for ratio-based color mapping
-        float targetL = PQToLinear(targetL_pq);
-        float3 mapped = color.rgb * (targetL / L);
-
-        // Highlight desaturation (linear domain, output peak converted from PQ)
-        float outPeakLinear = PQToLinear(DisplayPeakScRgb);
-        float desat = saturate((targetL - outPeakLinear * 0.7f) / (max(1e-6f, outPeakLinear * 0.3f)));
-        if (desat > 0.0f) {
-            float3 grayscale = float3(targetL, targetL, targetL);
-            mapped = lerp(mapped, grayscale, desat);
+        targetL = PQToLinear(clamp(targetL_pq, 0.0f, DisplayPeakScRgb));
+    } else if (mode == 2) { // Reinhard
+        float normL = L / paperWhite;
+        float normDisplayPeak = displayPeak / paperWhite;
+        float toe = pow(min(normL, 1.0f), 0.85f);
+        float compressedL = toe;
+        if (normL > 1.0f) {
+            float t = (normL - 1.0f) / (normDisplayPeak - 1.0f + 1e-6);
+            compressedL = 1.0f + (normDisplayPeak - 1.0f) * t / (1.0f + t);
         }
-        return mapped;
+        targetL = compressedL * paperWhite;
     }
+    
+    float ratio = targetL / L;
+    float3 mapped = color * ratio;
 
-    if (mode == 1) {
-        if (L <= displayPeak) return color;
-        return color * (displayPeak / L);
+    if (mode != 1 && ratio < DesatThreshold) {
+        float desat = pow((DesatThreshold - ratio) / DesatThreshold, 2.0) * DesatStrength;
+        float luma = dot(mapped, float3(0.2627, 0.6780, 0.0593));
+        mapped = lerp(mapped, (float3)luma, desat);
     }
-
-    float normL = L / paperWhite;
-    float normDisplayPeak = displayPeak / paperWhite;
-    float toe = pow(min(normL, 1.0f), 0.85f);
-    float compressedL = toe;
-    if (normL > 1.0f) {
-        float overbright = normL - 1.0f;
-        float headroom = normDisplayPeak - 1.0f;
-        if (headroom > 0.0f) {
-            float t = overbright / headroom;
-            compressedL = 1.0f + headroom * t / (1.0f + t);
-        } else {
-            compressedL = 1.0f;
-        }
-    }
-    float targetL = compressedL * paperWhite;
-    targetL = min(targetL, displayPeak);
-    return color * (targetL / L);
+    return mapped;
 }
 
-
 [numthreads(8, 8, 1)]
-void CSToneMapHDR(uint3 id : SV_DispatchThreadID)
-{
+void CSToneMapHDR(uint3 id : SV_DispatchThreadID) {
     uint width, height;
     SrcTex.GetDimensions(width, height);
-    if (id.x >= width || id.y >= height) {
-        return;
-    }
+    if (id.x >= width || id.y >= height) return;
 
     float4 color = SrcTex[id.xy];
-    color.rgb = max(color.rgb, float3(0.0f, 0.0f, 0.0f));
-    color.a = saturate(color.a);
+    color.rgb = max(color.rgb, 0.0);
 
-    // EOTF Inverse
     if (TransferFunction == 3) { // PQ
-        color.r = PQToLinear(color.r);
-        color.g = PQToLinear(color.g);
-        color.b = PQToLinear(color.b);
+        color.rgb = float3(PQToLinear(color.r), PQToLinear(color.g), PQToLinear(color.b));
     } else if (TransferFunction == 4) { // HLG
         color.rgb = HLGToLinear(color.rgb);
     } else if (TransferFunction == 1) { // SRGB
-        color.rgb = pow(color.rgb, float3(2.2f, 2.2f, 2.2f));
-    }
-
-    // Color Matrix — row-major C++ fill, so vector * matrix
-    color.rgb = mul(color.rgb, (float3x3)ColorMatrix);
-
-    // When Mode==0 (spline), CB peak fields are in PQ space [0, 1] — no linear clamp.
-    // For other modes they are linear ScRGB, clamp to >= 1.0 (80 nits floor).
-    float contentPeak = (Mode == 0) ? ContentPeakScRgb : max(ContentPeakScRgb, 1.0f);
-    float displayPeak = (Mode == 0) ? DisplayPeakScRgb : max(DisplayPeakScRgb, 1.0f);
-
-    if (contentPeak <= displayPeak && Exposure >= 0.999f && Exposure <= 1.001f && ExposureGain >= 0.999f && ExposureGain <= 1.001f && TransferFunction == 2) {
-        DstTex[id.xy] = color;
-        return;
+        color.rgb = SrgbToLinear(color.rgb);
     }
 
     color.rgb *= Exposure * ExposureGain;
-    color.rgb = ToneMapHDR(color.rgb, displayPeak, PaperWhiteScRgb, Mode);
+    float luma = dot(color.rgb, float3(0.2627, 0.6780, 0.0593));
+    float displayPeak = max(DisplayPeakScRgb, 1.0);
+    float paperWhite = 1.25;
 
-    DstTex[id.xy] = color;
+    float3 toneMapped = color.rgb;
+    if (luma > 1e-6) {
+        toneMapped = ToneMapHDR(color.rgb, displayPeak, paperWhite, Mode);
+    }
+
+    float3 finalColor = mul((float3x3)ColorMatrix, toneMapped);
+    
+    float targetLuma = dot(finalColor, float3(0.2126, 0.7152, 0.0722));
+    float minC = min(min(finalColor.r, finalColor.g), finalColor.b);
+    if (minC < 0.0) {
+        float t = targetLuma / (targetLuma - minC + 1e-6);
+        finalColor = lerp((float3)targetLuma, finalColor, saturate(t));
+    }
+
+    DstTex[id.xy] = float4(finalColor, color.a);
 }
 )";
 
@@ -534,7 +455,10 @@ HRESULT ComputeEngine::CompileShaders() {
     HRESULT hr = D3DCompile(HLSL_FormatConvert, strlen(HLSL_FormatConvert), nullptr, nullptr, nullptr, "CSMain", "cs_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &blob, &errorBlob);
     if (FAILED(hr)) {
         if (errorBlob) {
-            QV_LOG("Shader_Error", TraceLoggingString((char*)errorBlob->GetBufferPointer(), "Message"));
+            const char* msg = (const char*)errorBlob->GetBufferPointer();
+            OutputDebugStringA("[ComputeEngine] Shader Error (FormatConvert):\n");
+            OutputDebugStringA(msg);
+            QV_LOG("Shader_Error", TraceLoggingString(msg, "Message"));
         }
         return hr;
     }
@@ -553,7 +477,10 @@ HRESULT ComputeEngine::CompileShaders() {
     hr = D3DCompile(HLSL_ToneMapHdrToSdr, strlen(HLSL_ToneMapHdrToSdr), nullptr, nullptr, nullptr, "CSToneMap", "cs_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &blob, &errorBlob);
     if (FAILED(hr)) {
         if (errorBlob) {
-            QV_LOG("Shader_Error", TraceLoggingString((char*)errorBlob->GetBufferPointer(), "Message"));
+            const char* msg = (const char*)errorBlob->GetBufferPointer();
+            OutputDebugStringA("[ComputeEngine] Shader Error (HdrToSdr):\n");
+            OutputDebugStringA(msg);
+            QV_LOG("Shader_Error", TraceLoggingString(msg, "Message"));
         }
         return hr;
     }
@@ -565,7 +492,10 @@ HRESULT ComputeEngine::CompileShaders() {
     hr = D3DCompile(HLSL_ToneMapHdrToHdr, strlen(HLSL_ToneMapHdrToHdr), nullptr, nullptr, nullptr, "CSToneMapHDR", "cs_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &blob, &errorBlob);
     if (FAILED(hr)) {
         if (errorBlob) {
-            QV_LOG("Shader_Error", TraceLoggingString((char*)errorBlob->GetBufferPointer(), "Message"));
+            const char* msg = (const char*)errorBlob->GetBufferPointer();
+            OutputDebugStringA("[ComputeEngine] Shader Error (HdrToHdr):\n");
+            OutputDebugStringA(msg);
+            QV_LOG("Shader_Error", TraceLoggingString(msg, "Message"));
         }
         return hr;
     }

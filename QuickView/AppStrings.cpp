@@ -291,6 +291,8 @@ const wchar_t *Context_SoftProofProfile = nullptr;
 const wchar_t *Context_SoftProofCustom = nullptr;
 const wchar_t *Settings_Value_ComingSoon = nullptr;
 const wchar_t *Settings_Label_ForceRaw = nullptr;
+const wchar_t *Settings_Label_Exposure = nullptr;
+const wchar_t *Settings_Tooltip_Exposure = nullptr;
 const wchar_t *Settings_Label_AddToOpenWith = nullptr;
 const wchar_t *Settings_Label_CustomEditor = nullptr;
 const wchar_t *Context_SelectEditor = nullptr;
@@ -907,6 +909,8 @@ struct EN {
   static constexpr const wchar_t *Context_SoftProofCustom = L"Custom...";
   static constexpr const wchar_t *Settings_Value_ComingSoon = L"Coming Soon";
   static constexpr const wchar_t *Settings_Label_ForceRaw = L"Force RAW Decode";
+  static constexpr const wchar_t *Settings_Label_Exposure = L"Exposure (Brightness)";
+  static constexpr const wchar_t *Settings_Tooltip_Exposure = L"Adjust image brightness (Exposure Compensation). Range: 0.18x to 10.0x.";
   static constexpr const wchar_t *Settings_Label_AddToOpenWith =
       L"Add to Open With";
   static constexpr const wchar_t *Settings_Label_CustomEditor = L"Custom Image Editor";
@@ -1328,6 +1332,8 @@ struct CN {
   static constexpr const wchar_t *Context_SoftProofCustom = L"自定义...";
   static constexpr const wchar_t *Settings_Value_ComingSoon = L"敬请期待";
   static constexpr const wchar_t *Settings_Label_ForceRaw = L"强制 RAW 解码";
+  static constexpr const wchar_t *Settings_Label_Exposure = L"曝光度 (亮度)";
+  static constexpr const wchar_t *Settings_Tooltip_Exposure = L"调节图像亮度 (曝光补偿)。范围: 0.18x 至 10.0x。";
   static constexpr const wchar_t *Settings_Label_AddToOpenWith =
       L"添加到打开方式";
   static constexpr const wchar_t *Settings_Label_CustomEditor = L"自定义图片编辑器";
@@ -1996,6 +2002,8 @@ struct TW {
   static constexpr const wchar_t *Context_SoftProofCustom = L"自訂...";
   static constexpr const wchar_t *Settings_Value_ComingSoon = L"敬請期待";
   static constexpr const wchar_t *Settings_Label_ForceRaw = L"強制 RAW 解碼";
+  static constexpr const wchar_t *Settings_Label_Exposure = L"曝光度 (亮度)";
+  static constexpr const wchar_t *Settings_Tooltip_Exposure = L"調節圖像亮度 (曝光補償)。範圍: 0.18x 至 10.0x。";
   static constexpr const wchar_t *Settings_Label_AddToOpenWith =
       L"新增至開啟方式";
   static constexpr const wchar_t *Settings_Label_CustomEditor = L"自訂圖片編輯器";
@@ -2577,6 +2585,8 @@ struct JA {
   static constexpr const wchar_t *Context_SoftProofCustom = L"カスタム...";
   static constexpr const wchar_t *Settings_Value_ComingSoon = L"近日公開";
   static constexpr const wchar_t *Settings_Label_ForceRaw = L"RAW強制デコード";
+  static constexpr const wchar_t *Settings_Label_Exposure = L"露出 (明るさ)";
+  static constexpr const wchar_t *Settings_Tooltip_Exposure = L"画像の明るさを調整します (露出補正)。範囲: 0.18x ~ 10.0x。";
   static constexpr const wchar_t *Settings_Label_AddToOpenWith =
       L"プログラムから開くに追加";
   static constexpr const wchar_t *Settings_Label_CustomEditor = L"カスタム画像エディタ";
@@ -3240,6 +3250,8 @@ struct RU {
   static constexpr const wchar_t *Context_SoftProofCustom = L"Свой...";
   static constexpr const wchar_t *Settings_Value_ComingSoon = L"Скоро";
   static constexpr const wchar_t *Settings_Label_ForceRaw = L"Принудительное декодирование RAW";
+  static constexpr const wchar_t *Settings_Label_Exposure = L"Экспозиция (Яркость)";
+  static constexpr const wchar_t *Settings_Tooltip_Exposure = L"Регулировка яркости изображения (компенсация экспозиции). Диапазон: 0.18x - 10.0x.";
   static constexpr const wchar_t *Settings_Label_AddToOpenWith =
       L"Добавить в 'Открыть с помощью'";
   static constexpr const wchar_t *Settings_Label_CustomEditor = L"Пользовательский редактор";
@@ -3843,6 +3855,8 @@ struct DE {
   static constexpr const wchar_t *Context_SoftProofCustom = L"Benutzerdefiniert...";
   static constexpr const wchar_t *Settings_Value_ComingSoon = L"Demnächst";
   static constexpr const wchar_t *Settings_Label_ForceRaw = L"RAW erzwingen";
+  static constexpr const wchar_t *Settings_Label_Exposure = L"Belichtung (Helligkeit)";
+  static constexpr const wchar_t *Settings_Tooltip_Exposure = L"Passt die Bildhelligkeit an (Belichtungskorrektur). Bereich: 0.18x bis 10.0x.";
   static constexpr const wchar_t *Settings_Label_AddToOpenWith =
       L"Zu Öffnen mit hinzufügen";
   static constexpr const wchar_t *Settings_Label_CustomEditor = L"Benutzerdefinierter Editor";
@@ -4322,37 +4336,37 @@ struct ES {
   static constexpr const wchar_t *Settings_Header_Transparency =
       L"Transparencia";
 
-  // Geek Glass Settings (Fallback to English)
+  // Geek Glass Settings
   static constexpr const wchar_t *Settings_Header_GeekGlass = L"Motor de cristal (GPU)";
   static constexpr const wchar_t *Settings_Label_EnableGeekGlass = L"Efecto de cristal";
-  static constexpr const wchar_t *Settings_Label_GlassUIAnimations = L"UI Animations";
+  static constexpr const wchar_t *Settings_Label_GlassUIAnimations = L"Animaciones de interfaz";
   static constexpr const wchar_t *Settings_Header_CoreMaterial = L"Material";
-  static constexpr const wchar_t *Settings_Label_BlurSigma = L"Glass Blur Sigma";
-  static constexpr const wchar_t *Settings_Status_GlassDisabled = L"Glass Disabled (System)";
-  static constexpr const wchar_t *Settings_Label_TintDensity = L"Tint Layer";
-  static constexpr const wchar_t *Settings_Tooltip_TintDensity = L"Overall color intensity of the glass frost effect.";
-  static constexpr const wchar_t *Settings_Label_SpecularOpacity = L"Reflex (Specular)";
-  static constexpr const wchar_t *Settings_Tooltip_SpecularOpacity = L"Brightness of the diagonal lighting reflections.";
-  static constexpr const wchar_t *Settings_Label_ShadowIntensity = L"Shadow Depth";
-  static constexpr const wchar_t *Settings_Tooltip_ShadowIntensity = L"Strength of the ambient occlusion shadows.";
-  static constexpr const wchar_t *Settings_Header_VectorAssets = L"Vector Rendering";
-  static constexpr const wchar_t *Settings_Label_VectorStrokeWeight = L"Icon Stroke weight";
-  static constexpr const wchar_t *Settings_Option_StrokeStandard = L"Standard (1.5px)";
-  static constexpr const wchar_t *Settings_Option_StrokeFine = L"Fine (1.0px)";
-  static constexpr const wchar_t *Settings_Header_GlassTint = L"Tint Profile";
-  static constexpr const wchar_t *Settings_Label_TintProfile = L"Color logic";
-  static constexpr const wchar_t *Settings_Option_TintAuto = L"Auto (Adaptive)";
-  static constexpr const wchar_t *Settings_Option_TintCustom = L"Custom Color";
-  static constexpr const wchar_t *Settings_Label_GlassCustomColor = L"Manual Tint";
-  static constexpr const wchar_t *Settings_Header_DensityMatrix = L"Control Surface Density (%)";
-  static constexpr const wchar_t *Settings_Label_OsdDensity = L"OSD & HUD";
-  static constexpr const wchar_t *Settings_Tooltip_OsdDensity = L"Transparency for small floating overlays.";
-  static constexpr const wchar_t *Settings_Label_PanelsDensity = L"Toolbar & Sidebars";
-  static constexpr const wchar_t *Settings_Tooltip_PanelsDensity = L"Transparency for persistent control panels.";
-  static constexpr const wchar_t *Settings_Label_ModalsDensity = L"Dialogs & Settings";
-  static constexpr const wchar_t *Settings_Tooltip_ModalsDensity = L"Transparency for centered popups.";
-  static constexpr const wchar_t *Settings_Label_MenusDensity = L"Menus";
-  static constexpr const wchar_t *Settings_Tooltip_MenusDensity = L"Transparency for right-click context menus.";
+  static constexpr const wchar_t *Settings_Label_BlurSigma = L"Radio de desenfoque";
+  static constexpr const wchar_t *Settings_Status_GlassDisabled = L"Efecto de cristal desactivado (Sistema)";
+  static constexpr const wchar_t *Settings_Label_TintDensity = L"Capa de tinte";
+  static constexpr const wchar_t *Settings_Tooltip_TintDensity = L"Intensidad de color general del efecto de cristal.";
+  static constexpr const wchar_t *Settings_Label_SpecularOpacity = L"Brillo (Especular)";
+  static constexpr const wchar_t *Settings_Tooltip_SpecularOpacity = L"Brillo de los reflejos de iluminación diagonal.";
+  static constexpr const wchar_t *Settings_Label_ShadowIntensity = L"Profundidad de sombra";
+  static constexpr const wchar_t *Settings_Tooltip_ShadowIntensity = L"Fuerza de las sombras de oclusión ambiental.";
+  static constexpr const wchar_t *Settings_Header_VectorAssets = L"Renderizado vectorial";
+  static constexpr const wchar_t *Settings_Label_VectorStrokeWeight = L"Grosor de trazo de iconos";
+  static constexpr const wchar_t *Settings_Option_StrokeStandard = L"Estándar (1.5px)";
+  static constexpr const wchar_t *Settings_Option_StrokeFine = L"Fino (1.0px)";
+  static constexpr const wchar_t *Settings_Header_GlassTint = L"Perfil de tinte";
+  static constexpr const wchar_t *Settings_Label_TintProfile = L"Lógica de color";
+  static constexpr const wchar_t *Settings_Option_TintAuto = L"Automático (Adaptativo)";
+  static constexpr const wchar_t *Settings_Option_TintCustom = L"Color personalizado";
+  static constexpr const wchar_t *Settings_Label_GlassCustomColor = L"Tinte manual";
+  static constexpr const wchar_t *Settings_Header_DensityMatrix = L"Densidad de superficie de control (%)";
+  static constexpr const wchar_t *Settings_Label_OsdDensity = L"OSD y HUD";
+  static constexpr const wchar_t *Settings_Tooltip_OsdDensity = L"Transparencia para pequeñas superposiciones flotantes.";
+  static constexpr const wchar_t *Settings_Label_PanelsDensity = L"Barra de herramientas y paneles laterales";
+  static constexpr const wchar_t *Settings_Tooltip_PanelsDensity = L"Transparencia para paneles de control persistentes.";
+  static constexpr const wchar_t *Settings_Label_ModalsDensity = L"Diálogos y configuración";
+  static constexpr const wchar_t *Settings_Tooltip_ModalsDensity = L"Transparencia para ventanas emergentes centradas.";
+  static constexpr const wchar_t *Settings_Label_MenusDensity = L"Menús";
+  static constexpr const wchar_t *Settings_Tooltip_MenusDensity = L"Transparencia para menús contextuales.";
 
   static constexpr const wchar_t *Settings_Tab_Theme = L"Tema";
   static constexpr const wchar_t *Settings_Label_ThemeMode = L"Ajuste";
@@ -4361,12 +4375,12 @@ struct ES {
   static constexpr const wchar_t *Settings_Option_ThemeLight = L"Claro";
   static constexpr const wchar_t *Settings_Option_ThemeCustom = L"Diseño";
   static constexpr const wchar_t *Settings_Label_AmbientDimmer = L"Atenuador modal";
-  static constexpr const wchar_t *Settings_Tooltip_AmbientDimmer = L"Dim the background when a modal or settings window is open.";
-  static constexpr const wchar_t *Settings_Label_AccentColor = L"Accent Color";
-  static constexpr const wchar_t *Settings_Label_TextColor = L"Text Color";
-  static constexpr const wchar_t *Settings_Header_ThemeManagement = L"Theme Engine";
-  static constexpr const wchar_t *Settings_Action_ExportTheme = L"Export";
-  static constexpr const wchar_t *Settings_Action_ImportTheme = L"Import";
+  static constexpr const wchar_t *Settings_Tooltip_AmbientDimmer = L"Atenuar el fondo cuando hay una ventana modal o de configuración abierta.";
+  static constexpr const wchar_t *Settings_Label_AccentColor = L"Color de acento";
+  static constexpr const wchar_t *Settings_Label_TextColor = L"Color de texto";
+  static constexpr const wchar_t *Settings_Header_ThemeManagement = L"Gestión de temas";
+  static constexpr const wchar_t *Settings_Action_ExportTheme = L"Exportar";
+  static constexpr const wchar_t *Settings_Action_ImportTheme = L"Importar";
   static constexpr const wchar_t *Settings_Label_CanvasColor =
       L"Color del lienzo";
   static constexpr const wchar_t *Settings_Label_Overlay = L"Superposición";
@@ -4383,7 +4397,7 @@ struct ES {
       L"Ocultar barra de título";
   static constexpr const wchar_t *Settings_Label_RoundedCorners =
       L"Esquinas Redondeadas";
-  static constexpr const wchar_t *Settings_Tooltip_RoundedCorners = L"Controls window and context menu rounded corners. Requires Windows 11.";
+  static constexpr const wchar_t *Settings_Tooltip_RoundedCorners = L"Controla las esquinas redondeadas de las ventanas y los menús. Requiere Windows 11.";
   static constexpr const wchar_t *Settings_Label_LockToolbar =
       L"Bloquear barra inferior";
   static constexpr const wchar_t *Settings_Label_WindowMinSize =
@@ -4460,6 +4474,8 @@ struct ES {
   static constexpr const wchar_t *Settings_Value_ComingSoon = L"Próximamente";
   static constexpr const wchar_t *Settings_Label_ForceRaw =
       L"Forzar decodificación RAW";
+  static constexpr const wchar_t *Settings_Label_Exposure = L"Exposición (Brillo)";
+  static constexpr const wchar_t *Settings_Tooltip_Exposure = L"Ajusta el brillo de la imagen (compensación de exposición). Rango: 0.18x - 10.0x.";
   static constexpr const wchar_t *Settings_Label_AddToOpenWith =
       L"Añadir a Abrir con";
   static constexpr const wchar_t *Settings_Label_CustomEditor = L"Editor de imágenes personalizado";
@@ -4996,6 +5012,8 @@ template <typename T> void ApplyT() {
   Context_SoftProofCustom = T::Context_SoftProofCustom;
   Settings_Value_ComingSoon = T::Settings_Value_ComingSoon;
   Settings_Label_ForceRaw = T::Settings_Label_ForceRaw;
+  Settings_Label_Exposure = T::Settings_Label_Exposure;
+  Settings_Tooltip_Exposure = T::Settings_Tooltip_Exposure;
   Settings_Label_AddToOpenWith = T::Settings_Label_AddToOpenWith;
   Settings_Label_CustomEditor = T::Settings_Label_CustomEditor;
   Context_SelectEditor = T::Context_SelectEditor;
@@ -5540,54 +5558,56 @@ struct FR {
   static constexpr const wchar_t *Settings_Label_MiddleDrag = L"Middle Drag";
   static constexpr const wchar_t *Settings_Label_MiddleClick = L"Middle Click";
   static constexpr const wchar_t *Settings_Label_EdgeNavClick =
-      L"Edge Nav Click";
+      L"Clic de navigation sur les bords";
   static constexpr const wchar_t *Settings_Label_DisableEdgeNavInCompare =
-      L"Disable in Compare Mode";
+      L"Désactiver en mode comparaison";
   static constexpr const wchar_t *Settings_Label_NavIndicator =
-      L"Nav Indicator";
+      L"Indicateur de navigation";
   static constexpr const wchar_t *Settings_Label_AutoRotate =
-      L"Auto Rotate (EXIF)";
-  static constexpr const wchar_t *Settings_Label_CMS = L"Color Management";
-  static constexpr const wchar_t *Settings_Label_AdvancedColor = L"Advanced Color (HDR)";
-  static constexpr const wchar_t *Settings_Label_HdrToneMapping = L"HDR Tone Mapping";
-  static constexpr const wchar_t *Settings_Label_HdrPeakNitsOverride = L"HDR Peak Brightness (Nits)";
-  static constexpr const wchar_t *Settings_Tooltip_HdrPeakNitsOverride = L"Set to 0 to use system detected brightness.";
+      L"Rotation automatique (EXIF)";
+  static constexpr const wchar_t *Settings_Label_CMS = L"Gestion des couleurs (CMS)";
+  static constexpr const wchar_t *Settings_Label_AdvancedColor = L"Couleurs avancées (HDR)";
+  static constexpr const wchar_t *Settings_Label_HdrToneMapping = L"Mappage de tons HDR";
+  static constexpr const wchar_t *Settings_Label_HdrPeakNitsOverride = L"Luminosité maximale HDR (Nits)";
+  static constexpr const wchar_t *Settings_Tooltip_HdrPeakNitsOverride = L"Réglez sur 0 pour utiliser la luminosité détectée par le système.";
   static constexpr const wchar_t *Settings_Option_HdrColorimetric = L"Colorimétrique";
   static constexpr const wchar_t *Settings_Option_HdrSpline = L"Spline";
   static constexpr const wchar_t *Settings_Option_HdrLegacyReinhard = L"Reinhard classique";
-  static constexpr const wchar_t *Settings_Label_CmsFallback = L"Untagged Image Fallback";
-  static constexpr const wchar_t *Settings_Label_CustomProof = L"Soft Proof Profile (.icc)";
-  static constexpr const wchar_t *Context_SoftProofing = L"Soft Proofing Preview";
-  static constexpr const wchar_t *Context_SoftProofProfile = L"Proof Profile";
-  static constexpr const wchar_t *Context_SoftProofCustom = L"Custom...";
-  static constexpr const wchar_t *Settings_Value_ComingSoon = L"Coming Soon";
-  static constexpr const wchar_t *Settings_Label_ForceRaw = L"Force RAW Decode";
+  static constexpr const wchar_t *Settings_Label_CmsFallback = L"Profil de repli pour images non étiquetées";
+  static constexpr const wchar_t *Settings_Label_CustomProof = L"Profil d'épreuvage écran (.icc)";
+  static constexpr const wchar_t *Context_SoftProofing = L"Aperçu de l'épreuvage écran";
+  static constexpr const wchar_t *Context_SoftProofProfile = L"Profil de preuve";
+  static constexpr const wchar_t *Context_SoftProofCustom = L"Personnalisé...";
+  static constexpr const wchar_t *Settings_Value_ComingSoon = L"Bientôt disponible";
+  static constexpr const wchar_t *Settings_Label_ForceRaw = L"Forcer le décodage RAW";
+  static constexpr const wchar_t *Settings_Label_Exposure = L"Exposition (Luminosité)";
+  static constexpr const wchar_t *Settings_Tooltip_Exposure = L"Ajuste la luminosité de l'image (compensation d'exposition). Plage : 0.18x - 10.0x.";
   static constexpr const wchar_t *Settings_Label_AddToOpenWith =
-      L"Add to Open With";
-  static constexpr const wchar_t *Settings_Label_CustomEditor = L"Custom Image Editor";
-  static constexpr const wchar_t *Context_SelectEditor = L"Select Editor";
-  static constexpr const wchar_t *OSD_EditorLaunchFailed = L"Failed to launch editor. Please configure it again.";
-  static constexpr const wchar_t *Settings_Action_Add = L"Add";
-  static constexpr const wchar_t *Settings_Action_Added = L"Added";
+      L"Ajouter à 'Ouvrir avec'";
+  static constexpr const wchar_t *Settings_Label_CustomEditor = L"Éditeur d'images personnalisé";
+  static constexpr const wchar_t *Context_SelectEditor = L"Sélectionner l'éditeur";
+  static constexpr const wchar_t *OSD_EditorLaunchFailed = L"Échec du lancement de l'éditeur. Veuillez le reconfigurer.";
+  static constexpr const wchar_t *Settings_Action_Add = L"Ajouter";
+  static constexpr const wchar_t *Settings_Action_Added = L"Ajouté";
   static constexpr const wchar_t *Settings_Status_DisabledInPortable =
-      L"Disabled in Portable Mode";
+      L"Désactivé en mode portable";
   static constexpr const wchar_t *Settings_Label_DebugHUD =
-      L"Enable Debug HUD (F12)";
-  static constexpr const wchar_t *Settings_Label_Prefetch = L"Prefetch System";
-  static constexpr const wchar_t *Settings_Label_InfoPanelAlpha = L"Info Panel";
-  static constexpr const wchar_t *Settings_Label_ToolbarAlpha = L"Toolbar";
-  static constexpr const wchar_t *Settings_Label_SettingsAlpha = L"Settings";
-  static constexpr const wchar_t *Settings_Label_Reset = L"Reset All Settings";
-  static constexpr const wchar_t *Settings_Action_Restore = L"Restore";
-  static constexpr const wchar_t *Settings_Action_Done = L"Done";
+      L"Activer le HUD de débogage (F12)";
+  static constexpr const wchar_t *Settings_Label_Prefetch = L"Système de préchargement";
+  static constexpr const wchar_t *Settings_Label_InfoPanelAlpha = L"Panneau d'information";
+  static constexpr const wchar_t *Settings_Label_ToolbarAlpha = L"Barre d'outils";
+  static constexpr const wchar_t *Settings_Label_SettingsAlpha = L"Paramètres";
+  static constexpr const wchar_t *Settings_Label_Reset = L"Réinitialiser tous les paramètres";
+  static constexpr const wchar_t *Settings_Action_Restore = L"Restaurer";
+  static constexpr const wchar_t *Settings_Action_Done = L"Terminé";
 
-  static constexpr const wchar_t *Settings_Option_CmsUnmanaged = L"Unmanaged";
+  static constexpr const wchar_t *Settings_Option_CmsUnmanaged = L"Non géré";
   static constexpr const wchar_t *Settings_Option_CmssRGB = L"sRGB";
   static constexpr const wchar_t *Settings_Option_CmsP3 = L"Display P3";
   static constexpr const wchar_t *Settings_Option_CmsAdobeRGB = L"Adobe RGB (1998)";
-  static constexpr const wchar_t *Settings_Option_CmsGray = L"Grayscale (Tonal Check)";
+  static constexpr const wchar_t *Settings_Option_CmsGray = L"Niveaux de gris (Vérification tonale)";
   static constexpr const wchar_t *Settings_Option_CmsProPhoto = L"ProPhoto RGB";
-  static constexpr const wchar_t *Settings_Label_CmsIntent = L"Rendering Intent";
+  static constexpr const wchar_t *Settings_Label_CmsIntent = L"Intention de rendu";
   static constexpr const wchar_t *Settings_Label_GamutWarning = L"Détection de dépassement de gamme";
   static constexpr const wchar_t *Settings_Tooltip_GamutWarning =
       L"Analyser et mettre en évidence les zones hors gamme. Options : Désactivé, uniquement en mode épreuvage écran (par défaut), ou pour l'épreuvage et la gamme de l'écran simultanément.";
@@ -5597,18 +5617,18 @@ struct FR {
       L"Afficher une notification OSD en cas d'erreur de gamme. Les points forts peuvent être activés manuellement via la barre d'outils.";
   static constexpr const wchar_t *Settings_Label_GamutColor = L"Couleur de mise en évidence de gamme";
   static constexpr const wchar_t *Settings_Option_CmsIntentRelative =
-      L"Relative Colorimetric";
+      L"Colorimétrie relative";
   static constexpr const wchar_t *Settings_Option_CmsIntentPerceptual =
-      L"Perceptual";
+      L"Perceptuelle";
 
   static constexpr const wchar_t *Settings_Action_CheckUpdates =
-      L"Check for Updates";
-  static constexpr const wchar_t *Settings_Action_ViewUpdate = L"View Update";
-  static constexpr const wchar_t *Settings_Status_Checking = L"Checking...";
-  static constexpr const wchar_t *Settings_Status_UpToDate = L"Up to date";
-  static constexpr const wchar_t *Settings_Link_GitHub = L"GitHub Repo";
-  static constexpr const wchar_t *Settings_Link_ReportIssue = L"Report Issue";
-  static constexpr const wchar_t *Settings_Link_Hotkeys = L"Help (F1)";
+      L"Rechercher des mises à jour";
+  static constexpr const wchar_t *Settings_Action_ViewUpdate = L"Voir la mise à jour";
+  static constexpr const wchar_t *Settings_Status_Checking = L"Vérification...";
+  static constexpr const wchar_t *Settings_Status_UpToDate = L"À jour";
+  static constexpr const wchar_t *Settings_Link_GitHub = L"Dépôt GitHub";
+  static constexpr const wchar_t *Settings_Link_ReportIssue = L"Signaler un problème";
+  static constexpr const wchar_t *Settings_Link_Hotkeys = L"Aide (F1)";
   static constexpr const wchar_t *Settings_Label_Version = L"Version";
   static constexpr const wchar_t *Settings_Label_Build = L"Build";
 

@@ -1401,6 +1401,7 @@ void UIRenderer::DrawDebugHUD(ID2D1DeviceContext* dc) {
     DrawToggle(L"SlowM[Ctl3]", g_slowMotionMode);
     DrawToggle(L"Grid [Ctl4]", m_showTileGrid);
     DrawToggle(L"HdrSm[Ctl5]", g_runtime.ForceHdrSimulation);
+    DrawToggle(L"GPU TM", g_runtime.LastFrameGpuToneMapped);
     
     // [Direct D2D] Pipeline Indicator - Shows which path was used for last upload
     toggleY += 6.0f;  // Small gap
@@ -2057,7 +2058,8 @@ namespace {
     static bool IsHdrLikeContent(const CImageLoader::ImageMetadata& metadata) {
         return metadata.hdrMetadata.hasGainMap ||
                metadata.colorInfo.dataSpace == QuickView::PixelDataSpace::EncodedHdr ||
-               metadata.colorInfo.IsSceneLinear();
+               metadata.colorInfo.IsSceneLinear() ||
+               (metadata.hdrMetadata.isHdr && metadata.hdrMetadata.isValid);
     }
 
     static std::wstring FormatHdrNits(float nits) {

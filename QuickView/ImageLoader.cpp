@@ -640,9 +640,15 @@ bool ShouldProbeAnimatedBufferCodec(const std::wstring& fmt) {
     return fmt == L"WebP" || fmt == L"GIF" || fmt == L"PNG" || fmt == L"AVIF" || fmt == L"JXL";
 }
 
-bool PrefersSdrTarget(const QuickView::Codec::DecodeContext& ctx) {
-    return ctx.targetHdrHeadroomStops >= 0.0f && ctx.targetHdrHeadroomStops <= 0.01f;
-}
+ bool PrefersSdrTarget(const QuickView::Codec::DecodeContext& ctx) {
+     // [v6.1.4.28] Only force FP16 retention if AdvancedColorMode is explicitly ON (2).
+     // For 'Auto' (1) or 'Disabled' (0), we stick to the efficient SDR collapse path 
+     // unless we are on an actual HDR display (where headroom > 0.01).
+     if (g_config.AdvancedColorMode == 2) {
+         return false; 
+     }
+     return ctx.targetHdrHeadroomStops >= 0.0f && ctx.targetHdrHeadroomStops <= 0.01f;
+ }
 
 HRESULT CollapseFloatResultToSdr(const QuickView::Codec::DecodeContext& ctx,
                                  QuickView::Codec::DecodeResult& result) {
@@ -661,9 +667,9 @@ HRESULT CollapseFloatResultToSdr(const QuickView::Codec::DecodeContext& ctx,
     uint8_t* dstPixels = ctx.allocator(dstSize);
     if (!dstPixels) return E_OUTOFMEMORY;
 
-    // SDR targets do not need to carry float HDR buffers through cache and upload.
-    // Collapsing once at decode time is much cheaper than re-tonemapping every navigation.
-    constexpr float kSdrExposure = 1.0f;
+    // [v6.1.4.27] SDR targets now use the 100-nit baseline (1.0 / 1.25 = 0.8)
+    // to match the high-fidelity GPU path and professional standards.
+    const float kSdrExposure = 0.8f; 
     const bool useClip = (g_config.HdrToneMappingMode == 1) || (!result.metadata.hdrMetadata.isHdr);
     if (useClip) { // 1 = Colorimetric (Clip) or Non-HDR SDR
         ImageLoaderSimd::ToneMapClipBatch(
@@ -4427,7 +4433,7 @@ HRESULT CImageLoader::LoadJXL(LPCWSTR filePath, IWICBitmap** ppBitmap, ImageMeta
     JxlDecoderSetInput(dec, jxlBuf.data(), jxlBuf.size());
 
     JxlBasicInfo info = {};
-    JxlPixelFormat format = { 4, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0 }; // RGBA
+    JxlPixelFormat format = { 4, JXL_TYPE_FLOAT16, JXL_LITTLE_ENDIAN, 0 }; // RGBA
     
     std::vector<uint8_t> pixels;
     HRESULT hr = E_FAIL;
@@ -4456,7 +4462,7 @@ HRESULT CImageLoader::LoadJXL(LPCWSTR filePath, IWICBitmap** ppBitmap, ImageMeta
             // Removed Force sRGB output color profile so original color gets preserved.
 
             // [Optimization] Create WIC Bitmap Early and Lock
-            hr = m_wicFactory->CreateBitmap(info.xsize, info.ysize, GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnDemand, &pWicBitmap);
+            hr = m_wicFactory->CreateBitmap(info.xsize, info.ysize, GUID_WICPixelFormat64bppRGBAHalf, WICBitmapCacheOnDemand, &pWicBitmap);
             if (SUCCEEDED(hr)) {
                 WICRect rc = { 0, 0, (INT)info.xsize, (INT)info.ysize };
                 hr = pWicBitmap->Lock(&rc, WICBitmapLockWrite, &pLock);
@@ -4473,7 +4479,12 @@ HRESULT CImageLoader::LoadJXL(LPCWSTR filePath, IWICBitmap** ppBitmap, ImageMeta
                 size_t icc_size = 0;
                 if (JXL_DEC_SUCCESS == JxlDecoderGetICCProfileSize(dec, JXL_COLOR_PROFILE_TARGET_DATA, &icc_size) && icc_size > 0) {
                     pMetadata->iccProfileData.resize(icc_size);
-                    JxlDecoderGetColorAsICCProfile(dec, JXL_COLOR_PROFILE_TARGET_DATA, pMetadata->iccProfileData.data(), icc_size);
+                    if (JXL_DEC_SUCCESS == JxlDecoderGetColorAsICCProfile(dec, JXL_COLOR_PROFILE_TARGET_DATA, pMetadata->iccProfileData.data(), icc_size)) {
+                        std::wstring desc = CImageLoader::ParseICCProfileName(pMetadata->iccProfileData.data(), icc_size);
+                        if (!desc.empty()) pMetadata->ColorSpace = desc;
+                    } else {
+                        pMetadata->iccProfileData.clear();
+                    }
                 }
 
                 JxlColorEncoding colorEncoding = {};
@@ -4509,7 +4520,7 @@ HRESULT CImageLoader::LoadJXL(LPCWSTR filePath, IWICBitmap** ppBitmap, ImageMeta
             }
             
             // [Optimization] Use WIC buffer if stride matches
-            if (pWicBuf && wicStride == info.xsize * 4) {
+            if (pWicBuf && wicStride == info.xsize * 8) {
                  if (JXL_DEC_SUCCESS != JxlDecoderSetImageOutBuffer(dec, &format, pWicBuf, bufferSize)) {
                       hr = E_FAIL; break;
                  }
@@ -4538,14 +4549,15 @@ HRESULT CImageLoader::LoadJXL(LPCWSTR filePath, IWICBitmap** ppBitmap, ImageMeta
     if (SUCCEEDED(hr)) {
         if (!pixels.empty()) {
              // Fallback: Intermediate buffer used
-             ImageLoaderSimd::SwizzleRGBAToBGRA(pixels.data(), (size_t)info.xsize * info.ysize);
-             hr = CreateWICBitmapFromMemory(info.xsize, info.ysize, GUID_WICPixelFormat32bppPBGRA, info.xsize * 4, (UINT)pixels.size(), pixels.data(), ppBitmap);
+             hr = CreateWICBitmapFromMemory(info.xsize, info.ysize, GUID_WICPixelFormat64bppRGBAHalf, info.xsize * 8, (UINT)pixels.size(), pixels.data(), ppBitmap);
         } else if (pWicBitmap) {
              // Optimization: Direct WIC buffer used
-             // In-place Swizzle
-             ImageLoaderSimd::SwizzleRGBAToBGRA(pWicBuf, (size_t)info.xsize * info.ysize);
              pLock.Reset(); // Unlock
              *ppBitmap = pWicBitmap.Detach();
+        }
+
+        if (pMetadata && SUCCEEDED(hr)) {
+            CImageLoader::PopulateFormatDetails(pMetadata, L"JXL", info.bits_per_sample, info.uses_original_profile, info.alpha_bits > 0, info.have_animation == JXL_TRUE);
         }
     }
     
@@ -6397,6 +6409,7 @@ namespace QuickView {
                         : QuickView::PixelDataSpace::EncodedSdr;
                 result.metadata.hdrMetadata.isHdr =
                     result.metadata.colorInfo.dataSpace == QuickView::PixelDataSpace::EncodedHdr;
+
                 if (decoder->image->icc.data && decoder->image->icc.size > 0) {
                     result.metadata.iccProfileData.assign(
                         decoder->image->icc.data,
@@ -9162,6 +9175,9 @@ HRESULT CImageLoader::ReadMetadata(LPCWSTR filePath, ImageMetadata* pMetadata, b
         QuickView::MappedFile mapping(filePath);
         if (mapping.IsValid()) {
             ProbeHdrMetadataNative(mapping.data(), mapping.size(), &pMetadata->hdrMetadata);
+            if (pMetadata->hdrMetadata.isValid && pMetadata->hdrMetadata.primaries != QuickView::ColorPrimaries::Unknown) {
+                pMetadata->ColorSpace = QuickView::ToString(pMetadata->hdrMetadata.primaries);
+            }
         }
     }
     
