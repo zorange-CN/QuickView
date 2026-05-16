@@ -2289,9 +2289,71 @@ static void EnterCompareMode(HWND hwnd) {
         g_osd.Show(hwnd, L"Compare mode is not available for Titan images yet.", true);
         return;
     }
+    g_compare.mode = ViewMode::CompareSideBySide;
+    g_compare.splitRatio = ClampCompareRatio(g_compare.splitRatio);
 
-    CaptureCurrentImageAsCompareLeft();
-    if (!g_compare.left.valid) return;
+
+    if (g_toolbar.IsComicMode() && g_navigator.Count() > 0) {
+        int currentIndex = g_navigator.Index();
+
+        // Standard (0,1), (2,3) pairing
+        int leftIndex = currentIndex & ~1;
+        int rightIndex = leftIndex + 1;
+
+        std::wstring leftPath;
+        if (leftIndex >= 0 && leftIndex < (int)g_navigator.Count()) {
+            leftPath = g_navigator.GetFile(leftIndex);
+        }
+
+        std::wstring rightPath;
+        if (rightIndex >= 0 && rightIndex < (int)g_navigator.Count()) {
+            rightPath = g_navigator.GetFile(rightIndex);
+        }
+
+        if (g_imagePath == leftPath && g_imageResource.bitmap) {
+            // Optimization: Current image is the left page, capture it immediately
+            CaptureCurrentImageAsCompareLeft();
+            g_navigator.SetIndex(rightIndex);
+            if (!rightPath.empty()) {
+                LoadImageAsync(hwnd, rightPath, false);
+            }
+        }
+        else {
+            // Standard path: Load left page asynchronously
+            if (rightPath.empty()) {
+                rightPath = leftPath;
+                leftPath = L"";
+                g_navigator.SetIndex(leftIndex);
+            }
+            else {
+                g_navigator.SetIndex(rightIndex);
+            }
+
+            if (!leftPath.empty()) {
+                LoadImageIntoCompareLeftSlot(hwnd, leftPath, [hwnd, rightPath](bool success) {
+                    if (success) {
+                        MarkCompareDirty();
+                    }
+                    if (!rightPath.empty() && rightPath != g_imagePath) {
+                        LoadImageAsync(hwnd, rightPath, false);
+                    }
+                });
+            }
+            else {
+                g_compare.left.Reset();
+                MarkCompareDirty();
+                if (!rightPath.empty() && rightPath != g_imagePath) {
+                    LoadImageAsync(hwnd, rightPath, false);
+                }
+            }
+        }
+    } else {
+        CaptureCurrentImageAsCompareLeft();
+        if (!g_compare.left.valid) {
+            g_compare.mode = ViewMode::Single;
+            return;
+        }
+    }
 
     // [v6.8] Special Route: If soft-proofing is enabled, automatically compare Before vs After.
     if (g_runtime.EnableSoftProofing) {
@@ -2313,8 +2375,6 @@ static void EnterCompareMode(HWND hwnd) {
         g_currentMetadata.ExifOrientation = 1;
     }
 
-    g_compare.mode = ViewMode::CompareSideBySide;
-    g_compare.splitRatio = ClampCompareRatio(g_compare.splitRatio);
     g_compare.syncZoom = true;
     g_compare.syncPan = true;
     g_compare.draggingDivider = false;
@@ -12317,6 +12377,9 @@ void StartNavigation(HWND hwnd, std::wstring path, [[maybe_unused]] bool showOSD
         g_runtime.CmsModeOverride = -1;
     }
     
+    // Update Comic Mode state
+    g_toolbar.SetComicMode(g_navigator.GetArchive() != nullptr);
+
     g_imagePath = path; // Set target path immediately for UI consistency
     
     // [Fix] Restore OriginalFilePath when loading a new clean image.
@@ -12597,6 +12660,65 @@ FireAndForget LoadImageAsync(HWND hwnd, std::wstring path, bool showOSD, QuickVi
 
 
 void NavigateEdge(HWND hwnd, bool toLast) {
+    if (g_navigator.Count() <= 0) return;
+    if (!CheckUnsavedChanges(hwnd)) return;
+
+    if (IsCompareModeActive() && g_toolbar.IsComicMode()) {
+        int targetRightIndex = toLast ? (int)g_navigator.Count() - 1 : 0;
+
+        int nextRightIndex = (targetRightIndex + 1) & ~1;
+        int nextLeftIndex = nextRightIndex - 1;
+
+        std::wstring rightPath;
+        if (nextRightIndex >= 0 && nextRightIndex < (int)g_navigator.Count()) {
+            rightPath = g_navigator.GetFile(nextRightIndex);
+        }
+
+        std::wstring leftPath;
+        if (nextLeftIndex >= 0 && nextLeftIndex < (int)g_navigator.Count()) {
+            leftPath = g_navigator.GetFile(nextLeftIndex);
+        }
+
+        if (rightPath.empty() && leftPath.empty()) {
+            return;
+        }
+
+        if (rightPath.empty()) {
+            rightPath = leftPath;
+            leftPath = L"";
+            g_navigator.SetIndex(nextLeftIndex);
+        } else {
+            g_navigator.SetIndex(nextRightIndex);
+        }
+
+        g_compare.activePane = ComparePane::Right;
+        g_compare.contextPane = ComparePane::Right;
+        g_compare.selectedPane = ComparePane::Right;
+        g_editState.Reset();
+        if (!g_preserveViewStateOnNextLoad) {
+            g_viewState.Reset();
+        }
+
+        QuickView::BrowseDirection browseDir = toLast ? QuickView::BrowseDirection::FORWARD : QuickView::BrowseDirection::BACKWARD;
+
+        if (!leftPath.empty()) {
+            LoadImageIntoCompareLeftSlot(hwnd, leftPath, [hwnd, rightPath, browseDir](bool success){
+                if (success) {
+                    MarkCompareDirty();
+                }
+                if (!rightPath.empty()) {
+                    LoadImageAsync(hwnd, rightPath, true, browseDir);
+                }
+            });
+        } else {
+            g_compare.left.Reset();
+            MarkCompareDirty();
+            LoadImageAsync(hwnd, rightPath, true, browseDir);
+        }
+
+        return;
+    }
+
     if (IsCompareModeActive() && g_compare.selectedPane == ComparePane::Left) {
         if (!g_compare.left.valid || g_compare.left.path.empty()) return;
         FileNavigator tempNav;
@@ -12617,9 +12739,6 @@ void NavigateEdge(HWND hwnd, bool toLast) {
         }
         return;
     }
-
-    if (g_navigator.Count() <= 0) return;
-    if (!CheckUnsavedChanges(hwnd)) return;
 
     std::wstring path = (toLast)
         ? g_navigator.Last()
@@ -12652,6 +12771,79 @@ void NavigateEdge(HWND hwnd, bool toLast) {
 }
 
 void Navigate(HWND hwnd, int direction) {
+    if (g_navigator.Count() <= 0) return;
+    if (!CheckUnsavedChanges(hwnd)) return;
+
+    if (IsCompareModeActive() && g_toolbar.IsComicMode()) {
+        int currentIndex = g_navigator.Index();
+
+        if (direction > 0) {
+            if (currentIndex >= (int)g_navigator.Count() - 1) {
+                g_osd.Show(hwnd, std::wstring(AppStrings::OSD_LastImage), false);
+                return;
+            }
+        } else {
+            if (currentIndex <= 0) {
+                g_osd.Show(hwnd, std::wstring(AppStrings::OSD_FirstImage), false);
+                return;
+            }
+        }
+
+        int baseIndex = currentIndex & ~1;
+        int nextBaseIndex = baseIndex + direction * 2;
+        int nextLeftIndex = nextBaseIndex;
+        int nextRightIndex = nextBaseIndex + 1;
+
+        std::wstring rightPath;
+        if (nextRightIndex >= 0 && nextRightIndex < (int)g_navigator.Count()) {
+            rightPath = g_navigator.GetFile(nextRightIndex);
+        }
+
+        std::wstring leftPath;
+        if (nextLeftIndex >= 0 && nextLeftIndex < (int)g_navigator.Count()) {
+            leftPath = g_navigator.GetFile(nextLeftIndex);
+        }
+
+        if (rightPath.empty() && leftPath.empty()) {
+            return;
+        }
+
+        if (rightPath.empty()) {
+            rightPath = leftPath;
+            leftPath = L"";
+            g_navigator.SetIndex(nextLeftIndex);
+        } else {
+            g_navigator.SetIndex(nextRightIndex);
+        }
+
+        g_compare.activePane = ComparePane::Right;
+        g_compare.contextPane = ComparePane::Right;
+        g_compare.selectedPane = ComparePane::Right;
+        g_editState.Reset();
+        if (!g_preserveViewStateOnNextLoad) {
+            g_viewState.Reset();
+        }
+
+        QuickView::BrowseDirection browseDir = (direction > 0) ? QuickView::BrowseDirection::FORWARD : QuickView::BrowseDirection::BACKWARD;
+
+        if (!leftPath.empty()) {
+            LoadImageIntoCompareLeftSlot(hwnd, leftPath, [hwnd, rightPath, browseDir](bool success){
+                if (success) {
+                    MarkCompareDirty();
+                }
+                if (!rightPath.empty()) {
+                    LoadImageAsync(hwnd, rightPath, true, browseDir);
+                }
+            });
+        } else {
+            g_compare.left.Reset();
+            MarkCompareDirty();
+            LoadImageAsync(hwnd, rightPath, true, browseDir);
+        }
+
+        return;
+    }
+
     if (IsCompareModeActive() && g_compare.selectedPane == ComparePane::Left) {
         if (!g_compare.left.valid || g_compare.left.path.empty()) return;
         FileNavigator tempNav;
@@ -12678,9 +12870,6 @@ void Navigate(HWND hwnd, int direction) {
         }
         return;
     }
-
-    if (g_navigator.Count() <= 0) return;
-    if (!CheckUnsavedChanges(hwnd)) return;
 
     std::wstring path = (direction > 0)
         ? g_navigator.Next()

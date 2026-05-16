@@ -1,39 +1,25 @@
 set(VCPKG_TARGET_ARCHITECTURE x64)
 set(VCPKG_CRT_LINKAGE static)
 set(VCPKG_LIBRARY_LINKAGE static)
+set(VCPKG_KEEP_ENV_VARS PATH)
 
-# Ensure LLVM and Ninja are in PATH for vcpkg and its sub-processes (like Meson)
-set(LLVM_BIN "C:/Program Files/LLVM/bin")
-# Ninja is currently in a Winget path, we should ideally find it dynamically but let's use the known path for now
-# or better, find it and add its directory.
-find_program(NINJA_PATH ninja)
-if(NINJA_PATH)
-    get_filename_component(NINJA_DIR "${NINJA_PATH}" DIRECTORY)
-    set(ENV{PATH} "${LLVM_BIN};${NINJA_DIR};$ENV{PATH}")
-else()
-    set(ENV{PATH} "${LLVM_BIN};$ENV{PATH}")
+# Adaptive Toolchain Discovery
+include("${CMAKE_CURRENT_LIST_DIR}/../cmake/AdaptiveToolchain.cmake")
+adaptive_inject_env()
+
+if(ADAPTIVE_NINJA)
+    set(VCPKG_MAKE_PROGRAM "${ADAPTIVE_NINJA}")
 endif()
 
-# Dynamically find LLVM tools in PATH to get absolute paths required by vcpkg
-# If not in PATH, try standard installation paths
-set(LLVM_HINTS "${LLVM_BIN}" "C:/Program Files (x86)/LLVM/bin")
-
-find_program(LLVM_C_COMPILER clang-cl HINTS ${LLVM_HINTS})
-find_program(LLVM_CXX_COMPILER clang-cl HINTS ${LLVM_HINTS})
-find_program(LLVM_LINKER lld-link HINTS ${LLVM_HINTS})
-find_program(LLVM_AR llvm-lib HINTS ${LLVM_HINTS})
-find_program(LLVM_RC llvm-rc HINTS ${LLVM_HINTS})
-find_program(LLVM_MT llvm-mt HINTS ${LLVM_HINTS})
-
-if(NOT LLVM_C_COMPILER OR NOT LLVM_LINKER)
-    message(FATAL_ERROR "Could not find LLVM tools (clang-cl, lld-link). Please ensure LLVM is installed and in PATH, or at ${LLVM_HINTS}")
+if(ADAPTIVE_NASM)
+    set(VCPKG_NASM "${ADAPTIVE_NASM}")
 endif()
 
 # Toolchain paths
-set(VCPKG_C_COMPILER "${LLVM_C_COMPILER}")
-set(VCPKG_CXX_COMPILER "${LLVM_CXX_COMPILER}")
-set(VCPKG_LINKER "${LLVM_LINKER}")
-set(VCPKG_AR "${LLVM_AR}")
+set(VCPKG_C_COMPILER "${ADAPTIVE_CLANG_CL}")
+set(VCPKG_CXX_COMPILER "${ADAPTIVE_CLANG_CL}")
+set(VCPKG_LINKER "${ADAPTIVE_LLD_LINK}")
+set(VCPKG_AR "${ADAPTIVE_LLVM_LIB}")
 
 # Common flags (Clang-cl style)
 set(COMMON_FLAGS "/DWIN32 /D_WINDOWS /W3 /utf-8 /Gw")
@@ -63,12 +49,11 @@ set(VCPKG_LINKER_FLAGS_RELEASE "/OPT:REF /OPT:ICF /opt:lldltojobs=all")
 
 # Force internal CMake calls within vcpkg to use Clang-cl toolchain and LOCK identification
 set(VCPKG_CMAKE_CONFIGURE_OPTIONS 
-    "-DCMAKE_C_COMPILER=${LLVM_C_COMPILER}"
-    "-DCMAKE_CXX_COMPILER=${LLVM_CXX_COMPILER}"
-    "-DCMAKE_LINKER=${LLVM_LINKER}"
-    "-DCMAKE_AR=${LLVM_AR}"
-    "-DCMAKE_RC_COMPILER=${LLVM_RC}"
-    "-DCMAKE_MT=${LLVM_MT}"
+    "-DCMAKE_C_COMPILER=${ADAPTIVE_CLANG_CL}"
+    "-DCMAKE_CXX_COMPILER=${ADAPTIVE_CLANG_CL}"
+    "-DCMAKE_LINKER=${ADAPTIVE_LLD_LINK}"
+    "-DCMAKE_AR=${ADAPTIVE_LLVM_LIB}"
+    "-DCMAKE_RC_COMPILER=${ADAPTIVE_LLVM_RC}"
     "-DCMAKE_C_COMPILER_FRONTEND_VARIANT=MSVC"
     "-DCMAKE_CXX_COMPILER_FRONTEND_VARIANT=MSVC"
     "-DJPEGXL_ENABLE_ENC=OFF"

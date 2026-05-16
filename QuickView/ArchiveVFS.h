@@ -1,5 +1,11 @@
 #pragma once
 #include "pch.h"
+#include <string>
+#include <string_view>
+#include <vector>
+#include <memory>
+#include <mutex>
+#include <chrono>
 #include <zlib.h>
 #include "MappedFile.h"
 

@@ -89,6 +89,8 @@ public:
     void SetGamutWarningActive(bool active);
     void SetCompareMode(bool enabled);
     bool IsCompareMode() const { return m_compareMode; }
+    void SetComicMode(bool enabled) { m_comicMode = enabled; }
+    bool IsComicMode() const { return m_comicMode; }
     void SetCompareSyncStates(bool syncZoom, bool syncPan);
     void SetCompareInfoState(bool active);
     void SetCompareRawState(bool anyRaw, bool selectedIsRaw, bool isFullDecode);
@@ -138,6 +140,7 @@ private:
     bool m_isPinned = false;
     bool m_windowTooNarrow = false; // [Phase 3] Hide toolbar if window is too narrow
     bool m_compareMode = false;
+    bool m_comicMode = false;
     bool m_animMode = false;
     bool m_animPlaying = true;
     bool m_animDirtyRect = false;

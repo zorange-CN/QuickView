@@ -1,10 +1,12 @@
 #pragma once
+#include "pch.h"
 #include <string>
+#include <string_view>
 #include <vector>
 #include <filesystem>
 #include <algorithm>
 #include <cwctype>
-#include <functional>  // for std::hash
+#include <functional>
 #include <Shlwapi.h>   // for StrCmpLogicalW
 #include "EditState.h" // for g_runtime
 #include "exif.h"      // for easyexif
@@ -349,6 +351,12 @@ public:
     // Status info
     size_t Count() const { return m_files.size(); }
     int Index() const { return m_currentIndex; }
+    void SetIndex(int index) {
+        if (index >= 0 && index < (int)m_files.size()) {
+            m_currentIndex = index;
+            m_hitEnd = false;
+        }
+    }
 
     // Random Access (For Gallery Virtualization)
     const std::wstring& GetFile(int index) const {

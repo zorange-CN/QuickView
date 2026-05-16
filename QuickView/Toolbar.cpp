@@ -3,10 +3,12 @@
 #include "AppStrings.h"
 #include "EditState.h"
 #include "GeekIconRenderer.h"
+#include "FileNavigator.h"
 
 using QuickView::UI::GeekIconRenderer;
 
 extern AppConfig g_config;
+extern FileNavigator g_navigator;
 
 namespace Icons = GeekIcons;
 
@@ -180,9 +182,13 @@ void Toolbar::UpdateLayout(float winW, float winH) {
       if (isAlwaysVisible(btn.id)) return true;
       return false;
     }
-    if (m_overlayMode) {
-      if (isOverlayButton(btn.id) || isAlwaysVisible(btn.id)) return true;
-      return false;
+    if (m_comicMode) {
+      // In comic mode, we hide rotate and flip, raw, extension fix, and gamut warning
+      if (btn.id == ToolbarButtonID::RotateL || btn.id == ToolbarButtonID::RotateR || btn.id == ToolbarButtonID::FlipH) return false;
+      if (btn.id == ToolbarButtonID::RawToggle || btn.id == ToolbarButtonID::FixExtension || btn.id == ToolbarButtonID::GamutWarning) return false;
+      if (isCompareButton(btn.id)) return false;
+      if (isAnimButton(btn.id) || isOverlayButton(btn.id)) return false;
+      return true;
     }
 
     if (m_compareMode) {
@@ -274,6 +280,10 @@ void Toolbar::UpdateLayout(float winW, float winH) {
         btn.iconGlyph = g_runtime.LockWindowSize ? Icons::Lock : Icons::Unlock;
     }
 
+    if (btn.id == ToolbarButtonID::CompareToggle) {
+      btn.iconGlyph = Icons::CompareToggle;
+    }
+
     if (visible) {
       btn.rect = D2D1::RectF(cx, cy, cx + buttonSize, cy + buttonSize);
       cx += buttonSize + gap;
@@ -354,6 +364,9 @@ const wchar_t *GetTooltipText(const ToolbarButton &btn) {
     return btn.isToggled ? AppStrings::Toolbar_Tooltip_Unpin
                          : AppStrings::Toolbar_Tooltip_Pin;
   case ToolbarButtonID::CompareToggle:
+    if (g_navigator.GetArchive() != nullptr) {
+      return btn.isToggled ? AppStrings::Toolbar_Tooltip_SinglePage : AppStrings::Toolbar_Tooltip_DualPage;
+    }
     return btn.isToggled ? AppStrings::Toolbar_Tooltip_NormalMode : AppStrings::Toolbar_Tooltip_CompareMode;
   case ToolbarButtonID::CompareOpen:
     return AppStrings::Toolbar_Tooltip_CompareOpen;

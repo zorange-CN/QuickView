@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.25)
 
 # ============================================================================
-# Project Configuration
+# Adaptive Build Tool Discovery (Handled by Toolchain)
 # ============================================================================
+
 project(QuickView LANGUAGES C CXX RC)
-include(cmake/MSVCEnv.cmake)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
