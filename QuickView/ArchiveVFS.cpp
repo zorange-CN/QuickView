@@ -254,7 +254,12 @@ namespace QuickView {
         while (arc.ReadHeader() > 0) {
             HEADER_TYPE type = arc.GetHeaderType();
 
-            if (type == HEAD_FILE || type == HEAD3_FILE) {
+            if (type == HEAD_FILE) {
+                // Skip directories and zero-size entries
+                if (arc.FileHead.Dir || arc.FileHead.UnpSize == 0)  {
+                    arc.SeekToNext();
+                    continue;
+                }
                 ArchiveEntry entry;
                 std::wstring wideName = arc.FileHead.FileName;
                 entry.headerOffset = (uint32_t)arc.CurBlockPos;
@@ -329,11 +334,21 @@ namespace QuickView {
             arc.Seek(entry.headerOffset, SEEK_SET);
             if (arc.ReadHeader() <= 0) return 0;
 
+            QV_LOG("NonSolid_Header",
+                TraceLoggingUInt64(index, "Index"),
+                TraceLoggingInt64(arc.Tell(), "DataPos"),
+                TraceLoggingInt64(arc.FileHead.PackSize, "PackSize"),
+                TraceLoggingInt64(arc.FileHead.UnpSize, "UnpSize"),
+                TraceLoggingUInt32(arc.FileHead.UnpVer, "UnpVer"),
+                TraceLoggingUInt32(arc.FileHead.Method, "Method"),
+                TraceLoggingBoolean(arc.FileHead.Solid, "Solid"),
+                TraceLoggingBoolean(arc.FileHead.Dir, "Dir"));
+
             ::ComprDataIO dataIO;
             dataIO.SetMemorySource(const_cast<uint8_t*>(m_mappedFile.data()), m_mappedFile.size());
             dataIO.SetMemoryDest(externalBuffer, bufferSize);
             dataIO.SetMemoryPos((size_t)arc.Tell());
-            dataIO.SetPackedSize(m_mappedFile.size()); // [v6.0.8.2] No hard limit to allow look-ahead
+            dataIO.SetPackedSize(arc.FileHead.PackSize);
             dataIO.SetFiles(&arc, nullptr);
 
             if (arc.FileHead.Method == 0) {
@@ -345,7 +360,8 @@ namespace QuickView {
                 unpack.DoUnpack(arc.FileHead.UnpVer, arc.FileHead.Solid);
             }
             size_t written = (size_t)dataIO.GetWrittenSize();
-            QV_LOG("ExtractEntry_End", TraceLoggingUInt64(index, "Index"), TraceLoggingBoolean(written > 0, "Success"), TraceLoggingUInt64(written, "Written"));
+            QV_LOG("ExtractEntry_End", TraceLoggingUInt64(index, "Index"), TraceLoggingBoolean(written > 0, "Success"), TraceLoggingUInt64(written, "Written"),
+                TraceLoggingUInt64(entry.uncompSize, "ExpectedSize"));
             return written;
         }
 
@@ -382,10 +398,25 @@ namespace QuickView {
                 return 0;
             }
 
-            if (arc.ReadHeader() <= 0) return 0;
+            if (arc.ReadHeader() <= 0) {
+                QV_LOG("Solid_ReadHeaderFail", TraceLoggingUInt64(nextToRead, "NextToRead"), TraceLoggingUInt64(index, "TargetIndex"));
+                return 0;
+            }
             HEADER_TYPE type = arc.GetHeaderType();
             
-            if (type == HEAD_FILE || type == HEAD3_FILE) {
+            QV_LOG("Solid_HeaderRead",
+                TraceLoggingUInt64(nextToRead, "NextToRead"),
+                TraceLoggingUInt64(index, "TargetIndex"),
+                TraceLoggingInt32((int)type, "HeaderType"),
+                TraceLoggingInt64(arc.Tell(), "DataPos"),
+                TraceLoggingInt64(arc.FileHead.PackSize, "PackSize"),
+                TraceLoggingInt64(arc.FileHead.UnpSize, "UnpSize"),
+                TraceLoggingUInt32(arc.FileHead.UnpVer, "UnpVer"),
+                TraceLoggingUInt32(arc.FileHead.Method, "Method"),
+                TraceLoggingBoolean(arc.FileHead.Solid, "Solid"),
+                TraceLoggingBoolean(arc.FileHead.Dir, "Dir"));
+
+            if (type == HEAD_FILE && !arc.FileHead.Dir && arc.FileHead.UnpSize > 0) {
                 if (nextToRead == index) {
                     // Extract goal
                     dataIO.SetMemoryDest(externalBuffer, bufferSize);
@@ -402,7 +433,8 @@ namespace QuickView {
                     ss.currentIndex = index;
                     arc.SeekToNext(); 
                     size_t written = (size_t)dataIO.GetWrittenSize();
-                    QV_LOG("ExtractEntry_End", TraceLoggingUInt64(index, "Index"), TraceLoggingBoolean(written > 0, "Success"), TraceLoggingUInt64(written, "Written"));
+                    QV_LOG("ExtractEntry_End", TraceLoggingUInt64(index, "Index"), TraceLoggingBoolean(written > 0, "Success"), TraceLoggingUInt64(written, "Written"),
+                        TraceLoggingInt64(arc.FileHead.UnpSize, "ExpectedSize"));
                     return written;
                 } else {
                     // Fast Skip intermediate
@@ -417,6 +449,7 @@ namespace QuickView {
                         unpack.SetDestSize(arc.FileHead.UnpSize);
                         unpack.DoUnpack(arc.FileHead.UnpVer, arc.FileHead.Solid);
                     }
+                    QV_LOG("Solid_Skip", TraceLoggingUInt64(nextToRead, "SkippedIndex"));
                     nextToRead++;
                     ss.currentIndex++; 
                 }
