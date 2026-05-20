@@ -804,15 +804,11 @@ float InternalEstimateFramePeakScRgb(const QuickView::RawImageFrame &frame) {
   } else if (frame.format == QuickView::PixelFormat::R16G16B16A16_FLOAT) {
     float max_val = 0.0f;
     for (int y = 0; y < frame.height; ++y) {
-      const DirectX::PackedVector::HALF* row =
-          reinterpret_cast<const DirectX::PackedVector::HALF*>(
-              frame.pixels + static_cast<size_t>(y) * frame.stride);
-      for (int x = 0; x < frame.width; ++x) {
-        float r = DirectX::PackedVector::XMConvertHalfToFloat(row[x * 4 + 0]);
-        float g = DirectX::PackedVector::XMConvertHalfToFloat(row[x * 4 + 1]);
-        float b = DirectX::PackedVector::XMConvertHalfToFloat(row[x * 4 + 2]);
-        max_val = (std::max)({max_val, r, g, b});
-      }
+      const uint16_t* row = reinterpret_cast<const uint16_t*>(
+          frame.pixels + static_cast<size_t>(y) * frame.stride);
+      max_val = (std::max)(
+          max_val,
+          ImageLoaderSimd::FindPeakHalf(row, static_cast<size_t>(frame.width)));
     }
     peak = max_val;
   } else if (frame.format == QuickView::PixelFormat::R16G16B16A16_UNORM) {
@@ -862,16 +858,9 @@ float InternalEstimateFrameAverageScRgb(const QuickView::RawImageFrame &frame) {
     }
   } else if (frame.format == QuickView::PixelFormat::R16G16B16A16_FLOAT) {
     for (int y = 0; y < frame.height; ++y) {
-      const DirectX::PackedVector::HALF* row =
-          reinterpret_cast<const DirectX::PackedVector::HALF*>(
-              frame.pixels + static_cast<size_t>(y) * frame.stride);
-      for (int x = 0; x < frame.width; ++x) {
-        float r = DirectX::PackedVector::XMConvertHalfToFloat(row[x * 4 + 0]);
-        float g = DirectX::PackedVector::XMConvertHalfToFloat(row[x * 4 + 1]);
-        float b = DirectX::PackedVector::XMConvertHalfToFloat(row[x * 4 + 2]);
-        // BT.2020 luminance weights
-        totalLum += (std::max)(0.0f, r * 0.2627f + g * 0.6780f + b * 0.0593f);
-      }
+      const uint16_t* row = reinterpret_cast<const uint16_t*>(
+          frame.pixels + static_cast<size_t>(y) * frame.stride);
+      totalLum += ImageLoaderSimd::SumLuminanceHalfRange(row, 0, frame.width);
     }
   } else if (frame.format == QuickView::PixelFormat::R16G16B16A16_UNORM) {
     for (int y = 0; y < frame.height; ++y) {
@@ -1187,7 +1176,7 @@ BuildToneMapSettings(const QuickView::RawImageFrame &frame,
   settings.colorMatrix[ 8] = matrix.m[2][0]; settings.colorMatrix[ 9] = matrix.m[2][1]; settings.colorMatrix[10] = matrix.m[2][2]; settings.colorMatrix[11] = 0.0f;
   settings.colorMatrix[12] = 0.0f;           settings.colorMatrix[13] = 0.0f;           settings.colorMatrix[14] = 0.0f;           settings.colorMatrix[15] = 1.0f;
 
-  if (frame.format == QuickView::PixelFormat::R16G16B16A16_UNORM) {
+  if (!frame.colorInfo.IsSceneLinear()) {
     settings.transferFunction = static_cast<uint32_t>(frame.colorInfo.transfer);
   } else {
     settings.transferFunction = static_cast<uint32_t>(QuickView::TransferFunction::Linear);

@@ -654,7 +654,7 @@ HRESULT CollapseFloatResultToSdr(const QuickView::Codec::DecodeContext& ctx,
                                  QuickView::Codec::DecodeResult& result) {
     using namespace QuickView;
 
-    if (result.format != PixelFormat::R32G32B32A32_FLOAT || !result.pixels ||
+    if (result.format != PixelFormat::R16G16B16A16_FLOAT || !result.pixels ||
         result.width <= 0 || result.height <= 0) {
         return S_FALSE;
     }
@@ -672,8 +672,8 @@ HRESULT CollapseFloatResultToSdr(const QuickView::Codec::DecodeContext& ctx,
     const float kSdrExposure = 0.8f; 
     const bool useClip = (g_config.HdrToneMappingMode == 1) || (!result.metadata.hdrMetadata.isHdr);
     if (useClip) { // 1 = Colorimetric (Clip) or Non-HDR SDR
-        ImageLoaderSimd::ToneMapClipBatch(
-            reinterpret_cast<const float*>(result.pixels),
+        ImageLoaderSimd::ToneMapClipBatchHalf(
+            reinterpret_cast<const uint16_t*>(result.pixels),
             result.stride,
             dstPixels,
             dstStride,
@@ -681,8 +681,8 @@ HRESULT CollapseFloatResultToSdr(const QuickView::Codec::DecodeContext& ctx,
             result.height,
             kSdrExposure);
     } else { // 0 = ACES
-        ImageLoaderSimd::ToneMapAcesBatch(
-            reinterpret_cast<const float*>(result.pixels),
+        ImageLoaderSimd::ToneMapAcesBatchHalf(
+            reinterpret_cast<const uint16_t*>(result.pixels),
             result.stride,
             dstPixels,
             dstStride,
@@ -5899,12 +5899,18 @@ namespace QuickView {
                          if (JXL_DEC_SUCCESS == JxlDecoderGetColorAsEncodedProfile(dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL, &encodedColor)) {
                              transfer = MapJxlTransferFunction(encodedColor.transfer_function);
                              primaries = MapJxlPrimaries(encodedColor.primaries);
-                            bool useHighBitDepthOutput =
+                            useHighBitDepthOutput =
                                 !ctx.forcePreview && !PrefersSdrTarget(ctx) &&
                                 (transfer == QuickView::TransferFunction::Linear ||
                                  transfer == QuickView::TransferFunction::PQ ||
                                  transfer == QuickView::TransferFunction::HLG ||
                                  info.bits_per_sample > 8);
+
+                            if (useHighBitDepthOutput) {
+                                JxlColorEncoding linearColor = encodedColor;
+                                linearColor.transfer_function = JXL_TRANSFER_FUNCTION_LINEAR;
+                                (void)JxlDecoderSetOutputColorProfile(dec, &linearColor, NULL, 0);
+                            }
 
                              if (ctx.pMetadata) {
                                  ctx.pMetadata->colorInfo.transfer = transfer;
@@ -6014,7 +6020,7 @@ namespace QuickView {
                     }
                     else if (status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
                         if (useHighBitDepthOutput) {
-                            format.data_type = JXL_TYPE_UINT16;
+                            format.data_type = JXL_TYPE_FLOAT16;
                         }
 
                         size_t bufferSize = 0;
@@ -6112,13 +6118,13 @@ namespace QuickView {
                         result.height = finalH;
                         if (useHighBitDepthOutput) {
                             result.stride = finalW * 8;
-                            result.format = PixelFormat::R16G16B16A16_UNORM;
-                            result.metadata.colorInfo.dataSpace = QuickView::PixelDataSpace::EncodedHdr;
-                            result.metadata.colorInfo.transfer = transfer;
+                            result.format = PixelFormat::R16G16B16A16_FLOAT;
+                            result.metadata.colorInfo.dataSpace = QuickView::PixelDataSpace::SceneLinear;
+                            result.metadata.colorInfo.transfer = QuickView::TransferFunction::Linear;
                             result.metadata.colorInfo.primaries = primaries;
                             result.metadata.colorInfo.nominalBitDepth =
                                 static_cast<uint8_t>((std::min)(info.bits_per_sample, 255u));
-                            result.metadata.hdrMetadata.isSceneLinear = false;
+                            result.metadata.hdrMetadata.isSceneLinear = true;
                         } else {
                             // [v8.6] Fix: JXL outputs RGBA Straight, D2D needs BGRA Premultiplied.
                             ImageLoaderSimd::SwizzleRGBAToBGRA(pixels, (size_t)finalW * finalH);
@@ -6256,7 +6262,7 @@ namespace QuickView {
                             result.width = gainMappedWidth;
                             result.height = gainMappedHeight;
                             result.stride = gainMappedStride;
-                            result.format = PixelFormat::R32G32B32A32_FLOAT;
+                            result.format = PixelFormat::R16G16B16A16_FLOAT;
                             result.success = true;
                             result.metadata.LoaderName = L"libavif (Unified HDR GainMap)";
                             result.metadata.Width = origW;
@@ -6307,14 +6313,63 @@ namespace QuickView {
                         return E_OUTOFMEMORY;
                     }
 
+                    // 1. Thread-safe static lookup tables precomputation (Magic Statics)
+                    const uint16_t* lutColorPtr = nullptr;
+                    std::vector<uint16_t> localLutColor; // Fallback for rare/custom curves
+
+                    if (transfer == QuickView::TransferFunction::PQ) {
+                        static const auto pqLut = []() {
+                            std::vector<uint16_t> arr(65536);
+                            for (int i = 0; i < 65536; ++i) {
+                                float v = static_cast<float>(i) / 65535.0f;
+                                float linearColor = DecodeTransferToLinear(v, QuickView::TransferFunction::PQ);
+                                arr[i] = DirectX::PackedVector::XMConvertFloatToHalf(linearColor);
+                            }
+                            return arr;
+                        }();
+                        lutColorPtr = pqLut.data();
+                    } else if (transfer == QuickView::TransferFunction::HLG) {
+                        static const auto hlgLut = []() {
+                            std::vector<uint16_t> arr(65536);
+                            for (int i = 0; i < 65536; ++i) {
+                                float v = static_cast<float>(i) / 65535.0f;
+                                float linearColor = DecodeTransferToLinear(v, QuickView::TransferFunction::HLG);
+                                arr[i] = DirectX::PackedVector::XMConvertFloatToHalf(linearColor);
+                            }
+                            return arr;
+                        }();
+                        lutColorPtr = hlgLut.data();
+                    } else {
+                        // Dynamic computation fallback for very rare non-standard transfer functions
+                        localLutColor.resize(65536);
+                        for (int i = 0; i < 65536; ++i) {
+                            float v = static_cast<float>(i) / 65535.0f;
+                            float linearColor = DecodeTransferToLinear(v, transfer);
+                            localLutColor[i] = DirectX::PackedVector::XMConvertFloatToHalf(linearColor);
+                        }
+                        lutColorPtr = localLutColor.data();
+                    }
+
+                    static const auto alphaLut = []() {
+                        std::vector<uint16_t> arr(65536);
+                        for (int i = 0; i < 65536; ++i) {
+                            float v = static_cast<float>(i) / 65535.0f;
+                            arr[i] = DirectX::PackedVector::XMConvertFloatToHalf(v);
+                        }
+                        return arr;
+                    }();
+                    const uint16_t* lutAlphaPtr = alphaLut.data();
+
+                    // 2. Perform zero-calculation memory-aligned lookup copy
+                    #pragma omp parallel for schedule(static)
                     for (int y = 0; y < height; ++y) {
                         uint16_t* dst = reinterpret_cast<uint16_t*>(pixels + static_cast<size_t>(y) * stride);
                         const uint16_t* src = reinterpret_cast<const uint16_t*>(rgb.pixels + static_cast<size_t>(y) * rgb.rowBytes);
                         for (int x = 0; x < width; ++x) {
-                            dst[x * 4 + 0] = src[x * 4 + 0];
-                            dst[x * 4 + 1] = src[x * 4 + 1];
-                            dst[x * 4 + 2] = src[x * 4 + 2];
-                            dst[x * 4 + 3] = src[x * 4 + 3];
+                            dst[x * 4 + 0] = lutColorPtr[src[x * 4 + 0]];
+                            dst[x * 4 + 1] = lutColorPtr[src[x * 4 + 1]];
+                            dst[x * 4 + 2] = lutColorPtr[src[x * 4 + 2]];
+                            dst[x * 4 + 3] = lutAlphaPtr[src[x * 4 + 3]];
                         }
                     }
 
@@ -6322,17 +6377,17 @@ namespace QuickView {
                     result.width = width;
                     result.height = height;
                     result.stride = stride;
-                    result.format = PixelFormat::R16G16B16A16_UNORM;
+                    result.format = PixelFormat::R16G16B16A16_FLOAT;
                     result.success = true;
                     result.metadata.LoaderName = L"libavif (Unified HDR)";
                     result.metadata.Width = origW;
                     result.metadata.Height = origH;
-                    result.metadata.colorInfo.dataSpace = QuickView::PixelDataSpace::EncodedHdr;
-                    result.metadata.colorInfo.transfer = transfer;
+                    result.metadata.colorInfo.dataSpace = QuickView::PixelDataSpace::SceneLinear;
+                    result.metadata.colorInfo.transfer = QuickView::TransferFunction::Linear;
                     result.metadata.colorInfo.primaries = primaries;
                     result.metadata.colorInfo.nominalBitDepth = 16;
                     PopulateAvifHdrStaticMetadata(decoder->image, &result.metadata.hdrMetadata);
-                    result.metadata.hdrMetadata.isSceneLinear = false;
+                    result.metadata.hdrMetadata.isSceneLinear = true;
                     result.metadata.hdrMetadata.isHdr = true;
                     if (decoder->image->icc.data && decoder->image->icc.size > 0) {
                         result.metadata.iccProfileData.assign(
@@ -6674,7 +6729,7 @@ namespace QuickView {
                     }
                 }
 
-                const int bytesPerPixel = 16;
+                const int bytesPerPixel = 8;
                 int stride = CalculateSIMDAlignedStride(outW, bytesPerPixel);
                 size_t totalSize = (size_t)stride * outH;
                 uint8_t* pixels = ctx.allocator(totalSize);
@@ -6699,15 +6754,15 @@ namespace QuickView {
                     int sy = static_cast<int>((static_cast<int64_t>(oy) * h) / outH);
                     if (sy >= h) sy = h - 1;
 
-                    float* rowDst = reinterpret_cast<float*>(pixels + (size_t)oy * stride);
+                    uint16_t* rowDst = reinterpret_cast<uint16_t*>(pixels + (size_t)oy * stride);
                     const float* rowSrc = floatPixels.data() + (size_t)sy * w * 4;
 
                     for (int ox = 0; ox < outW; ++ox) {
                         int sx = srcXForOut[ox];
-                        rowDst[ox*4+0] = rowSrc[sx*4+0];
-                        rowDst[ox*4+1] = rowSrc[sx*4+1];
-                        rowDst[ox*4+2] = rowSrc[sx*4+2];
-                        rowDst[ox*4+3] = rowSrc[sx*4+3];
+                        rowDst[ox*4+0] = DirectX::PackedVector::XMConvertFloatToHalf(rowSrc[sx*4+0]);
+                        rowDst[ox*4+1] = DirectX::PackedVector::XMConvertFloatToHalf(rowSrc[sx*4+1]);
+                        rowDst[ox*4+2] = DirectX::PackedVector::XMConvertFloatToHalf(rowSrc[sx*4+2]);
+                        rowDst[ox*4+3] = DirectX::PackedVector::XMConvertFloatToHalf(rowSrc[sx*4+3]);
                     }
                 }
 
@@ -6717,7 +6772,7 @@ namespace QuickView {
                 result.stride = stride;
                 result.metadata.Width = w;
                 result.metadata.Height = h;
-                result.format = PixelFormat::R32G32B32A32_FLOAT;
+                result.format = PixelFormat::R16G16B16A16_FLOAT;
                 result.success = true;
                 result.metadata.LoaderName = L"TinyEXR";
                 result.metadata.FormatDetails = L"TinyEXR";
@@ -11884,7 +11939,7 @@ static bool TryDecodeAvifGainMappedLinearRGBA(
 
     const int width = static_cast<int>(toneMappedRgb.width);
     const int height = static_cast<int>(toneMappedRgb.height);
-    const int stride = CalculateSIMDAlignedStride(width, 16);
+    const int stride = CalculateSIMDAlignedStride(width, 8);
     uint8_t* pixels = ctx.allocator(static_cast<size_t>(stride) * height);
     if (!pixels) {
         avifRGBImageFreePixels(&toneMappedRgb);
@@ -11892,14 +11947,9 @@ static bool TryDecodeAvifGainMappedLinearRGBA(
     }
 
     for (int y = 0; y < height; ++y) {
-        float* dst = reinterpret_cast<float*>(pixels + static_cast<size_t>(y) * stride);
-        const uint16_t* src = reinterpret_cast<const uint16_t*>(toneMappedRgb.pixels + static_cast<size_t>(y) * toneMappedRgb.rowBytes);
-        for (int x = 0; x < width; ++x) {
-            dst[x * 4 + 0] = DirectX::PackedVector::XMConvertHalfToFloat(src[x * 4 + 0]);
-            dst[x * 4 + 1] = DirectX::PackedVector::XMConvertHalfToFloat(src[x * 4 + 1]);
-            dst[x * 4 + 2] = DirectX::PackedVector::XMConvertHalfToFloat(src[x * 4 + 2]);
-            dst[x * 4 + 3] = DirectX::PackedVector::XMConvertHalfToFloat(src[x * 4 + 3]);
-        }
+        uint8_t* dst = pixels + static_cast<size_t>(y) * stride;
+        const uint8_t* src = toneMappedRgb.pixels + static_cast<size_t>(y) * toneMappedRgb.rowBytes;
+        memcpy(dst, src, static_cast<size_t>(width) * 8);
     }
 
     if (hdrMetadata) {

@@ -41,11 +41,34 @@ struct __clangd_preamble_stop_struct {};
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <DirectXPackedVector.h>
 
 // Locally enable peak optimization and Fast Math
 #if defined(__clang__)
 #pragma float_control(precise, off, push)
 #endif
+
+// Scalar helpers used in tail loops across ALL HWY targets.
+// Must be defined before HWY_BEFORE_NAMESPACE() so they are visible
+// during every foreach_target re-inclusion pass.
+// Guarded to avoid redefinition on multiple inclusions.
+#ifndef IMAGE_LOADER_SIMD_SCALARS
+#define IMAGE_LOADER_SIMD_SCALARS
+static inline float AcesToneMapScalar(float v) {
+    return (v * (2.51f * v + 0.03f)) / (v * (2.43f * v + 0.59f) + 0.14f);
+}
+
+static inline uint8_t LinearToSdr8Scalar(float v) {
+    v = (v > 0.0f ? v : 0.0f);
+    if (v <= 0.0031308f) {
+        v *= 12.92f;
+    } else {
+        v = 1.055f * std::pow(v, 1.0f / 2.4f) - 0.055f;
+    }
+    v = (v < 0.0f) ? 0.0f : (v > 1.0f ? 1.0f : v);
+    return static_cast<uint8_t>(v * 255.0f + 0.5f);
+}
+#endif // IMAGE_LOADER_SIMD_SCALARS
 
 HWY_BEFORE_NAMESPACE();
 namespace ImageLoaderSimd {
@@ -523,38 +546,446 @@ float SumLuminanceFloatRangeImpl(const float* row, int x0, int x1) {
     if (!row || x1 <= x0) return 0.0f;
 
     const hn::ScalableTag<float> df;
-    const size_t N = hn::Lanes(df);
-    const size_t pixelsPerIter = N / 4;
-    float total = 0.0f;
+    const size_t pixelsPerVec = hn::Lanes(df);
     size_t x = static_cast<size_t>(x0);
     size_t end = static_cast<size_t>(x1);
 
-    if (pixelsPerIter >= 1) {
-        HWY_ALIGN float maskArr[HWY_MAX_LANES_D(hn::ScalableTag<float>)];
-        for (size_t i = 0; i < N; ++i) {
-            maskArr[i] = (i % 4 == 3) ? 0.0f : 1.0f;
-        }
-        const auto vMask = hn::Load(df, maskArr);
-        const auto vZero = hn::Zero(df);
-        auto vAccum = vZero;
+    const auto wR = hn::Set(df, 0.2627f);
+    const auto wG = hn::Set(df, 0.6780f);
+    const auto wB = hn::Set(df, 0.0593f);
+    const auto vZero = hn::Zero(df);
+    auto vAccum = vZero;
 
-        for (; x + pixelsPerIter <= end; x += pixelsPerIter) {
-            auto v = hn::LoadU(df, row + x * 4);
-            v = hn::Mul(v, vMask);
-            vAccum = hn::Add(vAccum, v);
-        }
+    for (; x + pixelsPerVec <= end; x += pixelsPerVec) {
+        hn::Vec<decltype(df)> vR, vG, vB, vA;
+        hn::LoadInterleaved4(df, row + x * 4, vR, vG, vB, vA);
 
-        const float partial = hn::ReduceSum(df, vAccum);
-        total += partial;
+        auto vLum = hn::Add(hn::Mul(vR, wR), hn::Add(hn::Mul(vG, wG), hn::Mul(vB, wB)));
+        vLum = hn::Max(vZero, vLum);
+
+        vAccum = hn::Add(vAccum, vLum);
     }
+
+    float total = hn::ReduceSum(df, vAccum);
 
     for (; x < end; ++x) {
         const float* px = row + x * 4;
-        // Updated to BT.2020 luminance weights for better HDR accuracy
         total += (std::max)(0.0f, px[0] * 0.2627f + px[1] * 0.6780f + px[2] * 0.0593f);
     }
 
     return total;
+}
+
+// ============================================================================
+// ConvertUint16ToHalf - [0, 65535] uint16 to half float
+// ============================================================================
+void ConvertUint16ToHalfImpl(const uint16_t* src, uint16_t* dst, size_t pixelCount) {
+    if (!src || !dst || pixelCount == 0) return;
+
+    const hn::ScalableTag<uint16_t> d16;
+    const hn::ScalableTag<float> df;
+    const hn::Rebind<uint32_t, decltype(df)> du32;
+    const size_t Nf = hn::Lanes(df);
+
+    const auto vScale = hn::Set(df, 1.0f / 65535.0f);
+    const size_t totalSamples = pixelCount * 4;
+
+    // Process in chunks of Nf floats (= half of N16 uint16s at a time)
+    size_t i = 0;
+    alignas(64) float tmpBuf[HWY_MAX_LANES_D(hn::ScalableTag<float>)];
+
+    for (; i + Nf <= totalSamples; i += Nf) {
+        // Load Nf uint16 values
+        hn::Half<decltype(d16)> d16_half;
+        auto v16_full = hn::LoadU(d16, src + i); // loads N16, we only use lower Nf
+        auto v_u32 = hn::PromoteTo(du32, hn::LowerHalf(d16_half, v16_full));
+        auto v_f = hn::Mul(hn::ConvertTo(df, hn::BitCast(hn::RebindToSigned<decltype(du32)>(), v_u32)), vScale);
+        hn::StoreU(v_f, df, tmpBuf);
+        for (size_t k = 0; k < Nf; ++k) {
+            dst[i + k] = DirectX::PackedVector::XMConvertFloatToHalf(tmpBuf[k]);
+        }
+    }
+
+    for (; i < totalSamples; ++i) {
+        float f = static_cast<float>(src[i]) / 65535.0f;
+        dst[i] = DirectX::PackedVector::XMConvertFloatToHalf(f);
+    }
+}
+
+// ============================================================================
+// FindPeakHalf - R16G16B16A16_FLOAT peak luminance
+// ============================================================================
+float FindPeakHalfImpl(const uint16_t* data_u16, size_t pixelCount) {
+    if (!data_u16 || pixelCount == 0) return 0.0f;
+
+    const hwy::float16_t* data = reinterpret_cast<const hwy::float16_t*>(data_u16);
+    const hn::ScalableTag<float> df;
+    const hn::ScalableTag<hwy::float16_t> dh;
+    const size_t N_h = hn::Lanes(dh);
+    
+    auto vMax = hn::Zero(df);
+    size_t i = 0;
+
+    for (; i + N_h <= pixelCount; i += N_h) {
+        hn::Vec<decltype(dh)> vR, vG, vB, vA;
+        hn::LoadInterleaved4(dh, data + i * 4, vR, vG, vB, vA);
+
+        hn::Half<decltype(dh)> dh_half;
+        
+        auto r_low = hn::PromoteTo(df, hn::LowerHalf(dh_half, vR));
+        auto g_low = hn::PromoteTo(df, hn::LowerHalf(dh_half, vG));
+        auto b_low = hn::PromoteTo(df, hn::LowerHalf(dh_half, vB));
+        auto m_low = hn::Max(r_low, hn::Max(g_low, b_low));
+        vMax = hn::Max(vMax, m_low);
+
+        auto r_high = hn::PromoteTo(df, hn::UpperHalf(dh_half, vR));
+        auto g_high = hn::PromoteTo(df, hn::UpperHalf(dh_half, vG));
+        auto b_high = hn::PromoteTo(df, hn::UpperHalf(dh_half, vB));
+        auto m_high = hn::Max(r_high, hn::Max(g_high, b_high));
+        vMax = hn::Max(vMax, m_high);
+    }
+
+    float peak = hn::ReduceMax(df, vMax);
+
+    for (; i < pixelCount; ++i) {
+        const uint16_t* px = data_u16 + i * 4;
+        float r = DirectX::PackedVector::XMConvertHalfToFloat(px[0]);
+        float g = DirectX::PackedVector::XMConvertHalfToFloat(px[1]);
+        float b = DirectX::PackedVector::XMConvertHalfToFloat(px[2]);
+        peak = (std::max)({peak, r, g, b});
+    }
+
+    return peak;
+}
+
+// ============================================================================
+// SumLuminanceHalfRange - R16G16B16A16_FLOAT luminance sum
+// ============================================================================
+float SumLuminanceHalfRangeImpl(const uint16_t* row_u16, int x0, int x1) {
+    if (!row_u16 || x1 <= x0) return 0.0f;
+
+    const hwy::float16_t* row = reinterpret_cast<const hwy::float16_t*>(row_u16);
+    const hn::ScalableTag<float> df;
+    const hn::ScalableTag<hwy::float16_t> dh;
+    const size_t N_h = hn::Lanes(dh);
+    
+    size_t x = static_cast<size_t>(x0);
+    size_t end = static_cast<size_t>(x1);
+
+    const auto wR = hn::Set(df, 0.2627f);
+    const auto wG = hn::Set(df, 0.6780f);
+    const auto wB = hn::Set(df, 0.0593f);
+    const auto vZero = hn::Zero(df);
+    auto vAccum = vZero;
+
+    for (; x + N_h <= end; x += N_h) {
+        hn::Vec<decltype(dh)> vR, vG, vB, vA;
+        hn::LoadInterleaved4(dh, row + x * 4, vR, vG, vB, vA);
+
+        hn::Half<decltype(dh)> dh_half;
+        
+        auto r_low = hn::PromoteTo(df, hn::LowerHalf(dh_half, vR));
+        auto g_low = hn::PromoteTo(df, hn::LowerHalf(dh_half, vG));
+        auto b_low = hn::PromoteTo(df, hn::LowerHalf(dh_half, vB));
+        auto lum_low = hn::Add(hn::Mul(r_low, wR), hn::Add(hn::Mul(g_low, wG), hn::Mul(b_low, wB)));
+        lum_low = hn::Max(vZero, lum_low);
+        vAccum = hn::Add(vAccum, lum_low);
+
+        auto r_high = hn::PromoteTo(df, hn::UpperHalf(dh_half, vR));
+        auto g_high = hn::PromoteTo(df, hn::UpperHalf(dh_half, vG));
+        auto b_high = hn::PromoteTo(df, hn::UpperHalf(dh_half, vB));
+        auto lum_high = hn::Add(hn::Mul(r_high, wR), hn::Add(hn::Mul(g_high, wG), hn::Mul(b_high, wB)));
+        lum_high = hn::Max(vZero, lum_high);
+        vAccum = hn::Add(vAccum, lum_high);
+    }
+
+    float total = hn::ReduceSum(df, vAccum);
+
+    for (; x < end; ++x) {
+        const uint16_t* px = row_u16 + x * 4;
+        float r = DirectX::PackedVector::XMConvertHalfToFloat(px[0]);
+        float g = DirectX::PackedVector::XMConvertHalfToFloat(px[1]);
+        float b = DirectX::PackedVector::XMConvertHalfToFloat(px[2]);
+        total += (std::max)(0.0f, r * 0.2627f + g * 0.6780f + b * 0.0593f);
+    }
+
+    return total;
+}
+
+// ============================================================================
+// ToneMapAcesBatchHalf - FP16 to BGRA8888 ACES
+// ============================================================================
+void ToneMapAcesBatchHalfImpl(const uint16_t* src, int srcStride,
+                              uint8_t* dst, int dstStride,
+                              int width, int height, float exposure) {
+    const hn::ScalableTag<float> df;
+    const hn::ScalableTag<hwy::float16_t> dh;
+    const hn::Rebind<uint32_t, decltype(df)> du32;
+    const hn::Rebind<int32_t, decltype(df)> di32;
+    const hn::Rebind<uint16_t, decltype(df)> du16;
+    const hn::Rebind<uint8_t, decltype(df)> d8;
+    const size_t N_h = hn::Lanes(dh);
+    const size_t pixelsPerVec = N_h;
+
+    const auto vZero = hn::Zero(df);
+    const auto vOne = hn::Set(df, 1.0f);
+    const auto vExposure = hn::Set(df, exposure);
+
+    auto fastLog2 = [&](auto x) {
+        auto ix = hn::BitCast(di32, x);
+        auto exp = hn::Sub(hn::ShiftRight<23>(ix), hn::Set(di32, 127));
+        auto m = hn::BitCast(df, hn::Or(hn::And(ix, hn::Set(di32, 0x007FFFFF)), hn::Set(di32, 0x3F800000)));
+        auto f = hn::Sub(m, hn::Set(df, 1.0f));
+        auto p = hn::Add(hn::Set(df, -0.72134752f), hn::Mul(f, hn::Set(df, 0.48089834f)));
+        p = hn::Add(hn::Set(df, 1.44269504f), hn::Mul(f, p));
+        return hn::Add(hn::ConvertTo(df, exp), hn::Mul(f, p));
+    };
+
+    auto fastExp2 = [&](auto x) {
+        x = hn::Clamp(x, hn::Set(df, -126.0f), hn::Set(df, 126.0f));
+        auto i = hn::ConvertTo(di32, x);
+        auto f = hn::Sub(x, hn::ConvertTo(df, i));
+        auto mask = hn::Lt(f, hn::Zero(df));
+        auto mask_i = hn::RebindMask(di32, mask);
+        i = hn::IfThenElse(mask_i, hn::Sub(i, hn::Set(di32, 1)), i);
+        f = hn::IfThenElse(mask, hn::Add(f, hn::Set(df, 1.0f)), f);
+        auto p = hn::Add(hn::Set(df, 0.24022650f), hn::Mul(f, hn::Set(df, 0.055504108f)));
+        p = hn::Add(hn::Set(df, 0.69314718f), hn::Mul(f, p));
+        auto pow2f = hn::Add(hn::Set(df, 1.0f), hn::Mul(f, p));
+        auto pow2i = hn::BitCast(df, hn::ShiftLeft<23>(hn::Add(i, hn::Set(di32, 127))));
+        return hn::Mul(pow2i, pow2f);
+    };
+
+    auto fastPow = [&](auto x, auto y) { return fastExp2(hn::Mul(y, fastLog2(x))); };
+
+    auto AcesToneMap = [&](auto v) {
+        auto num = hn::Mul(v, hn::Add(hn::Mul(hn::Set(df, 2.51f), v), hn::Set(df, 0.03f)));
+        auto den = hn::Add(hn::Mul(v, hn::Add(hn::Mul(hn::Set(df, 2.43f), v), hn::Set(df, 0.59f))), hn::Set(df, 0.14f));
+        return hn::Div(num, den);
+    };
+
+    const auto vSrgbThreshold = hn::Set(df, 0.0031308f);
+    const auto vSrgbMul = hn::Set(df, 12.92f);
+    const auto vSrgbPowFactor = hn::Set(df, 1.055f);
+    const auto vSrgbPowOffset = hn::Set(df, 0.055f);
+    const auto vSrgbPowInvGamma = hn::Set(df, 1.0f / 2.4f);
+    const auto v255 = hn::Set(df, 255.0f);
+    const auto vHalf = hn::Set(df, 0.5f);
+
+    auto LinearToSdr8 = [&](auto v) {
+        v = hn::Max(v, vZero);
+        auto mask = hn::Le(v, vSrgbThreshold);
+        auto pathA = hn::Mul(v, vSrgbMul);
+        auto vSafe = hn::Max(v, hn::Set(df, 1e-10f));
+        auto pathB = hn::Sub(hn::Mul(vSrgbPowFactor, fastPow(vSafe, vSrgbPowInvGamma)), vSrgbPowOffset);
+        v = hn::IfThenElse(mask, pathA, pathB);
+        v = hn::Clamp(v, vZero, vOne);
+        return hn::Add(hn::Mul(v, v255), vHalf);
+    };
+
+    for (int y = 0; y < height; ++y) {
+        const uint16_t* srcRow = reinterpret_cast<const uint16_t*>(
+            reinterpret_cast<const uint8_t*>(src) + static_cast<size_t>(y) * srcStride);
+        uint8_t* dstRow = dst + static_cast<size_t>(y) * dstStride;
+
+        int x = 0;
+        for (; x + static_cast<int>(pixelsPerVec) <= width; x += static_cast<int>(pixelsPerVec)) {
+            hn::Vec<decltype(dh)> vR_h, vG_h, vB_h, vA_h;
+            hn::LoadInterleaved4(dh, reinterpret_cast<const hwy::float16_t*>(srcRow + x * 4), vR_h, vG_h, vB_h, vA_h);
+
+            hn::Half<decltype(dh)> dh_half;
+
+            // Lower half
+            auto vR_l = hn::PromoteTo(df, hn::LowerHalf(dh_half, vR_h));
+            auto vG_l = hn::PromoteTo(df, hn::LowerHalf(dh_half, vG_h));
+            auto vB_l = hn::PromoteTo(df, hn::LowerHalf(dh_half, vB_h));
+            auto vA_l = hn::PromoteTo(df, hn::LowerHalf(dh_half, vA_h));
+
+            vR_l = hn::Mul(vR_l, vExposure);
+            vG_l = hn::Mul(vG_l, vExposure);
+            vB_l = hn::Mul(vB_l, vExposure);
+            vA_l = hn::Clamp(vA_l, vZero, vOne);
+
+            vR_l = hn::Mul(AcesToneMap(vR_l), vA_l);
+            vG_l = hn::Mul(AcesToneMap(vG_l), vA_l);
+            vB_l = hn::Mul(AcesToneMap(vB_l), vA_l);
+
+            auto u8B_l = hn::DemoteTo(d8, hn::DemoteTo(du16, hn::ConvertTo(du32, LinearToSdr8(vB_l))));
+            auto u8G_l = hn::DemoteTo(d8, hn::DemoteTo(du16, hn::ConvertTo(du32, LinearToSdr8(vG_l))));
+            auto u8R_l = hn::DemoteTo(d8, hn::DemoteTo(du16, hn::ConvertTo(du32, LinearToSdr8(vR_l))));
+            auto u8A_l = hn::DemoteTo(d8, hn::DemoteTo(du16, hn::ConvertTo(du32, hn::Add(hn::Mul(vA_l, v255), vHalf))));
+
+            hn::StoreInterleaved4(u8B_l, u8G_l, u8R_l, u8A_l, d8, dstRow + x * 4);
+
+            // Upper half
+            auto vR_r = hn::PromoteTo(df, hn::UpperHalf(dh_half, vR_h));
+            auto vG_r = hn::PromoteTo(df, hn::UpperHalf(dh_half, vG_h));
+            auto vB_r = hn::PromoteTo(df, hn::UpperHalf(dh_half, vB_h));
+            auto vA_r = hn::PromoteTo(df, hn::UpperHalf(dh_half, vA_h));
+
+            vR_r = hn::Mul(vR_r, vExposure);
+            vG_r = hn::Mul(vG_r, vExposure);
+            vB_r = hn::Mul(vB_r, vExposure);
+            vA_r = hn::Clamp(vA_r, vZero, vOne);
+
+            vR_r = hn::Mul(AcesToneMap(vR_r), vA_r);
+            vG_r = hn::Mul(AcesToneMap(vG_r), vA_r);
+            vB_r = hn::Mul(AcesToneMap(vB_r), vA_r);
+
+            auto u8B_r = hn::DemoteTo(d8, hn::DemoteTo(du16, hn::ConvertTo(du32, LinearToSdr8(vB_r))));
+            auto u8G_r = hn::DemoteTo(d8, hn::DemoteTo(du16, hn::ConvertTo(du32, LinearToSdr8(vG_r))));
+            auto u8R_r = hn::DemoteTo(d8, hn::DemoteTo(du16, hn::ConvertTo(du32, LinearToSdr8(vR_r))));
+            auto u8A_r = hn::DemoteTo(d8, hn::DemoteTo(du16, hn::ConvertTo(du32, hn::Add(hn::Mul(vA_r, v255), vHalf))));
+
+            const size_t half_n = hn::Lanes(df); // pixels processed per half
+            hn::StoreInterleaved4(u8B_r, u8G_r, u8R_r, u8A_r, d8, dstRow + (x + static_cast<int>(half_n)) * 4);
+        }
+
+        for (; x < width; ++x) {
+            float r = DirectX::PackedVector::XMConvertHalfToFloat(srcRow[x * 4 + 0]) * exposure;
+            float g = DirectX::PackedVector::XMConvertHalfToFloat(srcRow[x * 4 + 1]) * exposure;
+            float b = DirectX::PackedVector::XMConvertHalfToFloat(srcRow[x * 4 + 2]) * exposure;
+            float a = std::clamp(DirectX::PackedVector::XMConvertHalfToFloat(srcRow[x * 4 + 3]), 0.0f, 1.0f);
+
+            float tmR = AcesToneMapScalar(r) * a;
+            float tmG = AcesToneMapScalar(g) * a;
+            float tmB = AcesToneMapScalar(b) * a;
+
+            dstRow[x * 4 + 0] = LinearToSdr8Scalar(tmB);
+            dstRow[x * 4 + 1] = LinearToSdr8Scalar(tmG);
+            dstRow[x * 4 + 2] = LinearToSdr8Scalar(tmR);
+            dstRow[x * 4 + 3] = static_cast<uint8_t>(a * 255.0f + 0.5f);
+        }
+    }
+}
+
+// ============================================================================
+// ToneMapClipBatchHalf - FP16 to BGRA8888 Clip
+// ============================================================================
+void ToneMapClipBatchHalfImpl(const uint16_t* src, int srcStride,
+                              uint8_t* dst, int dstStride,
+                              int width, int height, float exposure) {
+    const hn::ScalableTag<float> df;
+    const hn::ScalableTag<hwy::float16_t> dh;
+    const hn::Rebind<uint32_t, decltype(df)> du32;
+    const hn::Rebind<int32_t, decltype(df)> di32;
+    const hn::Rebind<uint16_t, decltype(df)> du16;
+    const hn::Rebind<uint8_t, decltype(df)> d8;
+    const size_t N_h = hn::Lanes(dh);
+    const size_t pixelsPerVec = N_h;
+
+    const auto vZero = hn::Zero(df);
+    const auto vOne = hn::Set(df, 1.0f);
+    const auto vExposure = hn::Set(df, exposure);
+
+    auto fastLog2 = [&](auto x) {
+        auto ix = hn::BitCast(di32, x);
+        auto exp = hn::Sub(hn::ShiftRight<23>(ix), hn::Set(di32, 127));
+        auto m = hn::BitCast(df, hn::Or(hn::And(ix, hn::Set(di32, 0x007FFFFF)), hn::Set(di32, 0x3F800000)));
+        auto f = hn::Sub(m, hn::Set(df, 1.0f));
+        auto p = hn::Add(hn::Set(df, -0.72134752f), hn::Mul(f, hn::Set(df, 0.48089834f)));
+        p = hn::Add(hn::Set(df, 1.44269504f), hn::Mul(f, p));
+        return hn::Add(hn::ConvertTo(df, exp), hn::Mul(f, p));
+    };
+
+    auto fastExp2 = [&](auto x) {
+        x = hn::Clamp(x, hn::Set(df, -126.0f), hn::Set(df, 126.0f));
+        auto i = hn::ConvertTo(di32, x);
+        auto f = hn::Sub(x, hn::ConvertTo(df, i));
+        auto mask = hn::Lt(f, hn::Zero(df));
+        auto mask_i = hn::RebindMask(di32, mask);
+        i = hn::IfThenElse(mask_i, hn::Sub(i, hn::Set(di32, 1)), i);
+        f = hn::IfThenElse(mask, hn::Add(f, hn::Set(df, 1.0f)), f);
+        auto p = hn::Add(hn::Set(df, 0.24022650f), hn::Mul(f, hn::Set(df, 0.055504108f)));
+        p = hn::Add(hn::Set(df, 0.69314718f), hn::Mul(f, p));
+        auto pow2f = hn::Add(hn::Set(df, 1.0f), hn::Mul(f, p));
+        auto pow2i = hn::BitCast(df, hn::ShiftLeft<23>(hn::Add(i, hn::Set(di32, 127))));
+        return hn::Mul(pow2i, pow2f);
+    };
+
+    auto fastPow = [&](auto x, auto y) { return fastExp2(hn::Mul(y, fastLog2(x))); };
+
+    const auto vSrgbThreshold = hn::Set(df, 0.0031308f);
+    const auto vSrgbMul = hn::Set(df, 12.92f);
+    const auto vSrgbPowFactor = hn::Set(df, 1.055f);
+    const auto vSrgbPowOffset = hn::Set(df, 0.055f);
+    const auto vSrgbPowInvGamma = hn::Set(df, 1.0f / 2.4f);
+    const auto v255 = hn::Set(df, 255.0f);
+    const auto vHalf = hn::Set(df, 0.5f);
+
+    auto LinearToSdr8 = [&](auto v) {
+        v = hn::Max(v, vZero);
+        auto mask = hn::Le(v, vSrgbThreshold);
+        auto pathA = hn::Mul(v, vSrgbMul);
+        auto vSafe = hn::Max(v, hn::Set(df, 1e-10f));
+        auto pathB = hn::Sub(hn::Mul(vSrgbPowFactor, fastPow(vSafe, vSrgbPowInvGamma)), vSrgbPowOffset);
+        v = hn::IfThenElse(mask, pathA, pathB);
+        v = hn::Clamp(v, vZero, vOne);
+        return hn::Add(hn::Mul(v, v255), vHalf);
+    };
+
+    for (int y = 0; y < height; ++y) {
+        const uint16_t* srcRow = reinterpret_cast<const uint16_t*>(
+            reinterpret_cast<const uint8_t*>(src) + static_cast<size_t>(y) * srcStride);
+        uint8_t* dstRow = dst + static_cast<size_t>(y) * dstStride;
+
+        int x = 0;
+        for (; x + static_cast<int>(pixelsPerVec) <= width; x += static_cast<int>(pixelsPerVec)) {
+            hn::Vec<decltype(dh)> vR_h, vG_h, vB_h, vA_h;
+            hn::LoadInterleaved4(dh, reinterpret_cast<const hwy::float16_t*>(srcRow + x * 4), vR_h, vG_h, vB_h, vA_h);
+
+            hn::Half<decltype(dh)> dh_half;
+
+            // Lower half
+            auto vR_l = hn::PromoteTo(df, hn::LowerHalf(dh_half, vR_h));
+            auto vG_l = hn::PromoteTo(df, hn::LowerHalf(dh_half, vG_h));
+            auto vB_l = hn::PromoteTo(df, hn::LowerHalf(dh_half, vB_h));
+            auto vA_l = hn::PromoteTo(df, hn::LowerHalf(dh_half, vA_h));
+
+            vR_l = hn::Mul(vR_l, vExposure);
+            vG_l = hn::Mul(vG_l, vExposure);
+            vB_l = hn::Mul(vB_l, vExposure);
+            vA_l = hn::Clamp(vA_l, vZero, vOne);
+
+            auto u8B_l = hn::DemoteTo(d8, hn::DemoteTo(du16, hn::ConvertTo(du32, LinearToSdr8(hn::Mul(vB_l, vA_l)))));
+            auto u8G_l = hn::DemoteTo(d8, hn::DemoteTo(du16, hn::ConvertTo(du32, LinearToSdr8(hn::Mul(vG_l, vA_l)))));
+            auto u8R_l = hn::DemoteTo(d8, hn::DemoteTo(du16, hn::ConvertTo(du32, LinearToSdr8(hn::Mul(vR_l, vA_l)))));
+            auto u8A_l = hn::DemoteTo(d8, hn::DemoteTo(du16, hn::ConvertTo(du32, hn::Add(hn::Mul(vA_l, v255), vHalf))));
+
+            hn::StoreInterleaved4(u8B_l, u8G_l, u8R_l, u8A_l, d8, dstRow + x * 4);
+
+            // Upper half
+            auto vR_r = hn::PromoteTo(df, hn::UpperHalf(dh_half, vR_h));
+            auto vG_r = hn::PromoteTo(df, hn::UpperHalf(dh_half, vG_h));
+            auto vB_r = hn::PromoteTo(df, hn::UpperHalf(dh_half, vB_h));
+            auto vA_r = hn::PromoteTo(df, hn::UpperHalf(dh_half, vA_h));
+
+            vR_r = hn::Mul(vR_r, vExposure);
+            vG_r = hn::Mul(vG_r, vExposure);
+            vB_r = hn::Mul(vB_r, vExposure);
+            vA_r = hn::Clamp(vA_r, vZero, vOne);
+
+            auto u8B_r = hn::DemoteTo(d8, hn::DemoteTo(du16, hn::ConvertTo(du32, LinearToSdr8(hn::Mul(vB_r, vA_r)))));
+            auto u8G_r = hn::DemoteTo(d8, hn::DemoteTo(du16, hn::ConvertTo(du32, LinearToSdr8(hn::Mul(vG_r, vA_r)))));
+            auto u8R_r = hn::DemoteTo(d8, hn::DemoteTo(du16, hn::ConvertTo(du32, LinearToSdr8(hn::Mul(vR_r, vA_r)))));
+            auto u8A_r = hn::DemoteTo(d8, hn::DemoteTo(du16, hn::ConvertTo(du32, hn::Add(hn::Mul(vA_r, v255), vHalf))));
+
+            const size_t half_n = hn::Lanes(df);
+            hn::StoreInterleaved4(u8B_r, u8G_r, u8R_r, u8A_r, d8, dstRow + (x + static_cast<int>(half_n)) * 4);
+        }
+
+        for (; x < width; ++x) {
+            float r = DirectX::PackedVector::XMConvertHalfToFloat(srcRow[x * 4 + 0]) * exposure;
+            float g = DirectX::PackedVector::XMConvertHalfToFloat(srcRow[x * 4 + 1]) * exposure;
+            float b = DirectX::PackedVector::XMConvertHalfToFloat(srcRow[x * 4 + 2]) * exposure;
+            float a = std::clamp(DirectX::PackedVector::XMConvertHalfToFloat(srcRow[x * 4 + 3]), 0.0f, 1.0f);
+
+            dstRow[x * 4 + 0] = LinearToSdr8Scalar(b * a);
+            dstRow[x * 4 + 1] = LinearToSdr8Scalar(g * a);
+            dstRow[x * 4 + 2] = LinearToSdr8Scalar(r * a);
+            dstRow[x * 4 + 3] = static_cast<uint8_t>(a * 255.0f + 0.5f);
+        }
+    }
 }
 
 // ============================================================================
@@ -582,21 +1013,9 @@ void TransformColorMatrix3x3Impl(float* pixels, int width, int height,
 // ============================================================================
 
 
-static inline float AcesToneMapScalar(float v) {
-    return (v * (2.51f * v + 0.03f)) / (v * (2.43f * v + 0.59f) + 0.14f);
-}
-
-static inline uint8_t LinearToSdr8Scalar(float v) {
-    v = (v > 0.0f ? v : 0.0f);
-    // [v6.1.4.27] High-precision piece-wise sRGB OETF
-    if (v <= 0.0031308f) {
-        v *= 12.92f;
-    } else {
-        v = 1.055f * std::pow(v, 1.0f / 2.4f) - 0.055f;
-    }
-    v = (v < 0.0f) ? 0.0f : (v > 1.0f ? 1.0f : v);
-    return static_cast<uint8_t>(v * 255.0f + 0.5f);
-}
+// AcesToneMapScalar and LinearToSdr8Scalar are defined before
+// HWY_BEFORE_NAMESPACE() at the top of this file so they are visible
+// inside HWY_NAMESPACE during every foreach_target compilation pass.
 
 void ToneMapAcesBatchImpl(const float* src, int srcStride,
                           uint8_t* dst, int dstStride,
@@ -913,6 +1332,11 @@ HWY_EXPORT(SumLuminanceFloatRangeImpl);
 HWY_EXPORT(TransformColorMatrix3x3Impl);
 HWY_EXPORT(ToneMapAcesBatchImpl);
 HWY_EXPORT(ToneMapClipBatchImpl);
+HWY_EXPORT(ConvertUint16ToHalfImpl);
+HWY_EXPORT(FindPeakHalfImpl);
+HWY_EXPORT(SumLuminanceHalfRangeImpl);
+HWY_EXPORT(ToneMapAcesBatchHalfImpl);
+HWY_EXPORT(ToneMapClipBatchHalfImpl);
 
 // ============================================================================
 // Public API: thin wrappers that call the best-available target
@@ -980,6 +1404,32 @@ void ToneMapClipBatch(const float* src, int srcStride,
                       int width, int height, float exposure) {
     HWY_DYNAMIC_DISPATCH(ToneMapClipBatchImpl)(src, srcStride, dst, dstStride,
                                                 width, height, exposure);
+}
+
+void ConvertUint16ToHalf(const uint16_t* src, uint16_t* dst, size_t pixelCount) {
+    HWY_DYNAMIC_DISPATCH(ConvertUint16ToHalfImpl)(src, dst, pixelCount);
+}
+
+float FindPeakHalf(const uint16_t* data, size_t pixelCount) {
+    return HWY_DYNAMIC_DISPATCH(FindPeakHalfImpl)(data, pixelCount);
+}
+
+float SumLuminanceHalfRange(const uint16_t* row, int x0, int x1) {
+    return HWY_DYNAMIC_DISPATCH(SumLuminanceHalfRangeImpl)(row, x0, x1);
+}
+
+void ToneMapAcesBatchHalf(const uint16_t* src, int srcStride,
+                          uint8_t* dst, int dstStride,
+                          int width, int height, float exposure) {
+    HWY_DYNAMIC_DISPATCH(ToneMapAcesBatchHalfImpl)(src, srcStride, dst, dstStride,
+                                                   width, height, exposure);
+}
+
+void ToneMapClipBatchHalf(const uint16_t* src, int srcStride,
+                          uint8_t* dst, int dstStride,
+                          int width, int height, float exposure) {
+    HWY_DYNAMIC_DISPATCH(ToneMapClipBatchHalfImpl)(src, srcStride, dst, dstStride,
+                                                   width, height, exposure);
 }
 
 const char* GetActiveTargetName() {

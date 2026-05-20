@@ -76,6 +76,28 @@ void ToneMapClipBatch(const float* src, int srcStride,
                       uint8_t* dst, int dstStride,
                       int width, int height, float exposure);
 
+/// Convert uint16_t RGBA buffer to FP16 (represented as uint16_t) with scaling (in-place or separate buffer).
+void ConvertUint16ToHalf(const uint16_t* src, uint16_t* dst, size_t pixelCount);
+
+/// Find peak RGB component across R16G16B16A16_FLOAT buffer (ignores alpha).
+float FindPeakHalf(const uint16_t* data, size_t pixelCount);
+
+/// Sum luminance for a contiguous FP16 RGBA span (ignores alpha).
+/// Returns the sum of per-pixel luminance in 0..1+ space.
+float SumLuminanceHalfRange(const uint16_t* row, int x0, int x1);
+
+/// Batch ACES tone-map from FP16 RGBA to BGRA8 with exposure scaling.
+/// src: R16G16B16A16_FLOAT, dst: BGRA8888
+void ToneMapAcesBatchHalf(const uint16_t* src, int srcStride,
+                          uint8_t* dst, int dstStride,
+                          int width, int height, float exposure);
+
+/// Batch Colorimetric tone-map (simple clip) from FP16 RGBA to BGRA8 with exposure scaling.
+/// src: R16G16B16A16_FLOAT, dst: BGRA8888
+void ToneMapClipBatchHalf(const uint16_t* src, int srcStride,
+                          uint8_t* dst, int dstStride,
+                          int width, int height, float exposure);
+
 // ============================================================================
 // Runtime introspection
 // ============================================================================
