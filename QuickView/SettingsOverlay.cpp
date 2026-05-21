@@ -1852,8 +1852,8 @@ void SettingsOverlay::BuildMenu() {
     };
     tabImage.items.push_back(itemExposure);
 
-    SettingsItem itemDesatRange = { L"去饱和范围 (Range)", OptionType::Slider, nullptr, &g_config.HdrDesatThreshold };
-    itemDesatRange.tooltipText = L"设置去饱和开始介入的阈值. 越小表示只作用于极亮处 (防止褪色), 越大表示更早介入 (防止霓虹蓝).";
+    SettingsItem itemDesatRange = { AppStrings::Settings_Label_HdrDesatThreshold, OptionType::Slider, nullptr, &g_config.HdrDesatThreshold };
+    itemDesatRange.tooltipText = AppStrings::Settings_Tooltip_HdrDesatThreshold;
     itemDesatRange.minVal = 0.0f;
     itemDesatRange.maxVal = 1.0f;
     itemDesatRange.displayFormat = L"%.2f";
@@ -1872,8 +1872,8 @@ void SettingsOverlay::BuildMenu() {
     };
     tabImage.items.push_back(itemDesatRange);
 
-    SettingsItem itemDesatStrength = { L"去饱和强度 (Strength)", OptionType::Slider, nullptr, &g_config.HdrMaxDesat };
-    itemDesatStrength.tooltipText = L"设置极端高光处最大去饱和力度. 0.5 表示保留一半色彩, 1.0 表示彻底变成纯白.";
+    SettingsItem itemDesatStrength = { AppStrings::Settings_Label_HdrMaxDesat, OptionType::Slider, nullptr, &g_config.HdrMaxDesat };
+    itemDesatStrength.tooltipText = AppStrings::Settings_Tooltip_HdrMaxDesat;
     itemDesatStrength.minVal = 0.0f;
     itemDesatStrength.maxVal = 1.0f;
     itemDesatStrength.displayFormat = L"%.2f";
