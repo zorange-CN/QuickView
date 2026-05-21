@@ -1864,7 +1864,7 @@ void SettingsOverlay::BuildMenu() {
       SaveConfig();
     };
     itemDesatRange.onReset = []() {
-      g_config.HdrDesatThreshold = 0.7f;
+      g_config.HdrDesatThreshold = 0.18f;
       SaveConfig();
       extern HWND g_mainHwnd;
       extern void RefreshImageDisplay(HWND hwnd);
@@ -1884,7 +1884,7 @@ void SettingsOverlay::BuildMenu() {
       SaveConfig();
     };
     itemDesatStrength.onReset = []() {
-      g_config.HdrMaxDesat = 0.5f;
+      g_config.HdrMaxDesat = 0.75f;
       SaveConfig();
       extern HWND g_mainHwnd;
       extern void RefreshImageDisplay(HWND hwnd);
@@ -3203,6 +3203,17 @@ bool SettingsOverlay::OnMouseWheel(float delta) {
     
     // Fallback to Settings Scroll
     if (!m_visible) return false;
+
+    // 1. Slider adjustment via scroll wheel
+    if (m_pHoverItem && m_pHoverItem->type == OptionType::Slider && !m_pHoverItem->isDisabled && m_pHoverItem->pFloatVal) {
+        *m_pHoverItem->pFloatVal += delta * 0.01f;
+        if (*m_pHoverItem->pFloatVal < m_pHoverItem->minVal) *m_pHoverItem->pFloatVal = m_pHoverItem->minVal;
+        if (*m_pHoverItem->pFloatVal > m_pHoverItem->maxVal) *m_pHoverItem->pFloatVal = m_pHoverItem->maxVal;
+        if (m_pHoverItem->onChange) {
+            m_pHoverItem->onChange();
+        }
+        return true;
+    }
     
     // delta is normalized in main.cpp to 1.0 or -1.0. Map to pixel scroll speed.
     // E.g. delta > 0 -> Scroll Up (increase offset), delta < 0 -> Scroll Down (decrease offset)
@@ -3521,6 +3532,16 @@ SettingsAction SettingsOverlay::OnMouseMove(float x, float y) {
                     item.isHovered2 = inR2;
 
                     if (inR1 || inR2) g_currentCursor = ::LoadCursor(NULL, IDC_HAND);
+
+                    // Add slider specific hover cursor if not already handled by inR1/inR2
+                    if (item.type == OptionType::Slider && !item.isDisabled) {
+                        float w = 150.0f * m_uiScale;
+                        float sliderLeft = item.rect.right - w - 12.0f * m_uiScale; // including padding
+                        if (x >= sliderLeft && x <= item.rect.right && y >= item.rect.top && y <= item.rect.bottom) {
+                            g_currentCursor = ::LoadCursor(NULL, IDC_HAND);
+                            m_pHoverItem = &item;
+                        }
+                    }
 
                     // Sub-item Hit Testing
                     if (item.type == OptionType::AboutLinks) {

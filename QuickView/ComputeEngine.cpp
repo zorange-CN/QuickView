@@ -159,7 +159,7 @@ float3 ToneMapSDR(float3 color, float displayPeak, float paperWhite, uint mode) 
     float3 mapped = color * ratio;
 
     if (mode != 1 && ratio < DesatThreshold) {
-        float desat = pow((DesatThreshold - ratio) / DesatThreshold, 2.0) * DesatStrength;
+        float desat = pow((DesatThreshold - ratio) / DesatThreshold, 1.5) * DesatStrength;
         float luma = dot(mapped, float3(0.2627, 0.6780, 0.0593));
         mapped = lerp(mapped, (float3)luma, desat);
     }
@@ -334,7 +334,7 @@ float3 ToneMapHDR(float3 color, float displayPeak, float paperWhite, uint mode) 
     float3 mapped = color * ratio;
 
     if (mode != 1 && ratio < DesatThreshold) {
-        float desat = pow((DesatThreshold - ratio) / DesatThreshold, 2.0) * DesatStrength;
+        float desat = pow((DesatThreshold - ratio) / DesatThreshold, 1.5) * DesatStrength;
         float luma = dot(mapped, float3(0.2627, 0.6780, 0.0593));
         mapped = lerp(mapped, (float3)luma, desat);
     }
