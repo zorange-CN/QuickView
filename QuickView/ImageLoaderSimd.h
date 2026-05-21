@@ -26,6 +26,13 @@ void ResizeBilinear(const uint8_t* src, int srcW, int srcH, int srcStride,
 /// Find peak RGB component across R32G32B32A32_FLOAT buffer (ignores alpha).
 float FindPeakFloat(const float* data, size_t pixelCount);
 
+/// Find peak BT.2020 Luminance (Y = 0.2627*R + 0.6780*G + 0.0593*B)
+/// across R32G32B32A32_FLOAT buffer. Used for Spline tone-map curve fitting.
+float FindPeakLuminanceFloat(const float* data, size_t pixelCount);
+
+/// Find peak BT.2020 Luminance across R16G16B16A16_FLOAT buffer.
+float FindPeakLuminanceHalf(const uint16_t* data, size_t pixelCount);
+
 // ============================================================================
 // Category B: New Highway optimizations (replacing pure scalar loops)
 // ============================================================================

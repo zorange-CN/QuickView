@@ -268,6 +268,48 @@ float FindPeakFloatImpl(const float* data, size_t pixelCount) {
 }
 
 // ============================================================================
+// FindPeakLuminanceFloat - max BT.2020 Luminance across R32G32B32A32_FLOAT
+// ============================================================================
+float FindPeakLuminanceFloatImpl(const float* data, size_t pixelCount) {
+    if (!data || pixelCount == 0) return 1.0f;
+
+    const hn::ScalableTag<float> df;
+    const size_t N = hn::Lanes(df);
+
+    const auto wR = hn::Set(df, 0.2627f);
+    const auto wG = hn::Set(df, 0.6780f);
+    const auto wB = hn::Set(df, 0.0593f);
+    const auto vZero = hn::Zero(df);
+    auto vPeak = hn::Set(df, 0.0f);
+    size_t i = 0;
+
+    for (; i + N <= pixelCount; i += N) {
+        hn::Vec<decltype(df)> vR, vG, vB, vA;
+        hn::LoadInterleaved4(df, data + i * 4, vR, vG, vB, vA);
+
+        auto vLum = hn::Mul(vR, wR);
+        vLum = hn::MulAdd(vG, wG, vLum);
+        vLum = hn::MulAdd(vB, wB, vLum);
+        vLum = hn::Max(vZero, vLum);
+        vPeak = hn::Max(vPeak, vLum);
+    }
+
+    float peak = hn::ReduceMax(df, vPeak);
+
+    // Scalar tail
+    for (; i < pixelCount; ++i) {
+        const float r = data[i * 4 + 0];
+        const float g = data[i * 4 + 1];
+        const float b = data[i * 4 + 2];
+        float lum = r * 0.2627f + g * 0.6780f + b * 0.0593f;
+        if (lum < 0.0f) lum = 0.0f;
+        if (lum > peak) peak = lum;
+    }
+
+    return (std::max)(1.0f, peak);
+}
+
+// ============================================================================
 // ComputeHistogramRow - BGRA histogram + luminance
 // ============================================================================
 void ComputeHistogramRowImpl(const uint8_t* row, int width,
@@ -653,6 +695,60 @@ float FindPeakHalfImpl(const uint16_t* data_u16, size_t pixelCount) {
         float g = DirectX::PackedVector::XMConvertHalfToFloat(px[1]);
         float b = DirectX::PackedVector::XMConvertHalfToFloat(px[2]);
         peak = (std::max)({peak, r, g, b});
+    }
+
+    return peak;
+}
+
+// ============================================================================
+// FindPeakLuminanceHalf - max BT.2020 Luminance across R16G16B16A16_FLOAT
+// ============================================================================
+float FindPeakLuminanceHalfImpl(const uint16_t* data_u16, size_t pixelCount) {
+    if (!data_u16 || pixelCount == 0) return 0.0f;
+
+    const hwy::float16_t* data = reinterpret_cast<const hwy::float16_t*>(data_u16);
+    const hn::ScalableTag<float> df;
+    const hn::ScalableTag<hwy::float16_t> dh;
+    const size_t N_h = hn::Lanes(dh);
+
+    const auto wR = hn::Set(df, 0.2627f);
+    const auto wG = hn::Set(df, 0.6780f);
+    const auto wB = hn::Set(df, 0.0593f);
+    const auto vZero = hn::Zero(df);
+    auto vMax = vZero;
+    size_t i = 0;
+
+    for (; i + N_h <= pixelCount; i += N_h) {
+        hn::Vec<decltype(dh)> vR, vG, vB, vA;
+        hn::LoadInterleaved4(dh, data + i * 4, vR, vG, vB, vA);
+
+        hn::Half<decltype(dh)> dh_half;
+
+        auto r_low = hn::PromoteTo(df, hn::LowerHalf(dh_half, vR));
+        auto g_low = hn::PromoteTo(df, hn::LowerHalf(dh_half, vG));
+        auto b_low = hn::PromoteTo(df, hn::LowerHalf(dh_half, vB));
+        auto lum_low = hn::MulAdd(g_low, wG, hn::MulAdd(b_low, wB, hn::Mul(r_low, wR)));
+        lum_low = hn::Max(vZero, lum_low);
+        vMax = hn::Max(vMax, lum_low);
+
+        auto r_high = hn::PromoteTo(df, hn::UpperHalf(dh_half, vR));
+        auto g_high = hn::PromoteTo(df, hn::UpperHalf(dh_half, vG));
+        auto b_high = hn::PromoteTo(df, hn::UpperHalf(dh_half, vB));
+        auto lum_high = hn::MulAdd(g_high, wG, hn::MulAdd(b_high, wB, hn::Mul(r_high, wR)));
+        lum_high = hn::Max(vZero, lum_high);
+        vMax = hn::Max(vMax, lum_high);
+    }
+
+    float peak = hn::ReduceMax(df, vMax);
+
+    for (; i < pixelCount; ++i) {
+        const uint16_t* px = data_u16 + i * 4;
+        float r = DirectX::PackedVector::XMConvertHalfToFloat(px[0]);
+        float g = DirectX::PackedVector::XMConvertHalfToFloat(px[1]);
+        float b = DirectX::PackedVector::XMConvertHalfToFloat(px[2]);
+        float lum = r * 0.2627f + g * 0.6780f + b * 0.0593f;
+        if (lum < 0.0f) lum = 0.0f;
+        if (lum > peak) peak = lum;
     }
 
     return peak;
@@ -1334,6 +1430,8 @@ HWY_EXPORT(ToneMapAcesBatchImpl);
 HWY_EXPORT(ToneMapClipBatchImpl);
 HWY_EXPORT(ConvertUint16ToHalfImpl);
 HWY_EXPORT(FindPeakHalfImpl);
+HWY_EXPORT(FindPeakLuminanceFloatImpl);
+HWY_EXPORT(FindPeakLuminanceHalfImpl);
 HWY_EXPORT(SumLuminanceHalfRangeImpl);
 HWY_EXPORT(ToneMapAcesBatchHalfImpl);
 HWY_EXPORT(ToneMapClipBatchHalfImpl);
@@ -1412,6 +1510,14 @@ void ConvertUint16ToHalf(const uint16_t* src, uint16_t* dst, size_t pixelCount) 
 
 float FindPeakHalf(const uint16_t* data, size_t pixelCount) {
     return HWY_DYNAMIC_DISPATCH(FindPeakHalfImpl)(data, pixelCount);
+}
+
+float FindPeakLuminanceFloat(const float* data, size_t pixelCount) {
+    return HWY_DYNAMIC_DISPATCH(FindPeakLuminanceFloatImpl)(data, pixelCount);
+}
+
+float FindPeakLuminanceHalf(const uint16_t* data, size_t pixelCount) {
+    return HWY_DYNAMIC_DISPATCH(FindPeakLuminanceHalfImpl)(data, pixelCount);
 }
 
 float SumLuminanceHalfRange(const uint16_t* row, int x0, int x1) {

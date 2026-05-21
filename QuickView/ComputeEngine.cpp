@@ -42,6 +42,7 @@ void CSGenMips(uint3 id : SV_DispatchThreadID)
     DstMip[id.xy] = (c0 + c1 + c2 + c3) * 0.25;
 }
 )";
+
 static const char* HLSL_ToneMapHdrToSdr = R"(
 Texture2D<float4> SrcTex : register(t0);
 RWTexture2D<unorm float4> DstTex : register(u0);
@@ -66,7 +67,11 @@ cbuffer ToneMapParams : register(b0)
     uint  TransferFunction;
     float DesatThreshold;
     float DesatStrength;
-    float2 _pad;
+    float SceneAvgPQ;
+    float MappedAvgPQ;
+
+    float ContrastRecovery;
+    float3 _pad;
     row_major float4x4 ColorMatrix;
 };
 
@@ -101,7 +106,7 @@ float3 LinearToSrgb(float3 c) {
 }
 
 float3 ToneMapSDR(float3 color, float displayPeak, float paperWhite, uint mode) {
-    float L = max(color.r, max(color.g, color.b));
+    float L = dot(color, float3(0.2627, 0.6780, 0.0593));
     if (L <= 0.0) return color;
     float targetL = L;
 
@@ -110,23 +115,44 @@ float3 ToneMapSDR(float3 color, float displayPeak, float paperWhite, uint mode) 
         float x = L_pq - SplineSrcPivot;
         float targetL_pq;
         if (x > 0.0f) {
-            x = min(x, ContentPeakScRgb - SplineSrcPivot);
+            float contentPeakPq = LinearToPQ(ContentPeakScRgb);
+            x = min(x, contentPeakPq - SplineSrcPivot);
             targetL_pq = ((SplineQa * x + SplineQb) * x + SplineQc) * x + SplineDstPivot;
         } else {
             x = max(x, -SplineSrcPivot);
             targetL_pq = (SplinePa * x + SplinePb) * x + SplineDstPivot;
         }
-        targetL = PQToLinear(clamp(targetL_pq, 0.0f, DisplayPeakScRgb));
-    } else if (mode == 2) { // Reinhard
-        float normL = L / paperWhite;
-        float normDisplayPeak = displayPeak / paperWhite;
-        float toe = pow(min(normL, 1.0f), 0.85f);
-        float compressedL = toe;
-        if (normL > 1.0f) {
-            float t = (normL - 1.0f) / (normDisplayPeak - 1.0f + 1e-6);
-            compressedL = 1.0f + (normDisplayPeak - 1.0f) * t / (1.0f + t);
+        float displayPeakPq = LinearToPQ(DisplayPeakScRgb);
+        targetL = PQToLinear(clamp(targetL_pq, 0.0f, displayPeakPq));
+
+        if (ContrastRecovery > 0.0) {
+            float L_original_pq = L_pq;
+            float L_mapped_pq = LinearToPQ(targetL);
+            float orig_contrast = L_original_pq / max(SceneAvgPQ, 1e-6);
+            float mapped_contrast = L_mapped_pq / max(MappedAvgPQ, 1e-6);
+            float contrast_factor = pow(max(orig_contrast / max(mapped_contrast, 1e-6), 1e-6), ContrastRecovery);
+            float targetL_pq = L_mapped_pq * contrast_factor;
+            float displayPeakPq = LinearToPQ(displayPeak);
+            targetL = PQToLinear(clamp(targetL_pq, 0.0f, displayPeakPq));
         }
-        targetL = compressedL * paperWhite;
+    } else if (mode == 2) { // ITU-R BT.2390 EETF
+        float srcMax_pq = LinearToPQ(ContentPeakScRgb);
+        float dstMax_pq = LinearToPQ(displayPeak);
+        if (srcMax_pq > dstMax_pq) {
+            float L_pq = LinearToPQ(L);
+            float ks = 1.5f * dstMax_pq - 0.5f;
+            ks = max(ks, 0.075f);
+            if (L_pq > ks) {
+                float t = (L_pq - ks) / max(srcMax_pq - ks, 1e-6f);
+                t = saturate(t);
+                float c = (srcMax_pq - ks) / max(dstMax_pq - ks, 1e-6f);
+                float a_val = c - 2.0f;
+                float b_val = 3.0f - 2.0f * c;
+                float H = ((a_val * t + b_val) * t + c) * t;
+                float targetL_pq = ks + (dstMax_pq - ks) * H;
+                targetL = PQToLinear(clamp(targetL_pq, 0.0f, dstMax_pq));
+            }
+        }
     }
     
     float ratio = targetL / L;
@@ -138,6 +164,24 @@ float3 ToneMapSDR(float3 color, float displayPeak, float paperWhite, uint mode) 
         mapped = lerp(mapped, (float3)luma, desat);
     }
     return mapped;
+}
+
+float3 GamutMapHuePreserving(float3 color, float displayPeak) {
+    float Y = dot(color, float3(0.2126, 0.7152, 0.0722));
+    float max_c = max(color.r, max(color.g, color.b));
+    float min_c = min(color.r, min(color.g, color.b));
+    
+    if (max_c <= 0.0) return (float3)0.0;
+    
+    float k = 1.0;
+    if (max_c > displayPeak && max_c > Y) {
+        k = min(k, (displayPeak - Y) / (max_c - Y));
+    }
+    if (min_c < 0.0 && Y > min_c) {
+        k = min(k, Y / (Y - min_c));
+    }
+    
+    return Y + k * (color - Y);
 }
 
 [numthreads(8, 8, 1)]
@@ -167,14 +211,10 @@ void CSToneMap(uint3 id : SV_DispatchThreadID) {
         toneMapped = ToneMapSDR(color.rgb, displayPeak, paperWhite, Mode);
     }
 
-    float3 finalColor = mul((float3x3)ColorMatrix, toneMapped);
-    
-    float targetLuma = dot(finalColor, float3(0.2126, 0.7152, 0.0722));
-    float minC = min(min(finalColor.r, finalColor.g), finalColor.b);
-    if (minC < 0.0) {
-        float t = targetLuma / (targetLuma - minC + 1e-6);
-        finalColor = lerp((float3)targetLuma, finalColor, saturate(t));
-    }
+    // 关键物理校正：将 [0, displayPeak] 范围的物理线性亮度归一化到 [0, 1] 供 SDR OETF 编码
+    float3 normalizedColor = toneMapped / displayPeak;
+    float3 finalColor = mul((float3x3)ColorMatrix, normalizedColor);
+    finalColor = GamutMapHuePreserving(finalColor, 1.0);
 
     DstTex[id.xy] = float4(LinearToSrgb(finalColor), color.a);
 }
@@ -204,7 +244,11 @@ cbuffer ToneMapParams : register(b0)
     uint  TransferFunction;
     float DesatThreshold;
     float DesatStrength;
-    float2 _pad;
+    float SceneAvgPQ;
+    float MappedAvgPQ;
+
+    float ContrastRecovery;
+    float3 _pad;
     row_major float4x4 ColorMatrix;
 };
 
@@ -234,32 +278,56 @@ float3 SrgbToLinear(float3 c) {
 }
 
 float3 ToneMapHDR(float3 color, float displayPeak, float paperWhite, uint mode) {
-    float L = max(color.r, max(color.g, color.b));
+    float L = dot(color, float3(0.2627, 0.6780, 0.0593));
     if (L <= 0.0) return color;
     float targetL = L;
 
     if (mode == 0) { // Spline
+        if (ContentPeakScRgb <= DisplayPeakScRgb + 1e-5) {
+            return color;
+        }
         float L_pq = LinearToPQ(L);
         float x = L_pq - SplineSrcPivot;
         float targetL_pq;
         if (x > 0.0f) {
-            x = min(x, ContentPeakScRgb - SplineSrcPivot);
+            float contentPeakPq = LinearToPQ(ContentPeakScRgb);
+            x = min(x, contentPeakPq - SplineSrcPivot);
             targetL_pq = ((SplineQa * x + SplineQb) * x + SplineQc) * x + SplineDstPivot;
         } else {
             x = max(x, -SplineSrcPivot);
             targetL_pq = (SplinePa * x + SplinePb) * x + SplineDstPivot;
         }
-        targetL = PQToLinear(clamp(targetL_pq, 0.0f, DisplayPeakScRgb));
-    } else if (mode == 2) { // Reinhard
-        float normL = L / paperWhite;
-        float normDisplayPeak = displayPeak / paperWhite;
-        float toe = pow(min(normL, 1.0f), 0.85f);
-        float compressedL = toe;
-        if (normL > 1.0f) {
-            float t = (normL - 1.0f) / (normDisplayPeak - 1.0f + 1e-6);
-            compressedL = 1.0f + (normDisplayPeak - 1.0f) * t / (1.0f + t);
+        float displayPeakPq = LinearToPQ(DisplayPeakScRgb);
+        targetL = PQToLinear(clamp(targetL_pq, 0.0f, displayPeakPq));
+
+        if (ContrastRecovery > 0.0) {
+            float L_original_pq = L_pq;
+            float L_mapped_pq = LinearToPQ(targetL);
+            float orig_contrast = L_original_pq / max(SceneAvgPQ, 1e-6);
+            float mapped_contrast = L_mapped_pq / max(MappedAvgPQ, 1e-6);
+            float contrast_factor = pow(max(orig_contrast / max(mapped_contrast, 1e-6), 1e-6), ContrastRecovery);
+            float targetL_pq = L_mapped_pq * contrast_factor;
+            float displayPeakPq = LinearToPQ(displayPeak);
+            targetL = PQToLinear(clamp(targetL_pq, 0.0f, displayPeakPq));
         }
-        targetL = compressedL * paperWhite;
+    } else if (mode == 2) { // ITU-R BT.2390 EETF
+        float srcMax_pq = LinearToPQ(ContentPeakScRgb);
+        float dstMax_pq = LinearToPQ(displayPeak);
+        if (srcMax_pq > dstMax_pq) {
+            float L_pq = LinearToPQ(L);
+            float ks = 1.5f * dstMax_pq - 0.5f;
+            ks = max(ks, 0.075f);
+            if (L_pq > ks) {
+                float t = (L_pq - ks) / max(srcMax_pq - ks, 1e-6f);
+                t = saturate(t);
+                float c = (srcMax_pq - ks) / max(dstMax_pq - ks, 1e-6f);
+                float a_val = c - 2.0f;
+                float b_val = 3.0f - 2.0f * c;
+                float H = ((a_val * t + b_val) * t + c) * t;
+                float targetL_pq = ks + (dstMax_pq - ks) * H;
+                targetL = PQToLinear(clamp(targetL_pq, 0.0f, dstMax_pq));
+            }
+        }
     }
     
     float ratio = targetL / L;
@@ -271,6 +339,24 @@ float3 ToneMapHDR(float3 color, float displayPeak, float paperWhite, uint mode) 
         mapped = lerp(mapped, (float3)luma, desat);
     }
     return mapped;
+}
+
+float3 GamutMapHuePreserving(float3 color, float displayPeak) {
+    float Y = dot(color, float3(0.2627, 0.6780, 0.0593));
+    float max_c = max(color.r, max(color.g, color.b));
+    float min_c = min(color.r, min(color.g, color.b));
+    
+    if (max_c <= 0.0) return (float3)0.0;
+    
+    float k = 1.0;
+    if (max_c > displayPeak && max_c > Y) {
+        k = min(k, (displayPeak - Y) / (max_c - Y));
+    }
+    if (min_c < 0.0 && Y > min_c) {
+        k = min(k, Y / (Y - min_c));
+    }
+    
+    return Y + k * (color - Y);
 }
 
 [numthreads(8, 8, 1)]
@@ -292,7 +378,7 @@ void CSToneMapHDR(uint3 id : SV_DispatchThreadID) {
 
     color.rgb *= Exposure * ExposureGain;
     float luma = dot(color.rgb, float3(0.2627, 0.6780, 0.0593));
-    float displayPeak = max(DisplayPeakScRgb, 1.0);
+    float displayPeak = max((Mode == 0) ? RealHardwarePeakScRgb : DisplayPeakScRgb, 1.0);
     float paperWhite = max(PaperWhiteScRgb, 1.0);
 
     float3 toneMapped = color.rgb;
@@ -301,26 +387,12 @@ void CSToneMapHDR(uint3 id : SV_DispatchThreadID) {
     }
 
     float3 finalColor = mul((float3x3)ColorMatrix, toneMapped);
-    
-    float targetLuma = dot(finalColor, float3(0.2126, 0.7152, 0.0722));
-    float minC = min(min(finalColor.r, finalColor.g), finalColor.b);
-    if (minC < 0.0) {
-        float t = targetLuma / (targetLuma - minC + 1e-6);
-        finalColor = lerp((float3)targetLuma, finalColor, saturate(t));
-    }
+    finalColor = GamutMapHuePreserving(finalColor, displayPeak);
 
     DstTex[id.xy] = float4(finalColor, color.a);
 }
 )";
 
-// ============================================================================
-// [GPU Pipeline] ISO 21496-1 Gain Map Composition Shader
-// ============================================================================
-// Input 0 (t0): SDR base layer (BGRA8)
-// Input 1 (t1): Gain Map (R8 grayscale, bilinear sampled via UV)
-// Output (u0): FP16 linear RGBA (R16G16B16A16_FLOAT)
-// Constant Buffer (b0): GpuShaderPayload (16-byte aligned rows)
-// ============================================================================
 static const char* HLSL_ComposeGainMap = R"(
 Texture2D<float4> SdrTex        : register(t0);  // Unbounded float4 to support R32G32B32A32 input
 Texture2D<unorm float>  GainTex : register(t1);  // R8 Gain Map
@@ -386,8 +458,6 @@ void CSComposeGainMap(uint3 id : SV_DispatchThreadID)
     DstTex[id.xy] = float4(hdrLinear, 1.0);
 }
 )";
-
-
 
 static const char* HLSL_GamutLut = R"(
 Texture2D<float4> SrcTex : register(t0);
@@ -514,8 +584,6 @@ HRESULT ComputeEngine::CompileShaders() {
     hr = m_d3dDevice->CreateComputeShader(blob->GetBufferPointer(), blob->GetBufferSize(), nullptr, &m_csComposeGainMap);
     if (FAILED(hr)) return hr;
 
-
-
     // 7. Gamut LUT dispatch
     blob.Reset(); errorBlob.Reset();
     hr = D3DCompile(HLSL_GamutLut, strlen(HLSL_GamutLut), nullptr, nullptr, nullptr, "CSGamutLut", "cs_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &blob, &errorBlob);
@@ -542,8 +610,6 @@ HRESULT ComputeEngine::CompileShaders() {
     hr = m_d3dDevice->CreateBuffer(&cbDesc, nullptr, &m_gainMapConstantBuffer);
     if (FAILED(hr)) return hr;
 
-
-
     cbDesc.ByteWidth = 16;
     hr = m_d3dDevice->CreateBuffer(&cbDesc, nullptr, &m_gamutLutConstantBuffer);
     if (FAILED(hr)) return hr;
@@ -567,7 +633,7 @@ HRESULT ComputeEngine::CompileShaders() {
         if (FAILED(hr)) return hr;
     }
 
-    // Linear sampler for bilinear gain map interpolation
+    // Linear sampler for bilinear gamut/gain map interpolation
     D3D11_SAMPLER_DESC sampDesc = {};
     sampDesc.Filter = D3D11_FILTER_MIN_MAG_LINEAR_MIP_POINT;
     sampDesc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
@@ -756,8 +822,6 @@ HRESULT ComputeEngine::UploadOverflowLut(const uint8_t* values, int edge, ID3D11
     return S_OK;
 }
 
-
-
 HRESULT ComputeEngine::ReadbackMaskTexture(ID3D11Texture2D* maskTexture, GamutMaskReadback* outReadback) {
     if (!maskTexture || !outReadback) return E_INVALIDARG;
 
@@ -798,8 +862,6 @@ HRESULT ComputeEngine::ReadbackMaskTexture(ID3D11Texture2D* maskTexture, GamutMa
     m_d3dContext->Unmap(staging.Get(), 0);
     return S_OK;
 }
-
-
 
 HRESULT ComputeEngine::DispatchGamutMaskLut(
     ID3D11Texture2D* srcTexture,
@@ -974,7 +1036,6 @@ HRESULT ComputeEngine::ToneMapHdrToSdr(const uint8_t* srcPixels, int width, int 
     *outTexture = pDst.Detach();
     return S_OK;
 }
-
 
 HRESULT ComputeEngine::ToneMapHdrToHdr(const uint8_t* srcPixels, int width, int height, int stride, const ToneMapSettings& settings, ID3D11Texture2D** outTexture, PixelFormat srcFormat) {
     if (!m_valid || !srcPixels || width <= 0 || height <= 0 || !outTexture) return E_INVALIDARG;
@@ -1221,7 +1282,7 @@ HRESULT ComputeEngine::ComposeGainMap(
     return ComposeGainMap(pSdr.Get(), pGain.Get(), payload, outTexture);
 }
 
-HRESULT ComputeEngine::ComposeGainMap(
+HRESULT QuickView::ComputeEngine::ComposeGainMap(
     ID3D11Texture2D* sdrTex,
     ID3D11Texture2D* gainTex,
     const GpuShaderPayload& payload,
@@ -1286,4 +1347,3 @@ HRESULT ComputeEngine::ComposeGainMap(
 }
 
 } // namespace QuickView
-

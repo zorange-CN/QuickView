@@ -798,7 +798,7 @@ float InternalEstimateFramePeakScRgb(const QuickView::RawImageFrame &frame) {
           frame.pixels + static_cast<size_t>(y) * frame.stride);
       max_val = (std::max)(
           max_val,
-          ImageLoaderSimd::FindPeakFloat(row, static_cast<size_t>(frame.width)));
+          ImageLoaderSimd::FindPeakLuminanceFloat(row, static_cast<size_t>(frame.width)));
     }
     peak = max_val;
   } else if (frame.format == QuickView::PixelFormat::R16G16B16A16_FLOAT) {
@@ -808,19 +808,23 @@ float InternalEstimateFramePeakScRgb(const QuickView::RawImageFrame &frame) {
           frame.pixels + static_cast<size_t>(y) * frame.stride);
       max_val = (std::max)(
           max_val,
-          ImageLoaderSimd::FindPeakHalf(row, static_cast<size_t>(frame.width)));
+          ImageLoaderSimd::FindPeakLuminanceHalf(row, static_cast<size_t>(frame.width)));
     }
     peak = max_val;
   } else if (frame.format == QuickView::PixelFormat::R16G16B16A16_UNORM) {
-    uint16_t max_val = 0;
+    float max_lum = 0.0f;
     for (int y = 0; y < frame.height; ++y) {
       const uint16_t* row = reinterpret_cast<const uint16_t*>(
           frame.pixels + static_cast<size_t>(y) * frame.stride);
       for (int x = 0; x < frame.width; ++x) {
-        max_val = (std::max)({max_val, row[x * 4 + 0], row[x * 4 + 1], row[x * 4 + 2]});
+        const float r = static_cast<float>(row[x * 4 + 0]) / 65535.0f;
+        const float g = static_cast<float>(row[x * 4 + 1]) / 65535.0f;
+        const float b = static_cast<float>(row[x * 4 + 2]) / 65535.0f;
+        const float lum = r * 0.2627f + g * 0.6780f + b * 0.0593f;
+        if (lum > max_lum) max_lum = lum;
       }
     }
-    peak = static_cast<float>(max_val) / 65535.0f;
+    peak = max_lum;
   }
 
   // Final Pass: Apply EOTF if content is still encoded (PQ/HLG)
@@ -901,12 +905,20 @@ BuildToneMapSettings(const QuickView::RawImageFrame &frame,
   const float paperWhiteScRgb =
       (displayState.GetSdrWhiteScale() > 1.0f ? displayState.GetSdrWhiteScale() : 1.0f);
   float peakNits = displayState.GetEffectivePeakNits(g_config.HdrPeakNitsOverride);
+  settings.isHdrOutput = displayState.advancedColorActive ? 1u : 0u;
+  settings.realHardwarePeakScRgb = (std::max)(1.0f, peakNits / 80.0f);
       
   const float displayPeakScRgb = (peakNits / 80.0f > 1.0f ? peakNits / 80.0f : 1.0f); (void)displayPeakScRgb;
 
   float contentPeakScRgb = 1.0f;
   float contentAverageScRgb = 0.0f;
   const char* contentPeakSource = "Default_1.0";
+
+  // Phase 1a: Always perform pixel scan for ground-truth content peak.
+  // This is essential because metadata maxCLL/masteringMax often reflects
+  // mastering display capability (e.g. 4000 nits), not actual content peak.
+  const float pixelScanPeak = InternalEstimateFramePeakScRgb(frame);
+
   if (frame.hdrMetadata.hasNitsMetadata) {
     if (frame.hdrMetadata.maxCLLNits > 0.0f) {
       contentPeakScRgb = frame.hdrMetadata.maxCLLNits / 80.0f;
@@ -921,9 +933,20 @@ BuildToneMapSettings(const QuickView::RawImageFrame &frame,
     }
   }
 
-  if (contentPeakScRgb <= 1.0f) {
-    contentPeakScRgb = InternalEstimateFramePeakScRgb(frame);
-    if (contentPeakScRgb > 1.0f) contentPeakSource = "Estimated_PixelScan";
+  // Phase 1b: Resolve contentPeak — use min(metadata, pixelScan) when both available.
+  // Metadata often overstates the peak (mastering display capability, not actual content).
+  // The pixel scan gives ground-truth content peak. Using min() ensures the Spline
+  // curve precisely fits the actual content range, matching mpv/libplacebo behavior.
+  if (pixelScanPeak > 1.0f) {
+    if (contentPeakScRgb > 1.0f) {
+      if (pixelScanPeak < contentPeakScRgb) {
+        contentPeakScRgb = pixelScanPeak;
+        contentPeakSource = "Min_PixelScan_vs_Metadata";
+      }
+    } else {
+      contentPeakScRgb = pixelScanPeak;
+      contentPeakSource = "Estimated_PixelScan";
+    }
   }
 
   if (contentAverageScRgb <= 0.0f) {
@@ -966,13 +989,13 @@ BuildToneMapSettings(const QuickView::RawImageFrame &frame,
   const float sdrWhite = displayState.sdrWhiteLevelNits > 0.0f ? displayState.sdrWhiteLevelNits : 80.0f;
 
   if (!displayState.advancedColorActive) {
-      // SDR Output Path: Map entire HDR content range to [0, 1.0] scRGB linear,
-      // which exactly fills the sRGB OETF [0, 1] encoding domain for UNORM8 output.
-      // This is the international standard approach (ITU-R BT.2390, mpv/libplacebo reference).
-      // 1.0 scRGB = sRGB reference white = maximum representable value in UNORM8 sRGB.
+      // SDR Output Path: Map HDR content using 203 nits standard target peak (ITU-R BT.2408 graphics white).
+      // This ensures that SDR elements in the HDR image (mapped from 203 nits) align exactly with
+      // the sRGB OETF max white domain, maintaining harmonious brightness alongside standard SDR images
+      // while providing a 2.54x physics headroom range (203 nits vs 80 nits) to smoothly roll-off highlight details.
       settings.displayPeakScRgb = (g_config.HdrPeakNitsOverride > 0.0f) 
                                   ? (g_config.HdrPeakNitsOverride / 80.0f) 
-                                  : 1.0f;
+                                  : (203.0f / 80.0f);
       exposureGain = 1.0f;
   } else {
       // HDR Output Path: DWM maps 1.0 scRGB to sdrWhiteLevelNits.
@@ -994,22 +1017,23 @@ BuildToneMapSettings(const QuickView::RawImageFrame &frame,
   settings.desatThreshold = g_config.HdrDesatThreshold;
   settings.desatStrength = g_config.HdrMaxDesat;
 
-  if (settings.mode == 0) { // Spline (libplacebo pl_tone_map_spline port — PQ space)
-    // Save linear values before overwriting CB fields with PQ
-    const float contentPeakLinear = settings.contentPeakScRgb;
-    const float displayPeakLinear = settings.displayPeakScRgb;
+  const float totalGain = settings.exposure * settings.exposureGain;
+  settings.contentPeakScRgb = (std::max)(settings.contentPeakScRgb * totalGain, 1e-4f);
+  const float contentPeakLinear = settings.contentPeakScRgb;
+  const float displayPeakLinear = (std::max)(settings.displayPeakScRgb, 1e-4f);
 
+  if (settings.mode == 0) { // Spline (libplacebo pl_tone_map_spline port — PQ space)
     // --- Convert all luminance bounds to PQ space [0, 1] ---
     const float input_min  = 0.0f;
     const float input_max  = LinearToPQ(contentPeakLinear);
     const float output_min = 0.0f;
     const float output_max = LinearToPQ(displayPeakLinear);
 
-    // Scene average in PQ (from metadata or measured, fallback to default knee)
-    float input_avg = 0.0f;
-    if (contentAverageScRgb > 0.001f) {
-      input_avg = LinearToPQ(contentAverageScRgb);
-    }
+    // Static image viewer: force input_avg = 0 to use default knee position.
+    // mpv uses dynamic peak detection (hdr-compute-peak=yes) for real-time scene avg,
+    // NOT static maxFALL metadata. For static images, libplacebo defaults to
+    // knee_default (0.4) when input_avg is 0, producing the standard spline curve.
+    const float input_avg = 0.0f;
 
     // --- st2094_pick_knee (libplacebo port, PQ space) ---
     constexpr float knee_adaptation = 0.4f;
@@ -1083,14 +1107,49 @@ BuildToneMapSettings(const QuickView::RawImageFrame &frame,
     settings.splineQb = Qb;
     settings.splineQc = Qc;
 
-    // Overwrite CB peak fields with PQ values for shader (mode 0 only)
-    settings.contentPeakScRgb = input_max;   // input_max_pq
-    settings.displayPeakScRgb = output_max;  // output_max_pq
+    // Calculate mapped scene average luminance in PQ space for contrast recovery
+    float input_avg_pq = input_avg;
+    if (input_avg_pq <= 0.0f) {
+      input_avg_pq = input_min + knee_default * (input_max - input_min);
+    }
+    float sx = input_avg_pq - src_knee;
+    float mapped_avg;
+    if (sx > 0.0f) {
+      sx = std::min(sx, input_max - src_knee);
+      mapped_avg = ((Qa * sx + Qb) * sx + Qc) * sx + dst_knee;
+    } else {
+      sx = std::max(sx, -src_knee);
+      mapped_avg = (Pa * sx + Pb) * sx + dst_knee;
+    }
+    mapped_avg = std::clamp(mapped_avg, 0.0f, output_max);
+
+    settings.sceneAvgPq = input_avg_pq;
+    settings.mappedAvgPq = mapped_avg;
+    settings.contrastRecovery = 0.0f; // Disabled: libplacebo default is 0.0 (high_quality preset uses 0.3, video-optimized)
   } else {
     // Mode 1/2: displayPeakScRgb is already linear scRGB.
+    settings.sceneAvgPq = 0.0f;
+    settings.mappedAvgPq = 0.0f;
+    settings.contrastRecovery = 0.0f; // Disable contrast recovery for other modes
   }
 
   const float headroom = settings.displayPeakScRgb / settings.paperWhiteScRgb; (void)headroom;
+
+  // [DEBUG] Dump all tone map CB parameters for diagnostics
+  {
+    wchar_t dbg[512];
+    swprintf_s(dbg, L"[ToneMap] mode=%u contentPeak=%.4f(%.1fnit) displayPeak=%.4f(%.1fnit) "
+      L"exposure=%.3f gain=%.3f paperWhite=%.3f isHdr=%u src=%S\n"
+      L"  spline: srcPivot=%.4f dstPivot=%.4f slope=N/A Pa=%.4f Pb=%.4f Qa=%.4f Qb=%.4f Qc=%.4f\n",
+      settings.mode, settings.contentPeakScRgb, settings.contentPeakScRgb * 80.0f,
+      settings.displayPeakScRgb, settings.displayPeakScRgb * 80.0f,
+      settings.exposure, settings.exposureGain, settings.paperWhiteScRgb,
+      settings.isHdrOutput, contentPeakSource,
+      settings.splineSrcPivot, settings.splineDstPivot,
+      settings.splinePa, settings.splinePb, settings.splineQa, settings.splineQb, settings.splineQc);
+    OutputDebugStringW(dbg);
+  }
+
   // Gain Map Auto-Exposure Compensation
   if (frame.hdrMetadata.hasGainMap) {
       // Gain Map logic below will modify settings.exposure multiplicatively
@@ -2414,17 +2473,19 @@ CRenderEngine::UploadRawFrameToGPU(const QuickView::RawImageFrame &frame,
                                   float sx = L_pq - toneMapSettings.splineSrcPivot;
                                   float targetL_pq;
                                   if (sx > 0.0f) {
-                                      sx = std::min(sx, toneMapSettings.contentPeakScRgb - toneMapSettings.splineSrcPivot);
+                                      float contentPeakPq = LinearToPQ(toneMapSettings.contentPeakScRgb);
+                                      sx = std::min(sx, contentPeakPq - toneMapSettings.splineSrcPivot);
                                       targetL_pq = ((toneMapSettings.splineQa * sx + toneMapSettings.splineQb) * sx + toneMapSettings.splineQc) * sx + toneMapSettings.splineDstPivot;
                                   } else {
                                       sx = std::max(sx, -toneMapSettings.splineSrcPivot);
                                       targetL_pq = (toneMapSettings.splinePa * sx + toneMapSettings.splinePb) * sx + toneMapSettings.splineDstPivot;
                                   }
-                                  targetL_pq = std::clamp(targetL_pq, 0.0f, toneMapSettings.displayPeakScRgb);
+                                  float displayPeakPq = LinearToPQ(toneMapSettings.displayPeakScRgb);
+                                  targetL_pq = std::clamp(targetL_pq, 0.0f, displayPeakPq);
 
                                   // Convert back to linear for ratio-based color mapping
                                   float targetL = PQToLinear(targetL_pq);
-                                  float outPeakLinear = PQToLinear(toneMapSettings.displayPeakScRgb);
+                                  float outPeakLinear = toneMapSettings.displayPeakScRgb;
 
                                   // Compression-based Desaturation (CPU)
                                   float compressionRatio = targetL / std::max(1e-6f, L);

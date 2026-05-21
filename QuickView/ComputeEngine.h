@@ -33,11 +33,15 @@ struct alignas(16) ToneMapSettings {
 
     float desatThreshold;           // [v6.1.4.24] New desaturation threshold
     float desatStrength;            // [v6.1.4.24] New desaturation strength
-    float _pad[2];                  // Keep colorMatrix 16-byte aligned
+    float sceneAvgPq;               // Scene average luminance in PQ space
+    float mappedAvgPq;              // Mapped scene average luminance in PQ space
+
+    float contrastRecovery;         // Contrast recovery strength (defaults to 0.30)
+    float _pad[3];                  // Keep colorMatrix 16-byte aligned
 
     float colorMatrix[16];          // float4x4 layout: 3x3 matrix stored as 4 rows of float4 for HLSL alignment
 };
-static_assert(sizeof(ToneMapSettings) == 144, "CB must be exactly 144 bytes to match HLSL float4x4 layout");
+static_assert(sizeof(ToneMapSettings) == 160, "CB must be exactly 160 bytes to match HLSL float4x4 layout");
 
 
 struct GamutMaskReadback {
