@@ -660,7 +660,10 @@ HRESULT CollapseFloatResultToSdr(const QuickView::Codec::DecodeContext& ctx,
                                  QuickView::Codec::DecodeResult& result) {
     using namespace QuickView;
 
-    if (result.format != PixelFormat::R16G16B16A16_FLOAT || !result.pixels ||
+    const bool isFp16 = (result.format == PixelFormat::R16G16B16A16_FLOAT);
+    const bool isFp32 = (result.format == PixelFormat::R32G32B32A32_FLOAT);
+
+    if ((!isFp16 && !isFp32) || !result.pixels ||
         result.width <= 0 || result.height <= 0) {
         return S_FALSE;
     }
@@ -677,24 +680,47 @@ HRESULT CollapseFloatResultToSdr(const QuickView::Codec::DecodeContext& ctx,
     // to match the high-fidelity GPU path and professional standards.
     const float kSdrExposure = 0.8f; 
     const bool useClip = (g_config.HdrToneMappingMode == 1) || (!result.metadata.hdrMetadata.isHdr);
-    if (useClip) { // 1 = Colorimetric (Clip) or Non-HDR SDR
-        ImageLoaderSimd::ToneMapClipBatchHalf(
-            reinterpret_cast<const uint16_t*>(result.pixels),
-            result.stride,
-            dstPixels,
-            dstStride,
-            result.width,
-            result.height,
-            kSdrExposure);
-    } else { // 0 = ACES
-        ImageLoaderSimd::ToneMapAcesBatchHalf(
-            reinterpret_cast<const uint16_t*>(result.pixels),
-            result.stride,
-            dstPixels,
-            dstStride,
-            result.width,
-            result.height,
-            kSdrExposure);
+    
+    if (isFp16) {
+        if (useClip) { // 1 = Colorimetric (Clip) or Non-HDR SDR
+            ImageLoaderSimd::ToneMapClipBatchHalf(
+                reinterpret_cast<const uint16_t*>(result.pixels),
+                result.stride,
+                dstPixels,
+                dstStride,
+                result.width,
+                result.height,
+                kSdrExposure);
+        } else { // 0 = ACES
+            ImageLoaderSimd::ToneMapAcesBatchHalf(
+                reinterpret_cast<const uint16_t*>(result.pixels),
+                result.stride,
+                dstPixels,
+                dstStride,
+                result.width,
+                result.height,
+                kSdrExposure);
+        }
+    } else { // isFp32
+        if (useClip) { // 1 = Colorimetric (Clip) or Non-HDR SDR
+            ImageLoaderSimd::ToneMapClipBatch(
+                reinterpret_cast<const float*>(result.pixels),
+                result.stride,
+                dstPixels,
+                dstStride,
+                result.width,
+                result.height,
+                kSdrExposure);
+        } else { // 0 = ACES
+            ImageLoaderSimd::ToneMapAcesBatch(
+                reinterpret_cast<const float*>(result.pixels),
+                result.stride,
+                dstPixels,
+                dstStride,
+                result.width,
+                result.height,
+                kSdrExposure);
+        }
     }
 
     if (ctx.freeFunc) {
