@@ -743,7 +743,6 @@ bool IsSceneLinearFrame(const QuickView::RawImageFrame &frame) {
 
 bool IsHdrLikeFrame(const QuickView::RawImageFrame &frame) {
   return frame.colorInfo.dataSpace == QuickView::PixelDataSpace::EncodedHdr ||
-         frame.colorInfo.IsSceneLinear() || frame.hdrMetadata.hasGainMap ||
          frame.hdrMetadata.isHdr;
 }
 

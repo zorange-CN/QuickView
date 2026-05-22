@@ -641,13 +641,19 @@ bool ShouldProbeAnimatedBufferCodec(const std::wstring& fmt) {
 }
 
  bool PrefersSdrTarget(const QuickView::Codec::DecodeContext& ctx) {
-     // [v6.1.4.28] Only force FP16 retention if AdvancedColorMode is explicitly ON (2).
-     // For 'Auto' (1) or 'Disabled' (0), we stick to the efficient SDR collapse path 
-     // unless we are on an actual HDR display (where headroom > 0.01).
-     if (g_config.AdvancedColorMode == 2) {
-         return false; 
+     // AdvancedColorMode mapping: 0=Off, 1=On, 2=Auto
+     // Mode 1 (On):  User explicitly forced HDR → never collapse to SDR
+     if (g_config.AdvancedColorMode == 1) {
+         return false;
      }
-     return ctx.targetHdrHeadroomStops >= 0.0f && ctx.targetHdrHeadroomStops <= 0.01f;
+     // Mode 0 (Off): User explicitly disabled HDR → always prefer SDR
+     if (g_config.AdvancedColorMode == 0) {
+         return true;
+     }
+     // Mode 2 (Auto): Decide by actual display headroom.
+     // Negative headroom (-1) means unknown/not-yet-resolved → conservative SDR assumption.
+     // Near-zero headroom (≤ 0.01 stops) means confirmed SDR display.
+     return ctx.targetHdrHeadroomStops <= 0.01f;
  }
 
 HRESULT CollapseFloatResultToSdr(const QuickView::Codec::DecodeContext& ctx,
@@ -5931,8 +5937,7 @@ namespace QuickView {
                                  ctx.pMetadata->hdrMetadata.isHdr =
                                      transfer == QuickView::TransferFunction::Linear ||
                                      transfer == QuickView::TransferFunction::PQ ||
-                                     transfer == QuickView::TransferFunction::HLG ||
-                                     info.bits_per_sample > 8;
+                                     transfer == QuickView::TransferFunction::HLG;
                              }
                          }
                      }
@@ -6140,7 +6145,10 @@ namespace QuickView {
                         result.metadata.hdrMetadata.isValid = true;
                         result.metadata.hdrMetadata.transfer = transfer;
                         result.metadata.hdrMetadata.primaries = primaries;
-                        result.metadata.hdrMetadata.isHdr = useHighBitDepthOutput;
+                        result.metadata.hdrMetadata.isHdr =
+                            (transfer == QuickView::TransferFunction::Linear ||
+                             transfer == QuickView::TransferFunction::PQ ||
+                             transfer == QuickView::TransferFunction::HLG);
                         
                         // [v6.2] Parse Captured EXIF
                         if (!jxlExifBuffer.empty() && result.metadata.IsEmpty()) {
@@ -6388,7 +6396,11 @@ namespace QuickView {
                     result.metadata.colorInfo.nominalBitDepth = 16;
                     PopulateAvifHdrStaticMetadata(decoder->image, &result.metadata.hdrMetadata);
                     result.metadata.hdrMetadata.isSceneLinear = true;
-                    result.metadata.hdrMetadata.isHdr = true;
+                    result.metadata.hdrMetadata.isHdr =
+                        (transfer == QuickView::TransferFunction::Linear ||
+                         transfer == QuickView::TransferFunction::PQ ||
+                         transfer == QuickView::TransferFunction::HLG ||
+                         decoder->image->gainMap != nullptr);
                     if (decoder->image->icc.data && decoder->image->icc.size > 0) {
                         result.metadata.iccProfileData.assign(
                             decoder->image->icc.data,
@@ -7344,7 +7356,11 @@ namespace QuickView {
                             ? 16
                             : 32;
 
-                    result.metadata.hdrMetadata.isHdr = true;
+                    result.metadata.hdrMetadata.isHdr =
+                        (result.metadata.hdrMetadata.isHdr ||
+                         result.metadata.hdrMetadata.hasGainMap ||
+                         result.metadata.hdrMetadata.transfer == QuickView::TransferFunction::PQ ||
+                         result.metadata.hdrMetadata.transfer == QuickView::TransferFunction::HLG);
                     result.metadata.hdrMetadata.isSceneLinear = true;
 
                     result.metadata.FormatDetails = L"High Precision HEIF / Linear scRGB";
@@ -11955,7 +11971,7 @@ static bool TryDecodeAvifGainMappedLinearRGBA(
     if (hdrMetadata) {
         PopulateAvifHdrStaticMetadata(decoder->image, hdrMetadata);
         hdrMetadata->isValid = true;
-        hdrMetadata->isHdr = true;
+        hdrMetadata->isHdr = (hdrHeadroom > 0.01f);
         hdrMetadata->isSceneLinear = true;
         hdrMetadata->gainMapApplied = true;
         hdrMetadata->gainMapAppliedHeadroom = hdrHeadroom;
