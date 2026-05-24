@@ -1899,15 +1899,34 @@ void SettingsOverlay::BuildMenu() {
     itemHdrPeak.maxVal = 2000.0f;
     itemHdrPeak.displayFormat = L"%.0f nits";
     itemHdrPeak.onChange = []() {
-        // [HDR Override] Use the dedicated lightweight refresh that syncs the display color
-        // state and re-uploads cached frames without triggering surface resizes or gain map
-        // file reloads. The bake cache handles headroom changes efficiently via GPU re-composition.
         extern void RefreshHdrOverrideSettings(HWND hwnd);
         extern HWND g_mainHwnd;
         RefreshHdrOverrideSettings(g_mainHwnd);
         SaveConfig();
     };
     tabImage.items.push_back(itemHdrPeak);
+
+    // HDR Peak Percentile (mpv behavior)
+    // Map float to an integer index internally
+    static int s_hdrPercentileIdx = 0;
+    if (g_config.HdrPeakPercentile >= 100.0f) s_hdrPercentileIdx = 0;
+    else if (g_config.HdrPeakPercentile >= 99.99f) s_hdrPercentileIdx = 1;
+    else s_hdrPercentileIdx = 2;
+
+    SettingsItem itemHdrPercentile = { AppStrings::Settings_Label_HdrPeakPercentile, OptionType::ComboBox, nullptr, nullptr, &s_hdrPercentileIdx, nullptr, 0, 0,
+        { AppStrings::Settings_Option_HdrPeakPercentile_100, AppStrings::Settings_Option_HdrPeakPercentile_99995, AppStrings::Settings_Option_HdrPeakPercentile_999 } };
+    itemHdrPercentile.tooltipText = AppStrings::Settings_Tooltip_HdrPeakPercentile;
+    itemHdrPercentile.onChange = []() {
+        if (s_hdrPercentileIdx == 0) g_config.HdrPeakPercentile = 100.0f;
+        else if (s_hdrPercentileIdx == 1) g_config.HdrPeakPercentile = 99.995f;
+        else if (s_hdrPercentileIdx == 2) g_config.HdrPeakPercentile = 99.9f;
+        
+        SaveConfig();
+        extern void RefreshHdrOverrideSettings(HWND hwnd);
+        extern HWND g_mainHwnd;
+        RefreshHdrOverrideSettings(g_mainHwnd);
+    };
+    tabImage.items.push_back(itemHdrPercentile);
 
     // HDR Desaturation Threshold (Range)
     SettingsItem itemDesatRange = { AppStrings::Settings_Label_HdrDesatThreshold, OptionType::Slider, nullptr, &g_config.HdrDesatThreshold };

@@ -346,6 +346,11 @@ namespace AppStrings {
     extern const wchar_t* Settings_Tooltip_HdrToneMapping;
     extern const wchar_t* Settings_Label_HdrPeakNitsOverride;
     extern const wchar_t* Settings_Tooltip_HdrPeakNitsOverride;
+    extern const wchar_t* Settings_Label_HdrPeakPercentile;
+    extern const wchar_t* Settings_Tooltip_HdrPeakPercentile;
+    extern const wchar_t* Settings_Option_HdrPeakPercentile_100;
+    extern const wchar_t* Settings_Option_HdrPeakPercentile_99995;
+    extern const wchar_t* Settings_Option_HdrPeakPercentile_999;
     extern const wchar_t* Settings_Label_HdrDesatThreshold;
     extern const wchar_t* Settings_Tooltip_HdrDesatThreshold;
     extern const wchar_t* Settings_Label_HdrMaxDesat;

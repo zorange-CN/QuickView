@@ -790,6 +790,69 @@ float InternalEstimateFramePeakScRgb(const QuickView::RawImageFrame &frame) {
   }
 
   float peak = 1.0f;
+  
+  if (g_config.HdrPeakPercentile < 100.0f && 
+      (frame.format == QuickView::PixelFormat::R32G32B32A32_FLOAT || 
+       frame.format == QuickView::PixelFormat::R16G16B16A16_FLOAT)) {
+      
+      // Fast Logarithmic Histogram (32768 bins, ~6.4 KB working set for HDR)
+      // Heap allocation prevents stack overflow on background threads
+      std::vector<uint32_t> hist(32768, 0);
+      uint32_t total_pixels = 0;
+
+      if (frame.format == QuickView::PixelFormat::R32G32B32A32_FLOAT) {
+          for (int y = 0; y < frame.height; ++y) {
+              const float* row = reinterpret_cast<const float*>(
+                  frame.pixels + static_cast<size_t>(y) * frame.stride);
+              for (int x = 0; x < frame.width; ++x) {
+                  float r = row[x * 4 + 0];
+                  float g = row[x * 4 + 1];
+                  float b = row[x * 4 + 2];
+                  float lum = std::max(0.0f, r * 0.2627f + g * 0.6780f + b * 0.0593f);
+                  uint32_t bits = *(uint32_t*)&lum;
+                  if (bits > 0x7FFFFFFF) bits = 0; // Filter negatives/-0
+                  uint32_t bin = bits >> 16;
+                  if (bin < 32768) {
+                      hist[bin]++;
+                      total_pixels++;
+                  }
+              }
+          }
+      } else {
+          for (int y = 0; y < frame.height; ++y) {
+              const uint16_t* row = reinterpret_cast<const uint16_t*>(
+                  frame.pixels + static_cast<size_t>(y) * frame.stride);
+              for (int x = 0; x < frame.width; ++x) {
+                  float r = DirectX::PackedVector::XMConvertHalfToFloat(row[x * 4 + 0]);
+                  float g = DirectX::PackedVector::XMConvertHalfToFloat(row[x * 4 + 1]);
+                  float b = DirectX::PackedVector::XMConvertHalfToFloat(row[x * 4 + 2]);
+                  float lum = std::max(0.0f, r * 0.2627f + g * 0.6780f + b * 0.0593f);
+                  uint32_t bits = *(uint32_t*)&lum;
+                  if (bits > 0x7FFFFFFF) bits = 0;
+                  uint32_t bin = bits >> 16;
+                  if (bin < 32768) {
+                      hist[bin]++;
+                      total_pixels++;
+                  }
+              }
+          }
+      }
+
+      if (total_pixels > 0) {
+          uint32_t target_exclude = static_cast<uint32_t>(total_pixels * (100.0f - g_config.HdrPeakPercentile) / 100.0f);
+          uint32_t accum = 0;
+          for (int i = 32767; i >= 0; --i) {
+              accum += hist[i];
+              if (accum > target_exclude) {
+                  uint32_t bits = static_cast<uint32_t>(i) << 16;
+                  peak = *(float*)&bits;
+                  break;
+              }
+          }
+      }
+      return peak;
+  }
+
   if (frame.format == QuickView::PixelFormat::R32G32B32A32_FLOAT) {
     float max_val = 0.0f;
     for (int y = 0; y < frame.height; ++y) {

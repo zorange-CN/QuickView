@@ -233,6 +233,7 @@ struct AppConfig {
     int CmsRenderingIntent = 1;          // 0=Perceptual, 1=Relative Colorimetric
     int HdrToneMappingMode = 0;          // 0=Spline, 1=Colorimetric, 2=Legacy Reinhard
     float HdrPeakNitsOverride = 0.0f;    // 0 = Auto. >0 overrides display peak luminance.
+    float HdrPeakPercentile = 100.0f;    // 100.0 = Absolute Peak. 99.995 = discard top 0.005% of pixels.
     int AdvancedColorMode = 2;           // 0=Off, 1=On, 2=Auto (HDR / FP16 scRGB pipeline)
     float Exposure = 1.0f;               // Exposure Compensation (0.18 - 10.0)
     float HdrDesatThreshold = 0.18f;     // Highlight Desaturation Threshold (0.0 - 1.0)
