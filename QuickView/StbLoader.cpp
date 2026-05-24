@@ -81,7 +81,7 @@ namespace StbLoader {
         *channels = 4;
 
         size_t pixelSize = useFloat ? sizeof(float) : sizeof(uint8_t);
-        size_t totalSize = w * h * 4 * pixelSize;
+        size_t totalSize = (size_t)w * h * 4 * pixelSize;
 
         outData.resize(totalSize);
         memcpy(outData.data(), data, totalSize);
@@ -110,7 +110,7 @@ namespace StbLoader {
         *channels = 4;
 
         size_t pixelSize = useFloat ? sizeof(float) : sizeof(uint8_t);
-        size_t totalSize = w * h * 4 * pixelSize;
+        size_t totalSize = (size_t)w * h * 4 * pixelSize;
 
         outData.resize(totalSize);
         memcpy(outData.data(), data, totalSize);

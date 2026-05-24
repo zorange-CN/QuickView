@@ -714,7 +714,7 @@ public:
           &m_ic.pixcfg, WUFFS_BASE__PIXEL_FORMAT__BGRA_PREMUL,
           WUFFS_BASE__PIXEL_SUBSAMPLING__NONE, m_width, m_height);
 
-      m_pixelBytes = m_width * m_height * 4;
+      m_pixelBytes = (size_t)m_width * m_height * 4;
       m_canvas.resize(m_pixelBytes);
 
       status = wuffs_base__pixel_buffer__set_from_slice(

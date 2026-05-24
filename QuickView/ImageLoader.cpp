@@ -2909,7 +2909,7 @@ HRESULT CImageLoader::LoadThumbJPEGFromMemory(const uint8_t* pBuf, size_t size, 
     pData->width = finalW;
     pData->height = finalH;
     pData->stride = finalW * 4;
-    pData->pixels.resize(pData->stride * finalH);
+    pData->pixels.resize((size_t)pData->stride * finalH);
 
     // Use TJPF_BGRA for D2D compatibility
     // Note: TurboJPEG BGRA is straight alpha. If extracted thumb has no alpha (JPEG doesn't), it's opaque (A=255).
@@ -3969,7 +3969,7 @@ HRESULT CImageLoader::LoadThumbnail(LPCWSTR filePath, int targetSize, ThumbData*
     pData->width = newW;
     pData->height = newH;
     pData->stride = newW * 4;
-    pData->pixels.resize(pData->stride * newH);
+    pData->pixels.resize((size_t)pData->stride * newH);
 
     hr = converter->CopyPixels(nullptr, pData->stride, (UINT)pData->pixels.size(), pData->pixels.data());
     if (SUCCEEDED(hr)) {
