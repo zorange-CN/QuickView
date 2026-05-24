@@ -9,7 +9,7 @@ on:
 jobs:
   build-and-release:
     name: Build & Pack (${{ matrix.platform }})
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
     permissions:
       contents: write
     strategy:
@@ -102,7 +102,7 @@ jobs:
 
   publish-final:
     needs: build-and-release
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
     name: Consolidate & Release
     permissions:
       contents: write
