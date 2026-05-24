@@ -104,6 +104,7 @@ jpegview-static-post2024-vs2019-x64/
 scratch/
 
 .agent/
+.agents/
 
 # VCPKG intermediates
 vcpkg_installed/

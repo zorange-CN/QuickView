@@ -5196,19 +5196,92 @@ namespace QuickView {
             static bool FindMpfSecondImage(const uint8_t* buf, size_t bufSize,
                                            const uint8_t** outData, size_t* outSize) {
                 if (!buf || bufSize < 4) return false;
-                // [Diagnostic] Log scan start
-                for (size_t i = 2; i < bufSize - 1; ++i) {
+                // Verify SOI of primary image
+                if (buf[0] != 0xFF || buf[1] != 0xD8) return false;
+
+                size_t offset = 2;
+                size_t eoiOffset = 0;
+
+                while (offset < bufSize - 1) {
+                    if (buf[offset] != 0xFF) {
+                        offset++;
+                        continue;
+                    }
+
+                    uint8_t marker = buf[offset + 1];
+                    if (marker == 0xFF) {
+                        offset++;
+                        continue;
+                    }
+
+                    if (marker == 0x00) {
+                        offset += 2;
+                        continue;
+                    }
+
+                    if (marker == 0xDA) { // SOS (Start of Scan)
+                        if (offset + 4 > bufSize) return false;
+                        uint16_t sosLen = (buf[offset + 2] << 8) | buf[offset + 3];
+                        offset += 2 + sosLen;
+
+                        // Safe parse of compressed bitstream until real EOI (0xFF 0xD9)
+                        while (offset < bufSize - 1) {
+                            if (buf[offset] == 0xFF) {
+                                uint8_t m = buf[offset + 1];
+                                if (m == 0x00) {
+                                    offset += 2;
+                                } else if (m >= 0xD0 && m <= 0xD7) {
+                                    offset += 2;
+                                } else if (m == 0xD9) {
+                                    eoiOffset = offset;
+                                    break;
+                                } else if (m == 0xFF) {
+                                    offset++;
+                                } else {
+                                    offset += 2;
+                                }
+                            } else {
+                                offset++;
+                            }
+                        }
+                        break;
+                    }
+
+                    if (marker == 0xD8) {
+                        offset += 2;
+                        continue;
+                    }
+                    if (marker == 0xD9) {
+                        eoiOffset = offset;
+                        break;
+                    }
+
+                    // Skip segment
+                    if (offset + 4 > bufSize) return false;
+                    uint16_t segLen = (buf[offset + 2] << 8) | buf[offset + 3];
+                    offset += 2 + segLen;
+                }
+
+                if (eoiOffset == 0 || eoiOffset + 2 >= bufSize) {
+                    QV_LOG("UltraHDR_Scan", TraceLoggingString("EOI Parsing Failed, Fallback to direct search", "Action"));
+                    offset = 2;
+                } else {
+                    offset = eoiOffset + 2;
+                }
+
+                // Search for secondary SOI in outer payload only
+                for (size_t i = offset; i < bufSize - 1; ++i) {
                     if (buf[i] == 0xFF && buf[i + 1] == 0xD8) {
-                        // Found an SOI. 
                         *outData = buf + i;
                         *outSize = bufSize - i;
                         QV_LOG("UltraHDR_Scan",
-                            TraceLoggingString("SecondSOI Found", "Action"),
+                            TraceLoggingString("SecondSOI Found after EOI", "Action"),
                             TraceLoggingUInt64(i, "Offset"),
                             TraceLoggingUInt64(*outSize, "Size"));
                         return true;
                     }
                 }
+
                 QV_LOG("UltraHDR_Scan", TraceLoggingString("SecondSOI NotFound", "Action"));
                 return false;
             }
@@ -5576,29 +5649,33 @@ namespace QuickView {
                 }
 
                 // ============================================================
-                // [Ultra HDR] Phase 2: Extract MPF Gain Map (uses pBuf which
-                // is still alive — it's the original file buffer)
+                // [Ultra HDR] Phase 2: Metadata always; Gain Map decode only when
+                // HDR target is active (uses pBuf — still the original file buffer)
                 // ============================================================
-                if (hasUltraHdr && !PrefersSdrTarget(ctx)) {
+                if (hasUltraHdr) {
                     result.metadata.hdrMetadata.hasGainMap = true;
                     result.metadata.hdrMetadata.isValid = true;
                     result.metadata.hdrMetadata.transfer = QuickView::TransferFunction::SRGB;
-                    result.metadata.hdrMetadata.gainMapBaseHeadroom = ultraHdrPayload.hdrCapacityMin;
-                    result.metadata.hdrMetadata.gainMapAlternateHeadroom = ultraHdrPayload.hdrCapacityMax;
+                    if (ultraHdrPayloadParsed) {
+                        result.metadata.hdrMetadata.gainMapBaseHeadroom = ultraHdrPayload.hdrCapacityMin;
+                        result.metadata.hdrMetadata.gainMapAlternateHeadroom = ultraHdrPayload.hdrCapacityMax;
+                    }
                     result.metadata.FormatDetails += L" Ultra HDR";
                     ultraHdrPayload.sdrWidth = (uint32_t)result.width;
                     ultraHdrPayload.sdrHeight = (uint32_t)result.height;
 
-                    const uint8_t* gainJpegData = nullptr;
-                    size_t gainJpegSize = 0;
-                    if (ultraHdrPayloadParsed &&
-                        UltraHdr::FindMpfSecondImage(pBuf, bufSize, &gainJpegData, &gainJpegSize)) {
-                        QV_LOG("UltraHDR_Scan", TraceLoggingString("MPF GainMap Found", "Action"));
-                        auto auxLayer = UltraHdr::DecodeGainMapJpeg(gainJpegData, gainJpegSize, ctx);
-                        if (auxLayer) {
-                            result.blendOp = GpuBlendOp::UltraHdrGainMap;
-                            result.auxLayer = std::move(auxLayer);
-                            result.shaderPayload = ultraHdrPayload;
+                    if (!PrefersSdrTarget(ctx)) {
+                        const uint8_t* gainJpegData = nullptr;
+                        size_t gainJpegSize = 0;
+                        if (ultraHdrPayloadParsed &&
+                            UltraHdr::FindMpfSecondImage(pBuf, bufSize, &gainJpegData, &gainJpegSize)) {
+                            QV_LOG("UltraHDR_Scan", TraceLoggingString("MPF GainMap Found", "Action"));
+                            auto auxLayer = UltraHdr::DecodeGainMapJpeg(gainJpegData, gainJpegSize, ctx);
+                            if (auxLayer) {
+                                result.blendOp = GpuBlendOp::UltraHdrGainMap;
+                                result.auxLayer = std::move(auxLayer);
+                                result.shaderPayload = ultraHdrPayload;
+                            }
                         }
                     }
                 }
@@ -5653,8 +5730,31 @@ namespace QuickView {
                 result.pixels = capturedPtr;
                 result.width = w;
                 result.height = h;
-                result.stride = w * 4; // Wuffs is packed
-                result.format = PixelFormat::BGRA8888; // Wuffs is BGRA Premul
+                if (info.bitDepth == 16) {
+                    const int packedStride = static_cast<int>(w) * 8;
+                    const int stride = CalculateSIMDAlignedStride(static_cast<int>(w), 8);
+                    result.stride = stride;
+                    result.format = PixelFormat::R16G16B16A16_UNORM;
+                    if (stride != packedStride) {
+                        const size_t totalSize = static_cast<size_t>(stride) * h;
+                        uint8_t* alignedPixels = ctx.allocator(totalSize);
+                        if (!alignedPixels) {
+                            if (ctx.freeFunc && capturedPtr) ctx.freeFunc(capturedPtr);
+                            return E_OUTOFMEMORY;
+                        }
+                        #pragma omp parallel for schedule(static)
+                        for (int y = 0; y < static_cast<int>(h); ++y) {
+                            memcpy(alignedPixels + static_cast<size_t>(y) * stride,
+                                   capturedPtr + static_cast<size_t>(y) * packedStride,
+                                   static_cast<size_t>(w) * 8);
+                        }
+                        if (ctx.freeFunc && capturedPtr) ctx.freeFunc(capturedPtr);
+                        result.pixels = alignedPixels;
+                    }
+                } else {
+                    result.stride = w * 4; // Wuffs is packed
+                    result.format = PixelFormat::BGRA8888; // Wuffs is BGRA Premul
+                }
                 result.success = true;
 
                 // [v5.3] Fill metadata directly
@@ -6296,6 +6396,8 @@ namespace QuickView {
         const bool useHighBitDepthOutput = isPureHdrFormat || 
                                           (!preferSdrTarget && decoder->image->gainMap != nullptr) || 
                                           (!preferSdrTarget && decoder->image->depth > 8);
+        const bool hasIcc = (decoder->image->icc.data && decoder->image->icc.size > 0);
+        const bool isHighBitDepthIccSdr = (decoder->image->depth > 8) && hasIcc && !isPureHdrFormat;
 
                 if (useHighBitDepthOutput) {
                     if (decoder->image->gainMap) {
@@ -6366,6 +6468,44 @@ namespace QuickView {
                         avifRGBImageFreePixels(&rgb);
                         avifDecoderDestroy(decoder);
                         return E_OUTOFMEMORY;
+                    }
+
+                    if (isHighBitDepthIccSdr) {
+                        // Copy high precision raw pixels without manual CPU linearization to prevent double ICC-LUT mismatch
+                        #pragma omp parallel for schedule(static)
+                        for (int y = 0; y < height; ++y) {
+                            uint8_t* dst = pixels + static_cast<size_t>(y) * stride;
+                            const uint8_t* src = rgb.pixels + static_cast<size_t>(y) * rgb.rowBytes;
+                            memcpy(dst, src, static_cast<size_t>(width) * 8); // RGBA 16-bit = 8 bytes per pixel
+                        }
+                        result.pixels = pixels;
+                        result.width = width;
+                        result.height = height;
+                        result.stride = stride;
+                        result.format = PixelFormat::R16G16B16A16_UNORM;
+                        result.success = true;
+                        result.metadata.LoaderName = L"libavif (Unified SDR HighBitDepth)";
+                        result.metadata.Width = origW;
+                        result.metadata.Height = origH;
+                        result.metadata.colorInfo.dataSpace = QuickView::PixelDataSpace::EncodedSdr;
+                        result.metadata.colorInfo.transfer = transfer;
+                        result.metadata.colorInfo.primaries = primaries;
+                        result.metadata.colorInfo.nominalBitDepth = decoder->image->depth;
+                        PopulateAvifHdrStaticMetadata(decoder->image, &result.metadata.hdrMetadata);
+                        result.metadata.hdrMetadata.isSceneLinear = false;
+                        result.metadata.hdrMetadata.isHdr = false;
+                        if (hasIcc) {
+                            result.metadata.iccProfileData.assign(
+                                decoder->image->icc.data,
+                                decoder->image->icc.data + decoder->image->icc.size);
+                            result.metadata.colorInfo.hasEmbeddedIcc = true;
+                        }
+                        wchar_t fmtBuf[128];
+                        swprintf_s(fmtBuf, L"%d-bit SDR AVIF [ICC]", decoder->image->depth);
+                        result.metadata.FormatDetails = fmtBuf;
+                        avifRGBImageFreePixels(&rgb);
+                        avifDecoderDestroy(decoder);
+                        return S_OK;
                     }
 
                     // 1. Thread-safe static lookup tables precomputation (Magic Statics)
@@ -11736,6 +11876,19 @@ ctx.allocator.ctx = arena;
                     dst[dstIdx+3] = src[srcIdx+3];
                 }
             }
+        } else if (bpp == 8) {
+            // Safe nearest-neighbor downscaling for 64bpp (8 bytes/pixel, including HalfFloat or R16G16B16A16_UNORM)
+            uint64_t* dst = (uint64_t*)pixels;
+            uint64_t* src = (uint64_t*)wicData;
+            for (int y = 0; y < finalH; ++y) {
+                int srcY = y * wicHeight / finalH;
+                for (int x = 0; x < finalW; ++x) {
+                    int srcX = x * wicWidth / finalW;
+                    int dstIdx = y * (outStride/8) + x;
+                    int srcIdx = srcY * (wicStride/8) + srcX;
+                    dst[dstIdx] = src[srcIdx];
+                }
+            }
         } else {
             ImageLoaderSimd::ResizeBilinear(wicData, wicWidth, wicHeight, wicStride,
                                       pixels, finalW, finalH, outStride);
@@ -11764,18 +11917,18 @@ ctx.allocator.ctx = arena;
         // Ensure basic hdrMetadata is always valid for Info Panel display
         if (!pMetadata->hdrMetadata.isValid) {
             pMetadata->hdrMetadata.isValid = true;
-            pMetadata->hdrMetadata.transfer = isFloat
+            pMetadata->hdrMetadata.transfer = (isFloat || isHalfFloat)
                 ? QuickView::TransferFunction::Linear
                 : QuickView::TransferFunction::SRGB;
             pMetadata->hdrMetadata.primaries = QuickView::ColorPrimaries::SRGB;
-            pMetadata->hdrMetadata.isHdr = isFloat;
-            pMetadata->hdrMetadata.isSceneLinear = isFloat;
+            pMetadata->hdrMetadata.isHdr = (isFloat || isHalfFloat);
+            pMetadata->hdrMetadata.isSceneLinear = (isFloat || isHalfFloat);
         }
         if (pMetadata->colorInfo.nominalBitDepth == 0) {
-            pMetadata->colorInfo.nominalBitDepth = isFloat ? 32 : 8;
+            pMetadata->colorInfo.nominalBitDepth = isFloat ? 32 : ((isHalfFloat || isHighBitDepth) ? 16 : 8);
         }
         if (pMetadata->colorInfo.transfer == QuickView::TransferFunction::Unknown) {
-            pMetadata->colorInfo.transfer = isFloat
+            pMetadata->colorInfo.transfer = (isFloat || isHalfFloat)
                 ? QuickView::TransferFunction::Linear
                 : QuickView::TransferFunction::SRGB;
         }

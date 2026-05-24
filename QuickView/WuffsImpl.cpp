@@ -177,26 +177,23 @@ static bool DecodePNG_Impl(const uint8_t* data, size_t size,
         // Transparency
         pInfo->hasAlpha = !wuffs_base__image_config__first_frame_is_opaque(&ic);
         
-        // Bit Depth - simplified check based on source format
-        wuffs_base__pixel_format fmt =
-            wuffs_base__pixel_config__pixel_format(&ic.pixcfg);
-        (void)fmt;
-        (void)fmt;
-        // Wuffs format encoding is complex, but we can verify bit depth approximately
-        // Standard PNG is usually 8 bit per channel. 
-        // If 16-bit, Wuffs might report it? 
-        // Wuffs v0.3+ usually decodes to 8-bit BGRA/RGBA.
-        // However, we can check basic assumption:
-        if (pInfo->bitDepth <= 0) pInfo->bitDepth = 8; // Default
+        // Bit depth comes from IHDR prescan; Wuffs decodes 8-bit as BGRA premul, 16-bit as RGBA 4x16LE.
+        if (pInfo->bitDepth <= 0) pInfo->bitDepth = 8;
         
         // Simple heuristic for APNG? Wuffs doesn't easily expose "is_animated" flag in image_config for PNG?
         // Actually it might satisfy "generic" animation interface?
         // For now, default to false.
     }
 
-    wuffs_base__pixel_config__set(&ic.pixcfg, WUFFS_BASE__PIXEL_FORMAT__BGRA_PREMUL, WUFFS_BASE__PIXEL_SUBSAMPLING__NONE, width, height);
+    uint32_t targetFmt = WUFFS_BASE__PIXEL_FORMAT__BGRA_PREMUL;
+    uint32_t bpp = 4;
+    if (pInfo && pInfo->bitDepth == 16) {
+        targetFmt = WUFFS_BASE__PIXEL_FORMAT__RGBA_NONPREMUL_4X16LE;
+        bpp = 8;
+    }
+    wuffs_base__pixel_config__set(&ic.pixcfg, targetFmt, WUFFS_BASE__PIXEL_SUBSAMPLING__NONE, width, height);
 
-    size_t pixelSize = (size_t)width * height * 4;
+    size_t pixelSize = (size_t)width * height * bpp;
     outPixels.resize(pixelSize);
 
     wuffs_base__pixel_buffer pb;
