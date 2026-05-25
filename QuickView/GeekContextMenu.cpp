@@ -365,10 +365,10 @@ void GeekContextMenu::CreateResources() {
         D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
     m_factory->CreateDCRenderTarget(&rtProps, &m_rt);
     if (!m_rt) return;
-
-    // Initialize Glass Engine
-    m_glassEngine.InitializeResources(m_rt.Get());
-
+    // [Fix] ContextMenu uses TrackB_DWM (DWM acrylic) which doesn't need D2D effects like blur.
+    // Initializing these effects on a DCRenderTarget triggers the WARP JIT compiler to compile compute shaders,
+    // causing a massive ~600MB memory spike that doesn't drop. Skipping initialization avoids this.
+    // m_glassEngine.InitializeResources(m_rt.Get());
     const bool isWin11 = SystemInfo::IsWindows11OrGreater();
 
     // Text formats

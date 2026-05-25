@@ -1060,16 +1060,26 @@ BuildToneMapSettings(const QuickView::RawImageFrame &frame,
                                   : (203.0f / 80.0f);
       exposureGain = 1.0f;
   } else {
-      // HDR Output Path: DWM maps 1.0 scRGB to sdrWhiteLevelNits.
-      if (settings.contentPeakScRgb <= 1.1f) {
-          // SDR Image in HDR Mode: Keep exposureGain at 1.0f so the image white point 
-          // adaptive-aligns with the OS SDR slider (sdrWhiteLevelNits), matching the UI.
+      // HDR Output Path: Windows Advanced Color FP16 SwapChain is absolute photometric (1.0f = 80 nits).
+      // DWM does NOT automatically scale scRGB values by the SDR White slider.
+      // 
+      // Dynamic Exposure Routing based on The Architect's correction:
+      if (IsHdrLikeFrame(frame)) {
+          // [Absolute Photometric Path for True HDR]
+          // HDR images (PQ/HLG/Linear with absolute nits metadata) represent exact physical 
+          // photon counts. We MUST NOT artificially inflate them to match the SDR UI slider, 
+          // otherwise a 600 nits sun will be incorrectly blown out to 1800 nits and forced 
+          // through unnecessary tone-mapping compression. 
           exposureGain = 1.0f;
       } else {
-          // HDR Image in HDR Mode: Scale by 80.0f / sdrWhite to correct DWM's scaling amplification.
-          // This ensures absolute physical nits accuracy, perfectly aligning with mpv.
-          exposureGain = 80.0f / sdrWhite;
+          // [Relative UI Path for SDR]
+          // Standard SDR images (sRGB) lack physical absolute brightness. 
+          // To prevent them from looking "too dark" against bright UI elements, 
+          // we scale their diffuse white (1.0f) to match the user's OS SDR White Level.
+          exposureGain = sdrWhite / 80.0f;
       }
+      
+      // Calculate max capable scRGB in the absolute coordinate system (1.0f = 80 nits).
       settings.displayPeakScRgb = displayState.GetEffectivePeakNits(g_config.HdrPeakNitsOverride) / 80.0f;
   }
   settings.exposureGain = exposureGain;
@@ -1081,6 +1091,12 @@ BuildToneMapSettings(const QuickView::RawImageFrame &frame,
 
   const float totalGain = settings.exposure * settings.exposureGain;
   settings.contentPeakScRgb = (std::max)(settings.contentPeakScRgb * totalGain, 1e-4f);
+
+  // Smart Passthrough: Bypass ToneMapping (force Mode 1: Colorimetric/Clip) if the content 
+  // completely fits within the display's current capabilities, avoiding unnecessary curve compression.
+  if (settings.mode == 0 && settings.contentPeakScRgb <= settings.displayPeakScRgb) {
+      settings.mode = 1;
+  }
 
   // Defense: Prevent artificial attenuation of native SDR images (Mode 1) in the SDR output pipeline
   // Without this, the shader would divide physical 1.0 peak by 2.5375, destroying brightness.
