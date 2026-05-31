@@ -15,6 +15,9 @@
 
 #pragma comment(lib, "Shlwapi.lib")
 
+// [Directory Watcher] Custom window message posted when background scan completes
+constexpr UINT WM_NAVIGATOR_DIR_CHANGED = WM_APP + 50;
+
 // [ImageID Architecture] Stable content-based unique identifier
 using ImageID = size_t;  // 64-bit path hash
 
@@ -27,7 +30,23 @@ inline ImageID ComputePathHash(const std::wstring& path) {
 
 class FileNavigator {
 public:
-    void Initialize(const std::wstring& currentPath) {
+    // Background scan result (produced by watcher thread, consumed by main thread)
+    struct DirectoryScanResult {
+        std::vector<std::wstring> files;
+        std::vector<uintmax_t> sizes;
+        std::vector<ImageID> ids;
+    };
+
+    FileNavigator() = default;
+    ~FileNavigator() { StopDirectoryWatcher(); }
+    FileNavigator(const FileNavigator&) = delete;
+    FileNavigator& operator=(const FileNavigator&) = delete;
+
+    void Initialize(const std::wstring& currentPath, HWND hwnd = nullptr) {
+        // Stop existing watcher before mutating state
+        StopDirectoryWatcher();
+        if (hwnd) m_hwnd = hwnd;
+
         namespace fs = std::filesystem;
         
         std::wstring archivePart;
@@ -123,31 +142,23 @@ public:
         }
 
         
-        struct Entry {
-            std::wstring p;
-            uintmax_t s;
-            std::filesystem::file_time_type m;
-            std::wstring t; // type (extension)
-            std::string exifDate; // EXIF DateTaken
-        };
-
-        std::vector<Entry> entries;
+        std::vector<SortEntry> entries;
         entries.reserve(m_files.size());
-        namespace fs = std::filesystem;
+        namespace fs2 = std::filesystem;
         for(size_t i=0; i<m_files.size(); ++i) {
-            Entry e;
+            SortEntry e;
             e.p = m_files[i];
             e.s = m_sizes[i];
             std::error_code ec;
             
             // For virtual paths, use the archive file's timestamp
             if (IsVirtualPath(e.p)) {
-                e.m = fs::last_write_time(p, ec);
+                e.m = fs2::last_write_time(p, ec);
             } else {
-                e.m = fs::last_write_time(e.p, ec);
+                e.m = fs2::last_write_time(e.p, ec);
             }
 
-            e.t = fs::path(e.p).extension().wstring();
+            e.t = fs2::path(e.p).extension().wstring();
             std::transform(e.t.begin(), e.t.end(), e.t.begin(), [](wchar_t c){ return std::towlower(c); });
 
             // Only parse EXIF date if specifically requested and it's a real file
@@ -173,40 +184,7 @@ public:
         int sortOrder = g_runtime.SortOrder;
         bool sortDesc = g_runtime.SortDescending;
 
-        std::sort(entries.begin(), entries.end(), [sortOrder, sortDesc](const Entry& a, const Entry& b){
-            int cmp = 0;
-            switch (sortOrder) {
-                case 1: // Name
-                case 0: // Auto (Use Name Natural Sort)
-                    cmp = StrCmpLogicalW(a.p.c_str(), b.p.c_str());
-                    break;
-                case 2: // Modified
-                    if (a.m < b.m) cmp = -1;
-                    else if (a.m > b.m) cmp = 1;
-                    else cmp = StrCmpLogicalW(a.p.c_str(), b.p.c_str()); // Fallback
-                    break;
-                case 3: // Date Taken
-                    if (a.exifDate.empty() && !b.exifDate.empty()) cmp = 1; // Empty goes last
-                    else if (!a.exifDate.empty() && b.exifDate.empty()) cmp = -1;
-                    else {
-                        cmp = a.exifDate.compare(b.exifDate);
-                        if (cmp == 0) cmp = StrCmpLogicalW(a.p.c_str(), b.p.c_str());
-                    }
-                    break;
-                case 4: // Size
-                    if (a.s < b.s) cmp = -1;
-                    else if (a.s > b.s) cmp = 1;
-                    else cmp = StrCmpLogicalW(a.p.c_str(), b.p.c_str());
-                    break;
-                case 5: // Type
-                    cmp = StrCmpLogicalW(a.t.c_str(), b.t.c_str());
-                    if (cmp == 0) cmp = StrCmpLogicalW(a.p.c_str(), b.p.c_str());
-                    break;
-            }
-
-            if (sortDesc) return cmp > 0;
-            return cmp < 0;
-        });
+        SortEntries(entries, sortOrder, sortDesc);
         
         // Write back
         m_files.clear();
@@ -240,6 +218,14 @@ public:
                         break;
                     }
                 }
+            }
+        }
+
+        // [Directory Watcher] Start monitoring for non-VFS real directories
+        if (!m_archive && m_hwnd) {
+            std::wstring watchDir = dir.wstring();
+            if (!watchDir.empty()) {
+                StartDirectoryWatcher(watchDir);
             }
         }
     }
@@ -442,7 +428,89 @@ public:
         return ComputePathHash(path);
     }
 
+    // [Directory Watcher] Apply pending scan result from background thread (main thread only)
+    void ApplyPendingScanResult() {
+        DirectoryScanResult result;
+        {
+            std::lock_guard<std::mutex> lock(m_scanResultMutex);
+            if (!m_pendingScanResult) return;
+            result = std::move(*m_pendingScanResult);
+            m_pendingScanResult.reset();
+        }
+
+        // Cache current path BEFORE swap for index reconciliation
+        std::wstring currentPath;
+        if (m_currentIndex >= 0 && m_currentIndex < (int)m_files.size()) {
+            currentPath = m_files[m_currentIndex];
+        }
+
+        // O(1) swap
+        m_files = std::move(result.files);
+        m_sizes = std::move(result.sizes);
+        m_ids = std::move(result.ids);
+
+        // Relocate current index in new list
+        if (!currentPath.empty()) {
+            auto it = std::find(m_files.begin(), m_files.end(), currentPath);
+            if (it != m_files.end()) {
+                m_currentIndex = (int)std::distance(m_files.begin(), it);
+            } else {
+                // Fallback: file was deleted externally — clamp to nearest valid index
+                if (m_currentIndex >= (int)m_files.size()) {
+                    m_currentIndex = (int)m_files.size() - 1;
+                }
+                if (m_files.empty()) m_currentIndex = -1;
+            }
+        }
+    }
+
 private:
+    // Shared sort comparator for Entry vectors (used by Initialize and PerformDirectoryScan)
+    struct SortEntry {
+        std::wstring p;
+        uintmax_t s;
+        std::filesystem::file_time_type m;
+        std::wstring t; // type (extension)
+        std::string exifDate; // EXIF DateTaken
+    };
+
+    static void SortEntries(std::vector<SortEntry>& entries, int sortOrder, bool sortDesc) {
+        std::sort(entries.begin(), entries.end(), [sortOrder, sortDesc](const SortEntry& a, const SortEntry& b){
+            int cmp = 0;
+            switch (sortOrder) {
+                case 1: // Name
+                case 0: // Auto (Use Name Natural Sort)
+                    cmp = StrCmpLogicalW(a.p.c_str(), b.p.c_str());
+                    break;
+                case 2: // Modified
+                    if (a.m < b.m) cmp = -1;
+                    else if (a.m > b.m) cmp = 1;
+                    else cmp = StrCmpLogicalW(a.p.c_str(), b.p.c_str()); // Fallback
+                    break;
+                case 3: // Date Taken
+                    if (a.exifDate.empty() && !b.exifDate.empty()) cmp = 1; // Empty goes last
+                    else if (!a.exifDate.empty() && b.exifDate.empty()) cmp = -1;
+                    else {
+                        cmp = a.exifDate.compare(b.exifDate);
+                        if (cmp == 0) cmp = StrCmpLogicalW(a.p.c_str(), b.p.c_str());
+                    }
+                    break;
+                case 4: // Size
+                    if (a.s < b.s) cmp = -1;
+                    else if (a.s > b.s) cmp = 1;
+                    else cmp = StrCmpLogicalW(a.p.c_str(), b.p.c_str());
+                    break;
+                case 5: // Type
+                    cmp = StrCmpLogicalW(a.t.c_str(), b.t.c_str());
+                    if (cmp == 0) cmp = StrCmpLogicalW(a.p.c_str(), b.p.c_str());
+                    break;
+            }
+
+            if (sortDesc) return cmp > 0;
+            return cmp < 0;
+        });
+    }
+
     // Helper to get physical host path from a potentially virtual path, zero allocations
     static std::wstring_view GetPhysicalHostPath(std::wstring_view vfsPath) {
         auto pos = vfsPath.find(L'|');
@@ -545,6 +613,160 @@ private:
         return L"";
     }
 
+    // =========================================================================
+    // [Directory Watcher] Background directory monitoring
+    // =========================================================================
+
+    // Perform a full directory scan on the watcher thread (no VFS, no shared state mutation)
+    DirectoryScanResult PerformDirectoryScan() {
+        DirectoryScanResult result;
+        namespace fs = std::filesystem;
+        std::error_code ec;
+        
+        for (const auto& entry : fs::directory_iterator(m_watchedDir, ec)) {
+            if (entry.is_regular_file(ec)) {
+                std::wstring ext = entry.path().extension().wstring();
+                std::transform(ext.begin(), ext.end(), ext.begin(), [](wchar_t c){ return std::towlower(c); });
+
+                for (const auto& supp : QuickView::SUPPORTED_EXTENSIONS) {
+                    if (ext == supp) {
+                        result.files.push_back(entry.path().wstring());
+                        result.sizes.push_back(entry.file_size(ec));
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Sort (same logic as Initialize, but without VFS virtual path handling)
+        std::vector<SortEntry> entries;
+        entries.reserve(result.files.size());
+        for (size_t i = 0; i < result.files.size(); ++i) {
+            SortEntry e;
+            e.p = result.files[i];
+            e.s = result.sizes[i];
+            std::error_code ec2;
+            e.m = fs::last_write_time(e.p, ec2);
+            e.t = fs::path(e.p).extension().wstring();
+            std::transform(e.t.begin(), e.t.end(), e.t.begin(), [](wchar_t c){ return std::towlower(c); });
+
+            int sortOrder = g_runtime.SortOrder;
+            if (sortOrder == 3) {
+                FILE* fp = nullptr;
+                _wfopen_s(&fp, e.p.c_str(), L"rb");
+                if (fp) {
+                    unsigned char buf[65536];
+                    size_t bytes = fread(buf, 1, sizeof(buf), fp);
+                    fclose(fp);
+                    if (bytes > 0) {
+                        easyexif::EXIFInfo info;
+                        if (info.parseFrom(buf, (unsigned)bytes) == PARSE_EXIF_SUCCESS) {
+                            e.exifDate = info.DateTimeOriginal;
+                        }
+                    }
+                }
+            }
+
+            entries.push_back(e);
+        }
+
+        int sortOrder = g_runtime.SortOrder;
+        bool sortDesc = g_runtime.SortDescending;
+        SortEntries(entries, sortOrder, sortDesc);
+
+        result.files.clear();
+        result.sizes.clear();
+        for (const auto& e : entries) {
+            result.files.push_back(e.p);
+            result.sizes.push_back(e.s);
+        }
+
+        result.ids.reserve(result.files.size());
+        for (const auto& f : result.files) {
+            result.ids.push_back(ComputePathHash(f));
+        }
+
+        return result;
+    }
+
+    // Background thread entry point: monitors directory via FindFirstChangeNotificationW
+    void WatcherThreadProc() {
+        HANDLE hNotify = FindFirstChangeNotificationW(
+            m_watchedDir.c_str(),
+            FALSE,                          // Non-recursive (current directory only)
+            FILE_NOTIFY_CHANGE_FILE_NAME    // File create, delete, rename only
+        );
+        if (hNotify == INVALID_HANDLE_VALUE) return;
+
+        HANDLE handles[2] = { hNotify, m_hCancelEvent };
+
+        while (true) {
+            DWORD wait = WaitForMultipleObjects(2, handles, FALSE, INFINITE);
+            if (wait == WAIT_OBJECT_0 + 1) break;  // Cancel event signaled
+            if (wait != WAIT_OBJECT_0) break;       // Error or abandoned
+
+            // === Coalescing / Debounce Loop (300ms) ===
+            // Drain all rapid-fire events until 300ms of silence
+            bool cancelled = false;
+            while (true) {
+                if (!FindNextChangeNotification(hNotify)) {
+                    cancelled = true; // Directory removed or device ejected
+                    break;
+                }
+                DWORD r = WaitForMultipleObjects(2, handles, FALSE, 300);
+                if (r == WAIT_OBJECT_0 + 1) { cancelled = true; break; } // Cancel
+                if (r == WAIT_TIMEOUT) break; // 300ms silence — proceed to scan
+                if (r != WAIT_OBJECT_0) { cancelled = true; break; } // Error
+                // r == WAIT_OBJECT_0: more changes arrived, loop again (reset timer)
+            }
+            if (cancelled) break;
+
+            // === Background Scan (on this thread, zero UI impact) ===
+            auto scanResult = PerformDirectoryScan();
+
+            {
+                std::lock_guard<std::mutex> lock(m_scanResultMutex);
+                m_pendingScanResult = std::move(scanResult);
+            }
+            PostMessageW(m_hwnd, WM_NAVIGATOR_DIR_CHANGED, 0, 0);
+
+            // Re-arm for next batch of changes
+            if (!FindNextChangeNotification(hNotify)) break; // Directory gone
+        }
+
+        FindCloseChangeNotification(hNotify);
+    }
+
+    void StartDirectoryWatcher(const std::wstring& dirPath) {
+        m_watchedDir = dirPath;
+
+        // Create manual-reset event (initially non-signaled) for graceful shutdown
+        m_hCancelEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        if (!m_hCancelEvent) return;
+
+        m_watcherThread = std::thread(&FileNavigator::WatcherThreadProc, this);
+    }
+
+    void StopDirectoryWatcher() {
+        if (m_hCancelEvent) {
+            SetEvent(m_hCancelEvent); // Signal cancellation
+        }
+        if (m_watcherThread.joinable()) {
+            m_watcherThread.join();   // Wait for clean exit
+        }
+        if (m_hCancelEvent) {
+            CloseHandle(m_hCancelEvent);
+            m_hCancelEvent = nullptr;
+        }
+        // Discard any unprocessed result
+        std::lock_guard<std::mutex> lock(m_scanResultMutex);
+        m_pendingScanResult.reset();
+    }
+
+    // =========================================================================
+    // Data Members
+    // =========================================================================
+
     std::vector<std::wstring> m_files;
     std::vector<uintmax_t> m_sizes;
     std::vector<ImageID> m_ids;  // [ImageID] Precomputed path hashes
@@ -554,6 +776,14 @@ private:
 
     // VFS Support
     std::unique_ptr<QuickView::IArchive> m_archive;
+
+    // [Directory Watcher] Background monitoring state
+    HWND m_hwnd = nullptr;
+    std::wstring m_watchedDir;
+    HANDLE m_hCancelEvent = nullptr;
+    std::thread m_watcherThread;
+    std::mutex m_scanResultMutex;
+    std::optional<DirectoryScanResult> m_pendingScanResult;
 
 public:
     std::wstring m_archivePath;

@@ -3660,7 +3660,7 @@ static bool OpenPathOrDirectory(HWND hwnd, const std::wstring& path, bool clearT
 
     g_editState.Reset();
     g_viewState.Reset();
-    g_navigator.Initialize(path);
+    g_navigator.Initialize(path, hwnd);
     if (clearThumbCache) {
         g_thumbMgr.ClearCache();
     }
@@ -7306,7 +7306,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, [[maybe_unused]] LPWSTR lpCm
           isTitanCandidate = isSupportedFormat && (sizeTrigger || pixelTrigger);
         }
         if (!isTitanCandidate) {
-          g_navigator.Initialize(initialImagePath);
+          g_navigator.Initialize(initialImagePath, hwnd);
           LoadImageAsync(hwnd, g_navigator.GetResolvedPath(initialImagePath).c_str());
           startedInitialLoadEarly = true;
           deferStartupShow = true;
@@ -7391,7 +7391,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, [[maybe_unused]] LPWSTR lpCm
         ofn.lpstrFilter = filterStr.c_str();
         ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
         if (GetOpenFileNameW(&ofn)) {
-            g_navigator.Initialize(szFile);
+            g_navigator.Initialize(szFile, hwnd);
             LoadImageAsync(hwnd, g_navigator.GetResolvedPath(szFile).c_str());
             // [Fix Race] Force check here too
              PostMessageW(hwnd, WM_ENGINE_EVENT, 0, 0); 
@@ -8933,6 +8933,20 @@ SKIP_EDGE_NAV:;
         ::InvalidateRect(hwnd, nullptr, FALSE);
         return 0;
 
+    case WM_NAVIGATOR_DIR_CHANGED: {
+        // [Directory Watcher] Apply background scan result from watcher thread
+        size_t oldCount = g_navigator.Count();
+        g_navigator.ApplyPendingScanResult();
+        size_t newCount = g_navigator.Count();
+        if (newCount != oldCount) {
+            RequestRepaint(PaintLayer::Static | PaintLayer::Dynamic);
+            if (g_gallery.IsVisible()) {
+                RequestRepaint(PaintLayer::Gallery);
+            }
+        }
+        return 0;
+    }
+
     case WM_LBUTTONDOWN: {
         POINT pt = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
         
@@ -9005,7 +9019,7 @@ SKIP_EDGE_NAV:;
                          std::wstring path = g_navigator.GetFile(idx);
                          // Only load if different from current image
                          if (path != g_imagePath) {
-                             g_navigator.Initialize(path);
+                             g_navigator.Initialize(path, hwnd);
                              LoadImageAsync(hwnd, g_navigator.GetResolvedPath(path).c_str());
                          }
                     }
@@ -9290,7 +9304,7 @@ SKIP_EDGE_NAV:;
                      int idx = g_gallery.GetSelectedIndex();
                      if (idx >= 0 && idx < (int)g_navigator.Count()) {
                          std::wstring path = g_navigator.GetFile(idx);
-                         g_navigator.Initialize(path);
+                         g_navigator.Initialize(path, hwnd);
                          LoadImageAsync(hwnd, g_navigator.GetResolvedPath(path).c_str());
                      }
                      RequestRepaint(PaintLayer::All);
@@ -9403,7 +9417,7 @@ SKIP_EDGE_NAV:;
                         g_compare.left.view = rightView;
                         g_compare.left.valid = true;
                         if (!g_imagePath.empty()) {
-                            g_navigator.Initialize(g_imagePath);
+                            g_navigator.Initialize(g_imagePath, hwnd);
                         }
                         MarkCompareDirty();
                         RequestRepaint(PaintLayer::Image | PaintLayer::Static);
@@ -9854,7 +9868,7 @@ SKIP_EDGE_NAV:;
                          std::wstring path = g_navigator.GetFile(idx);
                          // Only load if different from current image
                          if (path != g_imagePath) {
-                             g_navigator.Initialize(path); 
+                             g_navigator.Initialize(path, hwnd); 
                              LoadImageAsync(hwnd, g_navigator.GetResolvedPath(path).c_str());
                          }
                     }
@@ -10372,7 +10386,7 @@ SKIP_EDGE_NAV:;
                         }
                         g_editState.Reset();
                         g_viewState.Reset();
-                        g_navigator.Initialize(szFile);
+                        g_navigator.Initialize(szFile, hwnd);
                         g_thumbMgr.ClearCache(); // Fix: Clear old thumbnails on folder switch
                     LoadImageAsync(hwnd, g_navigator.GetResolvedPath(szFile).c_str());
                 }
@@ -10626,7 +10640,7 @@ SKIP_EDGE_NAV:;
                     
                     if (MoveFileW(g_imagePath.c_str(), newPath.c_str())) {
                         g_imagePath = newPath;
-                        g_navigator.Initialize(newPath); // Update navigator list explicitly
+                        g_navigator.Initialize(newPath, hwnd); // Update navigator list explicitly
                         
                         // Reload image from new path
                         g_preservedViewState = g_viewState;
@@ -10783,14 +10797,14 @@ SKIP_EDGE_NAV:;
                              // Optimization: Just load nextPath. Initialize inside Navigate will handle it?
                              // NavigateTo doesn't init navigator. 
                              // Let's call Initialize(nextPath) to refresh list and set index.
-                             g_navigator.Initialize(nextPath);
+                             g_navigator.Initialize(nextPath, hwnd);
                              LoadImageAsync(hwnd, g_navigator.GetResolvedPath(nextPath).c_str());
                              if (IsCompareModeActive()) {
                                  MarkCompareDirty();
                              }
                         } else {
                              // Empty folder?
-                             g_navigator.Initialize(L"");
+                             g_navigator.Initialize(L"", hwnd);
                              if (IsCompareModeActive()) {
                                  ExitCompareMode(hwnd);
                              }
@@ -10953,7 +10967,7 @@ SKIP_EDGE_NAV:;
         case IDM_SORT_TYPE: {
             g_runtime.SortOrder = wmId - IDM_SORT_AUTO;
             if (!g_imagePath.empty()) {
-                g_navigator.Initialize(g_imagePath); // Re-initialize to re-sort
+                g_navigator.Initialize(g_imagePath, hwnd); // Re-initialize to re-sort
             }
             break;
         }
@@ -10962,7 +10976,7 @@ SKIP_EDGE_NAV:;
         case IDM_SORT_DESCENDING: {
             g_runtime.SortDescending = (wmId == IDM_SORT_DESCENDING);
             if (!g_imagePath.empty()) {
-                g_navigator.Initialize(g_imagePath); // Re-initialize to re-sort
+                g_navigator.Initialize(g_imagePath, hwnd); // Re-initialize to re-sort
             }
             break;
         }
@@ -12901,7 +12915,7 @@ void Navigate(HWND hwnd, int direction) {
                 : QuickView::BrowseDirection::BACKWARD;
             std::wstring crossMsg = g_navigator.GetCrossFolderMessage();
             if (!crossMsg.empty()) {
-                g_navigator.Initialize(path); // Update playlist to new folder
+                g_navigator.Initialize(path, hwnd); // Update playlist to new folder
                 g_osd.Show(hwnd, crossMsg.c_str());
             } else if (g_navigator.HitEnd() && g_runtime.NavLoop) {
                 wchar_t buf[256];
@@ -12934,7 +12948,7 @@ void Navigate(HWND hwnd, int direction) {
         
         std::wstring crossMsg = g_navigator.GetCrossFolderMessage();
         if (!crossMsg.empty()) {
-            g_navigator.Initialize(path); // Update playlist to new folder
+            g_navigator.Initialize(path, hwnd); // Update playlist to new folder
             g_osd.Show(hwnd, crossMsg.c_str());
         } else if (g_navigator.HitEnd() && g_runtime.NavLoop) {
             wchar_t buf[256];
