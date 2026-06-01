@@ -1,5 +1,67 @@
 # Changelog
 
+## [6.2.9] - The Ultimate Pipeline, Archive Evolution & Watcher System
+**Release Date**: 2026-06-01
+
+### ✨ Features & UX
+- **Robust Directory Auto-Scanning (#192)**:
+  - Added a dedicated background directory watcher thread using `FindFirstChangeNotificationW` to monitor file system changes in real-time.
+  - Implemented a 300ms debounce loop to handle event storms (e.g. rapid file saving or copying) smoothly.
+  - Ensured thread-safe index reconciliation on the main thread to prevent UI locks or rendering glitches during hot-reloading.
+- **Comic & Archive VFS (#186)**:
+  - Introduced a high-performance Data-Oriented Design (DOD) Virtual File System (VFS) for instant scanning and zero disk-unpacking of `.zip`, `.rar`, `.cbz`, and `.cbr` files.
+  - Integrated custom `unrar-mini` static library for ultra-fast, thread-safe memory stream extraction.
+  - Added **Comic Dual Page Mode** which automatically stitches adjacent pages in comic archives with smart dynamic scaling and multi-language toolbar tooltips.
+  - Full gallery thumbnail and navigation support for virtualized VFS archive files.
+- **Draggable EXIF Info Panel (#179)**:
+  - Completely re-engineered the EXIF metadata info panel overlay. It is now fully draggable and supports window boundary restrictions.
+  - Added coordinate persistence to remember the custom panel position across application restarts.
+- **Overlay (Tracing) Mode**:
+  - Implemented a semi-transparent Window Overlay (Tracing Mode) utilizing DirectComposition node opacity control.
+  - Enabled **Mouse Click-Through** (`WM_EX_TRANSPARENT`) support, allowing digital artists to overlay references on top of drawing canvases.
+  - **Tracing Shortcuts**: Press `Ctrl + Shift + O` to toggle Tracing Mode, `Alt + Up/Down Arrow` to adjust overlay transparency, and `Shift + Esc` to exit mouse click-through.
+- **Soft-Proof Comparison Optimization**:
+  - Automatically triggers a side-by-side comparison of the active image before and after soft-proofing (with/without the target ICC profile applied) when entering Compare Mode under active soft-proofing.
+- **Color Gamut Warning**:
+  - ICC-accurate gamut warning overlay utilizing a high-precision 65x65x65 3D LUT and D50-XYZ analytical backends.
+  - Integrated 1-second debounce algorithm to guarantee zero impact on rapid image switching performance.
+- **Startup & Placement Stability (#123, #176)**:
+  - Enhanced window positioning engine to remember and restore exact window position, fullscreen state, and maximized state on startup.
+  - Fixed issues where initial resize commands could overwrite user-specified window placement.
+
+### 🌈 HDR & Color Pipeline (#131)
+- **HLG OETF & OOTF Corrections**:
+  - Corrected HLG inverse OETF math and applied CPU-side OOTF system gamma (1.2) for vastly improved luminance accuracy and visual fidelity.
+  - Optimized GPU-side HLG calculation with branchless vectorization in shaders, enhancing rendering throughput.
+- **Advanced Color Exposure Routing**:
+  - Aligned HDR output exposure with Microsoft scRGB semantics (absolute HDR at gain 1.0, SDR/relative HDR scaled by `SdrWhiteLevelInNits / 80.0` as per Microsoft Advanced Color guidelines).
+  - Implemented smart tone-map passthrough (spline bypass) when the content peak completely fits within the display peak to avoid unnecessary curve compression and GPU overhead.
+- **High-Precision 64bpp FP16 Pipeline**: Deeply refactored the entire HDR loading and composition pipeline to utilize 64bpp FP16 half-floats and GPU-accelerated matrix transforms.
+- **PQ Spline Tone-Mapping**: Ported a libplacebo-style Spline tone-mapper into PQ space for more consistent peak luminance rendering.
+- **Highlight Desaturation & BT.2408**: Applied standard-aware exposure gain routing and high-dynamic gamut compression to reduce clipping and washed-out highlights.
+- **Highway SIMD Peak Scanning**: Expanded peak luminance estimation scanning to support FP16/U16 formats using Google Highway vector instructions.
+- **Advanced JXL & AVIF HDR**:
+  - Switched libjxl decoding output to half-floats to fully resolve HDR display bugs.
+  - Resolved AVIF color desaturation and decode latency by pre-computing static EOTF Look-Up Tables (LUTs).
+- **Reinhard Extended Perceptual Mapping**: Upgraded HDR perceptual mapping to Reinhard Extended with customizable Reinhard anchor parameter sliders in Settings.
+
+### ⚡ Performance & Infrastructure
+- **GeekGlass Context Menu Optimization**:
+  - Skipped `GeekGlass` D2D effect initialization on the DWM acrylic context menu, completely avoiding large WARP JIT memory allocations and eliminating rendering hiccups.
+- **Dependency & Code Quality Updates**:
+  - Updated `stb_image.h` dependency to `v2.30`.
+  - Fixed security CodeQL overflow warnings in `ImageLoader.cpp`.
+- **Toolchain Migration (#177)**:
+  - Migrated completely from legacy MSVC `.sln`/`.vcxproj` to `CMake + Ninja + vcpkg`.
+  - Switched from MSVC compiler to **Clang-cl** with Full **LTO** (Link-Time Optimization) and zero-exception static binary packaging, reducing binary footprint while accelerating performance.
+  - Created a custom `x64-windows-static-clang` triplet for a fully static, standalone build environment.
+- **Instruction Set Expansion**: Added custom Google Highway SIMD dispatch matrices for **AVX-512 (AVX3)** and emerging **AVX10.2** vector lanes.
+- **Memory Arena Refactoring**: Built a specialized **Memory Engine Arena** and custom **ArchiveVFS pool** to prevent heap fragmentation during heavy prefetching.
+- **Event-Driven UI Fluidity**: Implemented a robust `PostMessage` event driver to run gallery thumbnail animations smoothly without blocking the main UI thread.
+- **Fast-Lane Boot (#172)**: Re-engineered startup sequences with event-driven window showing to achieve near-instantaneous boot times.
+
+*Note: Press **F1** at any time to open the interactive help panel and view shortcuts or new operations.*
+
 ## [5.3.0] - The Vector & Interaction Evolution
 **Release Date**: 2026-04-23
 

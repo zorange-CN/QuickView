@@ -1,30 +1,59 @@
-# QuickView v5.3.0 - Vector UI & Interaction Update
-**Release Date**: 2026-04-24
+# QuickView v6.2.9 - High-Performance HDR, Comic Evolution & Watcher System
+**Release Date**: 2026-06-01
 
-QuickView v5.3.0 focuses on improving UI consistency, refining user interaction, and ensuring a clean system footprint.
+QuickView v6.2.9 is a major architectural milestone. This release features a complete overhaul of the rendering pipeline, deep virtualized comic archive support, an automated real-time directory watcher, ICC color-gamut warnings, digital drawing overlay support, and a high-performance Clang compilation matrix.
 
-### 🎨 Vectorized UI Icons
-We have migrated the remaining UI icons to the **GeekIcon** vector engine.
-- **Improved Consistency**: Icons are now rendered using Direct2D paths, ensuring they look the same across different Windows versions and DPI settings.
-- **Font Dependency Removed**: The application no longer relies on specific icon fonts for its core interface.
+*Note: Press **F1** at any time to open the interactive Shortcut & Help overlay to review the latest operations and features.*
 
-### 🛠 Windows Integration & Cleanup
-- **Deep Uninstallation**: Added a new `--uninstall` flag for comprehensive registry (HKCU) and application data cleanup. 
-- **Improved Installer**: The Inno Setup installer now automatically purges legacy `.old` files and the AppData folder upon removal, ensuring a zero-footprint uninstallation.
-- **WinGet Automation**: Optimized the submission pipeline to use standard installers, resolving previous validation issues and improving accessibility via `winget install QuickView`.
-- **Default Photo Viewer**: Enhanced support for Windows 11 "Default Apps" settings via full Capability registration.
+### 🔍 Robust Directory Auto-Scanning (#192)
+QuickView now automatically refreshes the image list when files are added, deleted, or renamed in the active directory.
+- **Background Directory Watcher**: Implemented a dedicated background monitoring thread utilizing native `FindFirstChangeNotificationW` to listen to directory activities in real-time.
+- **300ms Event Debouncer**: Employs a robust debouncer that groups rapid file-system notifications to prevent UI stuttering and thread contention during event storms.
+- **Safe Index Reconciliation**: Changes are dispatched safely back to the main thread via standard Windows messages, guaranteeing thread-safe, 0-lock list synchronization and immediate visual hot-reloads.
 
-### 🎥 Interaction & Animation
-- **Frame Counter (#167)**: Added a basic frame index display to the animation progress bar for GIF and WebP files.
-- **Hand Cursor Panning (#160)**: Added a hand cursor when dragging images that are larger than the window.
-- **Thumb Wheel Support (#156)**: Added support for vertical/horizontal mouse thumb wheels.
-- **Zoom Cycle**: Refined the zoom hotkey/double-click behavior to cycle through common scaling modes.
+### 📚 Zero-Overhead Comic & Archive VFS (#186)
+You can now scan and browse image archives with zero overhead.
+- **DOD Virtual File System**: Features a high-performance Data-Oriented Design (DOD) VFS that extracts and reads `.zip`, `.rar`, `.cbz`, and `.cbr` archives directly in memory with 0-disk writing.
+- **Comic Dual Page Mode**: Smart adjacent page stitching with dynamic scale adjustments for a seamless double-spread comic book viewing experience.
+- **High-Performance Unrar**: Integrates a single-threaded custom `unrar-mini` engine for lightning-fast archive traversal.
 
-### 🌈 HDR & Color (Experimental)
-- **Luminance Handling (#131)**: We have adjusted how peak luminance is detected on HDR monitors by prioritizing system-level reports. **Note**: This is an initial attempt to address "washed out" colors, and we are still evaluating its effectiveness across different hardware.
+### 🌈 Next-Gen HDR Pipeline (#131)
+HDR handling has been reworked around standard luminance semantics for PQ/HLG, scRGB, scene-linear images, and gain-map content.
+- **HLG inverse OETF & CPU system gamma 1.2**: Corrected HLG inverse OETF decoding math and added CPU-side OOTF system gamma scaling (1.2) for perfect accuracy with untagged and HLG-native sources.
+- **Branchless GPU HLG Math**: Ported fully vectorized, branchless lerp-step shaders to accelerate HLG-to-linear conversion directly on the GPU.
+- **Microsoft Advanced Color scRGB Exposure Routing**: Fully aligned tone-mapping parameters with Microsoft scRGB standard guidelines (absolute HDR at gain 1.0, SDR/relative elements scaled correctly by `SdrWhite / 80.0`).
+- **Smart Spline Tone-Map Passthrough**: Added automated spline bypass detection. When an HDR image's peak fits completely within the screen's luminance boundaries, the spline shader is dynamically bypassed in favor of a zero-overhead colorimetric clip, saving precious GPU cycles.
+- **64bpp FP16 and PQ Splines**: Switched the entire composition pipeline to high-precision 64bpp FP16 linear color space. Integrates scientific-grade **libplacebo-style Spline tone-mapping** in PQ space.
+- **BT.2408 Exposure Gain & Highlight Desaturation**: Reduces washed-out tones and color clipping with standard-aware exposure gain routing and high-dynamic color space desaturation.
+- **Reinhard Extended Perceptual Mapping**: Includes customizable Reinhard perceptual scaling parameters with user-friendly sliders in the Settings panel.
+- **Highway SIMD Acceleration**: SIMD-accelerated HDR peak luminance estimation for FP16 and U16 imagery.
+- **AVIF & JXL HDR Polish**: JXL half-float output and AVIF EOTF handling improve HDR color and luminance consistency.
+
+### 🎨 Gamut Warning & Soft-Proof Comparison
+Color management is now fully professional.
+- **65x65x65 3D LUT Gamut Warning**: Real-time identification of out-of-gamut pixels in soft-proofing mode using high-precision LUT analysis.
+- **Soft-Proof Compare Integration**: When soft-proofing is enabled and you enter **Compare Mode (C Key)**, QuickView now automatically triggers a side-by-side comparison of the original image versus the soft-proofed image (with target ICC rendering profile applied).
+- **1s Debounce Buffer**: Optimized the gamut warnings with a debouncer to guarantee 0-latency scrolling.
+
+### 📐 Draggable EXIF Info Panel & Tracing Overlay Mode
+- **Draggable EXIF Overlay (#179)**: EXIF Info Panel is now fully draggable across the screen, with automatic screen bounds confinement and layout memory persistence across sessions.
+- **Overlay (Tracing) Mode**: Semi-transparent background mode powered by DirectComposition node transparency.
+  - **Mouse Click-Through**: Toggleable mouse passthrough (`WM_EX_TRANSPARENT`) allows digital artists to overlay reference drawings directly over their favorite drawing canvases.
+  - **Shortcuts**: Press `Ctrl + Shift + O` to toggle Tracing Mode, `Alt + Up/Down Arrow` to adjust opacity, and `Shift + Esc` to exit click-through.
+
+### 🛠️ Clang-cl & CMake Build Overhaul (#177)
+QuickView has completely abandoned legacy MSVC solutions for a modern, cross-platform build system.
+- **CMake & Ninja Matrix**: Built using CMake and the ultra-fast Ninja compiler backend.
+- **Clang-cl and LTO**: Optimized with `clang-cl.exe` utilizing Full Link-Time Optimization (LTO) and zero-exception (`-fno-exceptions`) flags, leading to massive standalone executable footprint compression and improved execution speeds.
+- **Static Single Binary**: Packaged with a custom `x64-windows-static-clang` triplet to ensure zero runtime dependencies.
+
+### ⚡ Underlying Performance & Instructions
+- **GeekGlass Context Menu Tuning**: Skipped D2D effect initialization inside DWM acrylic-blurred context menus, avoiding massive runtime WARP JIT memory allocations and rendering spikes.
+- **stb_image.h to v2.30**: Synchronized stb image libraries to the latest stable v2.30 and eliminated CodeQL integer overflow warnings in core image loading routines.
+- **Modern CPU Acceleration**: Extended Highway SIMD implementations to take full advantage of modern **AVX-512 (AVX3)** and emerging **AVX10.2** vector lanes.
+- **Memory Engine Arena**: Specialized memory arenas and VFS block pools to eliminate heap fragmentation during prefetch and caching.
+- **Fluid UI Animations**: Switched thumbnail animations to use a dedicated asynchronous `PostMessage` loop to maintain 60fps responsiveness.
+- **Fast-Lane Boot (#172)**: Streamlined window creation and thread startup for an instantaneous boot cycle.
 
 ### 🤝 Acknowledgments
-A special thank you to the users who helped test this release:
-- **@bananakid**, **@PYCHBI**, **@lrbin50**, **@1kari-s**, **@Battler624**, and **@toxieainc** for their bug reports, technical insights, and for sharing HDR testing resources.
-
-We appreciate your continued support in helping us refine QuickView.
+A special thank you to all the community developers and contributors who reported issues, shared complex HDR samples, and assisted in testing archive parsing.

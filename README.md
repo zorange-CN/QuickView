@@ -70,6 +70,49 @@ QuickView supports almost all modern and professional image formats:
 
 ---
 
+# QuickView v6.2.9 - High-Performance HDR, Comic Evolution & Watcher System
+**Release Date**: 2026-06-01
+
+*💡 Tip: Press **F1** at any time to open the interactive Shortcut & Help overlay to review all commands and operations.*
+
+### 🔍 Robust Directory Auto-Scanning (#192)
+- **Background Watcher**: Real-time folder monitoring utilizing Windows native `FindFirstChangeNotificationW` to detect file system creations, deletions, and renames.
+- **300ms Event Debouncer**: Intelligently groups rapid-fire OS change notifications to maintain UI fluidness and zero-stutter navigation.
+- **Main-Thread Reconciliation**: Multi-threaded notifications reconcile safely on the main thread via system event messages for 100% thread-safe dynamic list reloading.
+
+### 🛠️ Toolchain Migration & Compile Optimization (#177)
+- **Clang-cl + Ninja Matrix**: Switched fully to the CMake-driven **Clang-cl** toolchain with the Ninja compilation backend, deprecating legacy Visual Studio `.sln` and `.vcxproj` files.
+- **Link-Time Optimization (LTO)**: Built with Full LTO (`-flto=full`), aggressive inlining (`-inline-threshold=250`), and zero-exception policies (`/EHs-c-`), shrinking the standalone executable footprint to the extreme.
+- **x64-windows-static-clang**: Implemented custom triplet to compile an entirely static binary with zero external runtime DLL dependencies.
+
+### 📚 Comic Mode & Zero-Overhead Archive VFS (#186)
+- **Zero-Unpack Engine**: Direct, instantaneous browsing of `.zip`, `.rar`, `.cbz`, and `.cbr` archives directly in memory using a zero-overhead Data-Oriented Design (DOD) VFS. No disk space is consumed.
+- **Comic Dual Page Mode**: Automatically stitches adjacent pages side-by-side with smart dynamic scaling, providing an immersive double-page comic book experience. Fully localized toolbar tooltips included.
+- **Single-Threaded Unrar Acceleration**: Features custom, high-speed `unrar-mini` memory-mapped decoding.
+
+### 🌈 High-Precision FP16 HDR Pipeline (#131)
+- **HLG OETF & OOTF Corrections**: Fixed HLG inverse OETF math and applied CPU-side OOTF system gamma 1.2; accelerated HLG conversions directly in shaders with branchless vectorization.
+- **Advanced scRGB Exposure Routing**: Fully aligned dynamic exposure calculations with Microsoft Advanced Color rules (absolute HDR at gain 1.0, relative SDR/linear scaled by `SdrWhite/80`).
+- **Smart Spline Tone-Map Passthrough**: Dynamically skips spline-curve evaluation in favor of a clean colorimetric clip when image highlights completely fit within the display's peak brightness.
+- **64bpp FP16 linear space**: Complete migration of the composition pipeline to 64bpp half-floats and GPU matrix transforms, preventing color clipping.
+- **libplacebo PQ Splines**: Ported professional-grade scientific Spline tone-mapping mapped in PQ space.
+- **Highlight Desaturation & BT.2408**: BT.2408-inspired exposure gain routing and highlight gamut compression to reduce washed-out colors while preserving HDR headroom.
+- **Advanced JXL & AVIF HDR**: JXL half-float output and AVIF EOTF handling improve HDR color and luminance consistency.
+- **Customizable Reinhard Extended**: Upgraded HDR perceptual mapping with customizable parameters editable via standard sliders in the Settings panel.
+
+### 🎨 Gamut Warning & Soft-Proof Comparison
+- **65x65x65 3D LUT**: Highly precise, GPU-accelerated gamut warning overlay mapping color space transformations.
+- **Soft-Proof Compare Integration**: Entering **Compare Mode (C)** while soft-proofing is active automatically compares the image before (original) and after (with soft-proofing ICC applied) side-by-side.
+- **1s Debouncer**: Debounced rendering calculations to keep image switching absolutely fluid.
+
+### 📐 Draggable EXIF Panel & Tracing Overlay Mode
+- **Draggable EXIF Overlay (#179)**: The EXIF Info Panel is now fully draggable and restorable, remembering its exact placement across program restarts.
+- **Overlay (Tracing) Mode**: Renders the main window in semi-transparent mode via DirectComposition.
+  - **Mouse Click-Through**: Pass mouse events (`WM_EX_TRANSPARENT`) straight to background apps. Perfect for digital artists to reference and trace templates.
+  - **Shortcuts**: `Ctrl + Shift + O` to toggle Tracing Mode, `Alt + Up/Down Arrow` to adjust opacity, `Shift + Esc` to exit mouse passthrough.
+
+---
+
 # QuickView v5.0.0 - The Advanced Color & Architecture Update
 **Release Date**: 2026-04-05
 
