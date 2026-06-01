@@ -1,6 +1,6 @@
 # Changelog
 
-## [6.2.9] - The Ultimate Pipeline, Archive Evolution & Watcher System
+## [6.2.10] - The Ultimate Pipeline, Archive Evolution & Watcher System
 **Release Date**: 2026-06-01
 
 ### ✨ Features & UX

@@ -70,7 +70,7 @@ QuickView supports almost all modern and professional image formats:
 
 ---
 
-# QuickView v6.2.9 - High-Performance HDR, Comic Evolution & Watcher System
+# QuickView v6.2.10 - High-Performance HDR, Comic Evolution & Watcher System
 **Release Date**: 2026-06-01
 
 *💡 Tip: Press **F1** at any time to open the interactive Shortcut & Help overlay to review all commands and operations.*

@@ -1,7 +1,7 @@
-# QuickView v6.2.9 - High-Performance HDR, Comic Evolution & Watcher System
+# QuickView v6.2.10 - High-Performance HDR, Comic Evolution & Watcher System
 **Release Date**: 2026-06-01
 
-QuickView v6.2.9 is a major architectural milestone. This release features a complete overhaul of the rendering pipeline, deep virtualized comic archive support, an automated real-time directory watcher, ICC color-gamut warnings, digital drawing overlay support, and a high-performance Clang compilation matrix.
+QuickView v6.2.10 is a major architectural milestone. This release features a complete overhaul of the rendering pipeline, deep virtualized comic archive support, an automated real-time directory watcher, ICC color-gamut warnings, digital drawing overlay support, and a high-performance Clang compilation matrix.
 
 *Note: Press **F1** at any time to open the interactive Shortcut & Help overlay to review the latest operations and features.*
 

@@ -279,7 +279,9 @@ const wchar_t *Settings_Label_AutoRotate = nullptr;
 const wchar_t *Settings_Label_CMS = nullptr;
 const wchar_t *Settings_Label_AdvancedColor = nullptr;
 const wchar_t *Settings_Label_HdrToneMapping = nullptr;
+const wchar_t *Settings_Label_HdrSplineKnee = nullptr;
 const wchar_t *Settings_Tooltip_HdrToneMapping = nullptr;
+const wchar_t *Settings_Tooltip_HdrSplineKnee = nullptr;
 const wchar_t *Settings_Label_HdrPeakNitsOverride = nullptr;
 const wchar_t *Settings_Tooltip_HdrPeakNitsOverride = nullptr;
 const wchar_t *Settings_Label_HdrPeakPercentile = nullptr;
@@ -908,6 +910,7 @@ struct EN {
   static constexpr const wchar_t *Settings_Label_CMS = L"Color Management";
   static constexpr const wchar_t *Settings_Label_AdvancedColor = L"Advanced Color (HDR)";
   static constexpr const wchar_t *Settings_Label_HdrToneMapping = L"HDR Tone Mapping";
+  static constexpr const wchar_t *Settings_Label_HdrSplineKnee = L"Spline Knee Point";
   static constexpr const wchar_t *Settings_Label_HdrPeakNitsOverride = L"HDR Peak Brightness (Nits)";
   static constexpr const wchar_t *Settings_Tooltip_HdrPeakNitsOverride = L"Set to 0 to use system detected brightness.";
   static constexpr const wchar_t *Settings_Label_HdrPeakPercentile = L"HDR Peak Percentile";
@@ -1125,6 +1128,8 @@ struct EN {
       L"luminance mapping; highlights exceeding the monitor limit are "
       L"clipped.\nBT.2390 (EETF): ITU-R BT.2390 EETF curve for high-fidelity tone mapping.";
 
+  static constexpr const wchar_t *Settings_Tooltip_HdrSplineKnee =
+      L"0 = Auto (Calculated based on image luminance).\nThe value represents the ratio of the monitor's peak luminance. Brightness below this knee point maps 1:1, while brightness above is smoothly compressed using a spline curve.\n(Recommended: 0.4 - 0.75)";
   static constexpr const wchar_t *Settings_Tooltip_ZoomAuto = L"Auto: 100% scale when image is smaller than screen, fit to screen when larger.";
   static constexpr const wchar_t *Settings_Header_Professional = L"Professional Tools";
   static constexpr const wchar_t *Settings_Label_ShowDirtyRect = L"Show update regions button in animation mode";
@@ -1340,6 +1345,7 @@ struct CN {
   static constexpr const wchar_t *Settings_Label_CMS = L"色彩管理 (CMS)";
   static constexpr const wchar_t *Settings_Label_AdvancedColor = L"高级色彩与 HDR (scRGB)";
   static constexpr const wchar_t *Settings_Label_HdrToneMapping = L"HDR 色调映射";
+  static constexpr const wchar_t *Settings_Label_HdrSplineKnee = L"Spline 拐点";
   static constexpr const wchar_t *Settings_Label_HdrPeakNitsOverride = L"HDR 峰值亮度 (Nits)";
   static constexpr const wchar_t *Settings_Tooltip_HdrPeakNitsOverride = L"设为 0 表示通过系统自动检测亮度.";
   static constexpr const wchar_t *Settings_Label_HdrPeakPercentile = L"HDR 峰值百分位";
@@ -1708,6 +1714,8 @@ struct CN {
       L"Spline 样条映射：采用分段样条曲线，实现高保真的高光细节还原（推荐）。\n"
       L"色度模式：保持严格亮度映射，超出显示器极限的亮度将被直接裁剪。\n"
       L"BT.2390 EETF：ITU-R BT.2390 标准高保真降级曲线。";
+  static constexpr const wchar_t *Settings_Tooltip_HdrSplineKnee =
+      L"0 = 自动模式（根据图片亮度自动计算）。\n数值表示显示器峰值亮度的比例。该拐点以下的亮度将进行 1:1 绝对映射，拐点以上的亮度将使用平滑曲线进行压缩映射。\n（推荐值：0.4 - 0.75）";
   static constexpr const wchar_t *Settings_Tooltip_ZoomAuto = L"自动：图片小于屏幕尺寸时 100% 缩放，图片大于屏幕尺寸时适应屏幕尺寸缩放。";
   static constexpr const wchar_t *Settings_Header_Professional = L"专业工具";
   static constexpr const wchar_t *Settings_Label_ShowDirtyRect = L"动画模式下显示重绘区域预览按钮";
@@ -2020,6 +2028,7 @@ struct TW {
   static constexpr const wchar_t *Settings_Label_CMS = L"色彩管理 (CMS)";
   static constexpr const wchar_t *Settings_Label_AdvancedColor = L"高級色彩與 HDR (scRGB)";
   static constexpr const wchar_t *Settings_Label_HdrToneMapping = L"HDR 色調映射";
+  static constexpr const wchar_t *Settings_Label_HdrSplineKnee = L"Spline 拐點";
   static constexpr const wchar_t *Settings_Label_HdrPeakNitsOverride = L"HDR 峰值亮度 (Nits)";
   static constexpr const wchar_t *Settings_Tooltip_HdrPeakNitsOverride = L"設為 0 表示通過系統自動檢測亮度.";
   static constexpr const wchar_t *Settings_Label_HdrPeakPercentile = L"HDR 峰值百分位";
@@ -2231,6 +2240,8 @@ struct TW {
       L"Spline 樣條對映：採用分段樣條曲線，實現高保真的高光細節還原（推薦）。\n"
       L"色度模式：保持嚴格亮度對映，超出顯示器極限的亮度將被直接裁剪。\n"
       L"BT.2390 EETF：ITU-R BT.2390 標準高保真降級曲線。";
+  static constexpr const wchar_t *Settings_Tooltip_HdrSplineKnee =
+      L"0 = 自動模式（根據圖片亮度自動計算）。\n數值表示顯示器峰值亮度的比例。該拐點以下的亮度將進行 1:1 絕對映射，拐點以上的亮度將使用平滑曲線進行壓縮映射。\n（推薦值：0.4 - 0.75）";
   static constexpr const wchar_t *Settings_Tooltip_ZoomAuto = L"自動：圖片小於螢幕尺寸時 100% 縮放，圖片大於螢幕尺寸時適應螢幕尺寸縮放。";
   static constexpr const wchar_t *Settings_Header_VectorAssets = L"邊緣";
   static constexpr const wchar_t *Settings_Label_VectorStrokeWeight = L"線框粗细";
@@ -2613,6 +2624,7 @@ struct JA {
   static constexpr const wchar_t *Settings_Label_CMS = L"カラー管理 (CMS)";
   static constexpr const wchar_t *Settings_Label_AdvancedColor = L"高度な色とHDR (scRGB)";
   static constexpr const wchar_t *Settings_Label_HdrToneMapping = L"HDR トーンマッピング";
+  static constexpr const wchar_t *Settings_Label_HdrSplineKnee = L"Spline Knee Point";
   static constexpr const wchar_t *Settings_Label_HdrPeakNitsOverride = L"HDR ピーク輝度 (Nits)";
   static constexpr const wchar_t *Settings_Tooltip_HdrPeakNitsOverride = L"システム検出輝度を使用する場合は0に設定します。";
   static constexpr const wchar_t *Settings_Label_HdrPeakPercentile = L"HDR ピークパーセンタイル";
@@ -2827,6 +2839,8 @@ struct JA {
       L"スプライン:区分スプライン曲線を使用した高忠実度のハイライトロールオフ（推奨）。\n"
       L"測色: 厳密な輝度マッピング。モニターの限界を超えるハイライトはクリップされます。\n"
       L"BT.2390 (EETF): ITU-R BT.2390 EETF 曲線による高忠実度なトーンマッピング。";
+  static constexpr const wchar_t *Settings_Tooltip_HdrSplineKnee =
+      L"0 = Auto (Calculated based on image luminance).\nThe value represents the ratio of the monitor's peak luminance. Brightness below this knee point maps 1:1, while brightness above is smoothly compressed using a spline curve.\n(Recommended: 0.4 - 0.75)";
   static constexpr const wchar_t *Settings_Tooltip_ZoomAuto = L"自動：画像が画面サイズより小さい場合は100%に拡大縮小し、大きい場合は画面サイズに合わせて拡大縮小します。";
   static constexpr const wchar_t *Settings_Header_VectorAssets = L"エッジ";
   static constexpr const wchar_t *Settings_Label_VectorStrokeWeight = L"線幅";
@@ -3288,6 +3302,7 @@ struct RU {
   static constexpr const wchar_t *Settings_Label_CMS = L"Управление цветом (CMS)";
   static constexpr const wchar_t *Settings_Label_AdvancedColor = L"Расширенный цвет (HDR)";
   static constexpr const wchar_t *Settings_Label_HdrToneMapping = L"Тональная компрессия HDR";
+  static constexpr const wchar_t *Settings_Label_HdrSplineKnee = L"Spline Knee Point";
   static constexpr const wchar_t *Settings_Label_HdrPeakNitsOverride = L"Пиковая яркость HDR (ниты)";
   static constexpr const wchar_t *Settings_Tooltip_HdrPeakNitsOverride = L"Установите 0 для системной яркости.";
   static constexpr const wchar_t *Settings_Label_HdrPeakPercentile = L"HDR Peak Percentile";
@@ -3503,6 +3518,8 @@ struct RU {
       L"Высокоточное сжатие светов с использованием сплайнов (Рекомендуется).\n"
       L"Колориметрическая: Строгое отображение яркости; светлые участки, "
       L"превышающие предел монитора, обрезаются.\nBT.2390 (EETF): Кривая ITU-R BT.2390 EETF для высокоточного отображения тонов.";
+  static constexpr const wchar_t *Settings_Tooltip_HdrSplineKnee =
+      L"0 = Auto (Calculated based on image luminance).\nThe value represents the ratio of the monitor's peak luminance. Brightness below this knee point maps 1:1, while brightness above is smoothly compressed using a spline curve.\n(Recommended: 0.4 - 0.75)";
   static constexpr const wchar_t *Settings_Tooltip_ZoomAuto = L"Авто: масштаб 100%, если изображение меньше экрана, и вписывание в экран, если больше.";
   static constexpr const wchar_t *Settings_Header_Professional = L"Профессиональные инструменты";
   static constexpr const wchar_t *Settings_Label_ShowDirtyRect = L"Показывать кнопку отображаемой области в режиме анимации";
@@ -3902,6 +3919,7 @@ struct DE {
   static constexpr const wchar_t *Settings_Label_CMS = L"Farbmanagement (CMS)";
   static constexpr const wchar_t *Settings_Label_AdvancedColor = L"Erweiterte Farbe (HDR)";
   static constexpr const wchar_t *Settings_Label_HdrToneMapping = L"HDR-Tonzuordnung";
+  static constexpr const wchar_t *Settings_Label_HdrSplineKnee = L"Spline Knee Point";
   static constexpr const wchar_t *Settings_Label_HdrPeakNitsOverride = L"HDR Spitzenhelligkeit (Nits)";
   static constexpr const wchar_t *Settings_Tooltip_HdrPeakNitsOverride = L"Auf 0 setzen, um erkannte Helligkeit zu verwenden.";
   static constexpr const wchar_t *Settings_Label_HdrPeakPercentile = L"HDR Peak Percentile";
@@ -4118,6 +4136,8 @@ struct DE {
       L"Hochpräzises Highlight-Roll-off mittels stückweiser Splines "
       L"(Empfohlen).\nFarbmetrisch: Strikte Luminanzzuordnung; Highlights, die "
       L"das Monitorlimit überschreiten, werden abgeschnitten.\nBT.2390 (EETF): ITU-R BT.2390 EETF-Kurve für hochpräzise Tonzuordnung.";
+  static constexpr const wchar_t *Settings_Tooltip_HdrSplineKnee =
+      L"0 = Auto (Calculated based on image luminance).\nThe value represents the ratio of the monitor's peak luminance. Brightness below this knee point maps 1:1, while brightness above is smoothly compressed using a spline curve.\n(Recommended: 0.4 - 0.75)";
   static constexpr const wchar_t *Settings_Tooltip_ZoomAuto = L"Auto: 100 % Skalierung, wenn das Bild kleiner als der Bildschirm ist, und an den Bildschirm anpassen, wenn es größer ist.";
   static constexpr const wchar_t *Settings_Header_Professional = L"Profi-Werkzeuge";
   static constexpr const wchar_t *Settings_Label_ShowDirtyRect = L"Schaltfläche \"Dirty Rect\" im Animationsmodus anzeigen";
@@ -4529,6 +4549,7 @@ struct ES {
       L"Gestión de color (CMS)";
   static constexpr const wchar_t *Settings_Label_AdvancedColor = L"Color avanzado (HDR)";
   static constexpr const wchar_t *Settings_Label_HdrToneMapping = L"Mapeo de tonos HDR";
+  static constexpr const wchar_t *Settings_Label_HdrSplineKnee = L"Spline Knee Point";
   static constexpr const wchar_t *Settings_Label_HdrPeakNitsOverride = L"Brillo Máximo HDR (Nits)";
   static constexpr const wchar_t *Settings_Tooltip_HdrPeakNitsOverride = L"Ajustar en 0 para usar el brillo detectado por el sistema.";
   static constexpr const wchar_t *Settings_Label_HdrPeakPercentile = L"HDR Peak Percentile";
@@ -4749,6 +4770,8 @@ struct ES {
       L"Spline: Roll-off de luces de alta fidelidad mediante splines por tramos "
       L"(Recomendado).\nColorimétrico: Mapeo de luminancia estricto; las luces "
       L"que exceden el límite del monitor se recortan.\nBT.2390 (EETF): Curva ITU-R BT.2390 EETF para mapeo de tonos de alta fidelidad.";
+  static constexpr const wchar_t *Settings_Tooltip_HdrSplineKnee =
+      L"0 = Auto (Calculated based on image luminance).\nThe value represents the ratio of the monitor's peak luminance. Brightness below this knee point maps 1:1, while brightness above is smoothly compressed using a spline curve.\n(Recommended: 0.4 - 0.75)";
   static constexpr const wchar_t *Settings_Tooltip_ZoomAuto = L"Automático: Escala al 100% cuando la imagen es más pequeña que la pantalla, se ajusta a la pantalla cuando es más grande.";
   static constexpr const wchar_t *Settings_Header_Professional = L"Herramientas profesionales";
   static constexpr const wchar_t *Settings_Label_ShowDirtyRect = L"Mostrar el botón de rectángulo sucio en el modo de animación";
@@ -5076,7 +5099,9 @@ template <typename T> void ApplyT() {
   Settings_Label_CMS = T::Settings_Label_CMS;
   Settings_Label_AdvancedColor = T::Settings_Label_AdvancedColor;
   Settings_Label_HdrToneMapping = T::Settings_Label_HdrToneMapping;
+  Settings_Label_HdrSplineKnee = T::Settings_Label_HdrSplineKnee;
   Settings_Tooltip_HdrToneMapping = T::Settings_Tooltip_HdrToneMapping;
+  Settings_Tooltip_HdrSplineKnee = T::Settings_Tooltip_HdrSplineKnee;
   Settings_Label_HdrPeakNitsOverride = T::Settings_Label_HdrPeakNitsOverride;
   Settings_Tooltip_HdrPeakNitsOverride = T::Settings_Tooltip_HdrPeakNitsOverride;
   Settings_Label_HdrPeakPercentile = T::Settings_Label_HdrPeakPercentile;
@@ -5655,6 +5680,7 @@ struct FR {
   static constexpr const wchar_t *Settings_Label_CMS = L"Gestion des couleurs (CMS)";
   static constexpr const wchar_t *Settings_Label_AdvancedColor = L"Couleurs avancées (HDR)";
   static constexpr const wchar_t *Settings_Label_HdrToneMapping = L"Mappage de tons HDR";
+  static constexpr const wchar_t *Settings_Label_HdrSplineKnee = L"Spline Knee Point";
   static constexpr const wchar_t *Settings_Label_HdrPeakNitsOverride = L"Luminosité maximale HDR (Nits)";
   static constexpr const wchar_t *Settings_Tooltip_HdrPeakNitsOverride = L"Réglez sur 0 pour utiliser la luminosité détectée par le système.";
   static constexpr const wchar_t *Settings_Label_HdrPeakPercentile = L"HDR Peak Percentile";
@@ -5870,6 +5896,8 @@ struct FR {
       L"utilisant une spline par morceaux (Recommandé).\nColorimétrique : "
       L"Mappage de luminance strict ; les hautes lumières dépassant la limite "
       L"du moniteur sont tronquées.\nBT.2390 (EETF) : Courbe ITU-R BT.2390 EETF pour un mappage de tons haute fidélité.";
+  static constexpr const wchar_t *Settings_Tooltip_HdrSplineKnee =
+      L"0 = Auto (Calculated based on image luminance).\nThe value represents the ratio of the monitor's peak luminance. Brightness below this knee point maps 1:1, while brightness above is smoothly compressed using a spline curve.\n(Recommended: 0.4 - 0.75)";
   static constexpr const wchar_t *Settings_Tooltip_ZoomAuto = L"Auto: 100% scale when image is smaller than screen, fit to screen when larger.";
   static constexpr const wchar_t *Settings_Header_Professional = L"Professional Tools";
   static constexpr const wchar_t *Settings_Label_ShowDirtyRect = L"Show update regions button in animation mode";

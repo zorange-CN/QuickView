@@ -1261,22 +1261,39 @@ BuildToneMapSettings(const QuickView::RawImageFrame &frame,
     const float dst_knee_min = output_min + knee_minimum * (output_max - output_min);
     const float dst_knee_max = output_min + knee_maximum * (output_max - output_min);
 
-    // Source knee from scene average brightness (clamped to safe range)
-    float src_knee = (input_avg > 0.0f)
-        ? input_avg
-        : (input_min + knee_default * (input_max - input_min));
-    src_knee = std::clamp(src_knee, src_knee_min, src_knee_max);
+    float src_knee;
+    float dst_knee;
 
-    // Target adaptation: linear rescale + perceptual weighting
-    const float target = (src_knee - input_min) / (input_max - input_min + 1e-9f);
-    const float adapted = output_min + target * (output_max - output_min);
+    if (g_config.HdrSplineKnee > 0.0f) {
+        // Manual Static Mode: Knee is a percentage of the display peak luminance.
+        // Maintain 1:1 absolute mapping up to the knee point.
+        dst_knee = output_min + g_config.HdrSplineKnee * (output_max - output_min);
+        src_knee = dst_knee; // 1:1 mapping in PQ space means input = output
+        
+        // Ensure we don't exceed input peak, otherwise we are stretching instead of compressing
+        if (src_knee > input_max) {
+            src_knee = input_max;
+            dst_knee = src_knee;
+        }
+    } else {
+        // Automatic Dynamic Mode (libplacebo default)
+        // Source knee from scene average brightness (clamped to safe range)
+        src_knee = (input_avg > 0.0f)
+            ? input_avg
+            : (input_min + knee_default * (input_max - input_min));
+        src_knee = std::clamp(src_knee, src_knee_min, src_knee_max);
 
-    // Increase adaptation strength near extreme knee positions
-    const float tuning = 1.0f - SmoothStep(knee_maximum, knee_default, target)
-                               * SmoothStep(knee_minimum, knee_default, target);
-    const float adaptation = knee_adaptation + (1.0f - knee_adaptation) * tuning;
-    float dst_knee = src_knee + (adapted - src_knee) * adaptation;
-    dst_knee = std::clamp(dst_knee, dst_knee_min, dst_knee_max);
+        // Target adaptation: linear rescale + perceptual weighting
+        const float target = (src_knee - input_min) / (input_max - input_min + 1e-9f);
+        const float adapted = output_min + target * (output_max - output_min);
+
+        // Increase adaptation strength near extreme knee positions
+        const float tuning = 1.0f - SmoothStep(knee_maximum, knee_default, target)
+                                   * SmoothStep(knee_minimum, knee_default, target);
+        const float adaptation = knee_adaptation + (1.0f - knee_adaptation) * tuning;
+        dst_knee = src_knee + (adapted - src_knee) * adaptation;
+        dst_knee = std::clamp(dst_knee, dst_knee_min, dst_knee_max);
+    }
 
     // --- Spline slope and polynomial solve (PQ space, identical to libplacebo) ---
     constexpr float spline_contrast = 0.5f;
@@ -1325,7 +1342,7 @@ BuildToneMapSettings(const QuickView::RawImageFrame &frame,
     // Calculate mapped scene average luminance in PQ space for contrast recovery
     float input_avg_pq = input_avg;
     if (input_avg_pq <= 0.0f) {
-      input_avg_pq = input_min + knee_default * (input_max - input_min);
+      input_avg_pq = (g_config.HdrSplineKnee > 0.0f) ? src_knee : (input_min + knee_default * (input_max - input_min));
     }
     float sx = input_avg_pq - src_knee;
     float mapped_avg;

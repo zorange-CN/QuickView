@@ -343,7 +343,9 @@ namespace AppStrings {
     extern const wchar_t* Settings_Label_AdvancedColor;
     extern const wchar_t* Settings_Label_CmsFallback;
     extern const wchar_t* Settings_Label_HdrToneMapping;
+    extern const wchar_t* Settings_Label_HdrSplineKnee;
     extern const wchar_t* Settings_Tooltip_HdrToneMapping;
+    extern const wchar_t* Settings_Tooltip_HdrSplineKnee;
     extern const wchar_t* Settings_Label_HdrPeakNitsOverride;
     extern const wchar_t* Settings_Tooltip_HdrPeakNitsOverride;
     extern const wchar_t* Settings_Label_HdrPeakPercentile;

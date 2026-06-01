@@ -5481,6 +5481,7 @@ void SaveConfig() {
     WritePrivateProfileStringW(L"Image", L"CmsDefaultFallback", std::to_wstring(g_config.CmsDefaultFallback).c_str(), iniPath.c_str());
     WritePrivateProfileStringW(L"Image", L"CmsRenderingIntent", std::to_wstring(g_config.CmsRenderingIntent).c_str(), iniPath.c_str());
     WritePrivateProfileStringW(L"Image", L"HdrToneMappingMode", std::to_wstring(g_config.HdrToneMappingMode).c_str(), iniPath.c_str());
+    WritePrivateProfileStringW(L"Image", L"HdrSplineKnee", std::to_wstring(g_config.HdrSplineKnee).c_str(), iniPath.c_str());
     WritePrivateProfileStringW(L"Image", L"HdrPeakNitsOverride", std::to_wstring(g_config.HdrPeakNitsOverride).c_str(), iniPath.c_str());
     WritePrivateProfileStringW(L"Image", L"HdrPeakPercentile", std::to_wstring(g_config.HdrPeakPercentile).c_str(), iniPath.c_str());
     WritePrivateProfileStringW(L"Image", L"Exposure", std::to_wstring(g_config.Exposure).c_str(), iniPath.c_str());
@@ -5724,6 +5725,9 @@ void LoadConfig() {
     g_config.HdrToneMappingMode = GetPrivateProfileIntW(L"Image", L"HdrToneMappingMode", 0, iniPath.c_str());
     
     wchar_t tempFloat[64];
+    GetPrivateProfileStringW(L"Image", L"HdrSplineKnee", L"0.0", tempFloat, 64, iniPath.c_str());
+    g_config.HdrSplineKnee = std::wcstof(tempFloat, nullptr);
+    
     GetPrivateProfileStringW(L"Image", L"HdrPeakNitsOverride", L"0.0", tempFloat, 64, iniPath.c_str());
     g_config.HdrPeakNitsOverride = std::wcstof(tempFloat, nullptr);
     GetPrivateProfileStringW(L"Image", L"HdrPeakPercentile", L"100.0", tempFloat, 64, iniPath.c_str());

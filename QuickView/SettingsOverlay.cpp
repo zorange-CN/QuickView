@@ -1884,13 +1884,42 @@ void SettingsOverlay::BuildMenu() {
     SettingsItem itemHdrToneMapping = { AppStrings::Settings_Label_HdrToneMapping, OptionType::ComboBox, nullptr, nullptr, &g_config.HdrToneMappingMode, nullptr, 0, 0,
         { AppStrings::Settings_Option_HdrSpline, AppStrings::Settings_Option_HdrColorimetric, AppStrings::Settings_Option_HdrLegacyReinhard } };
     itemHdrToneMapping.tooltipText = AppStrings::Settings_Tooltip_HdrToneMapping;
-    itemHdrToneMapping.onChange = []() {
+    itemHdrToneMapping.onChange = [this]() {
         SaveConfig();
+        this->m_pendingRebuild = true;
+        this->m_needsLayoutRebuild = true;
         extern HWND g_mainHwnd;
         extern void RefreshImageDisplay(HWND hwnd);
         RefreshImageDisplay(g_mainHwnd);
     };
     tabImage.items.push_back(itemHdrToneMapping);
+
+    SettingsItem itemHdrSplineKnee = { AppStrings::Settings_Label_HdrSplineKnee, OptionType::Slider, nullptr, &g_config.HdrSplineKnee };
+    itemHdrSplineKnee.tooltipText = AppStrings::Settings_Tooltip_HdrSplineKnee;
+    itemHdrSplineKnee.minVal = 0.0f;
+    itemHdrSplineKnee.maxVal = 1.0f;
+    itemHdrSplineKnee.displayFormat = L"%.2f";
+    itemHdrSplineKnee.isDisabled = (g_config.HdrToneMappingMode != 0);
+    itemHdrSplineKnee.onChange2 = []() {
+        extern HWND g_mainHwnd;
+        extern void RefreshImageDisplay(HWND hwnd);
+        RefreshImageDisplay(g_mainHwnd);
+    };
+    itemHdrSplineKnee.onChange = []() {
+        SaveConfig();
+        extern HWND g_mainHwnd;
+        extern void RefreshImageDisplay(HWND hwnd);
+        RefreshImageDisplay(g_mainHwnd);
+    };
+    itemHdrSplineKnee.onReset = [this]() {
+        g_config.HdrSplineKnee = 0.0f;
+        SaveConfig();
+        this->m_pendingRebuild = true;
+        extern HWND g_mainHwnd;
+        extern void RefreshImageDisplay(HWND hwnd);
+        RefreshImageDisplay(g_mainHwnd);
+    };
+    tabImage.items.push_back(itemHdrSplineKnee);
 
     // HDR Peak Nits Override
     SettingsItem itemHdrPeak = { AppStrings::Settings_Label_HdrPeakNitsOverride, OptionType::Slider, nullptr, &g_config.HdrPeakNitsOverride };
