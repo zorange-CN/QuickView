@@ -8,6 +8,10 @@ set(ADAPTIVE_TOOLCHAIN_INCLUDED ON)
 
 message(STATUS "[AdaptiveToolchain] Initializing tool discovery...")
 
+# Bypass cross-compilation search restrictions for host-run build tools
+set(_OLD_FIND_ROOT_PATH_MODE_PROGRAM ${CMAKE_FIND_ROOT_PATH_MODE_PROGRAM})
+set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+
 # 1. Locate Visual Studio Installation
 set(VSWHERE_SEARCH_PATHS 
     "C:/Program Files (x86)/Microsoft Visual Studio/Installer"
@@ -100,6 +104,13 @@ endif()
 
 find_program(ADAPTIVE_NINJA ninja HINTS ${NINJA_HINTS})
 find_program(ADAPTIVE_NASM  nasm  HINTS ${NASM_HINTS})
+
+# Restore original find program mode
+if(_OLD_FIND_ROOT_PATH_MODE_PROGRAM)
+    set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM ${_OLD_FIND_ROOT_PATH_MODE_PROGRAM})
+else()
+    unset(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM)
+endif()
 
 # 6. ASan Library Discovery
 if(ADAPTIVE_CLANG_CL)
