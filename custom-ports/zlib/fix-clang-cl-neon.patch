@@ -1,0 +1,31 @@
+--- a/cmake/detect-intrinsics.cmake
++++ b/cmake/detect-intrinsics.cmake
+@@ -222,7 +222,7 @@
+     # Check whether compiler supports NEON flag
+     set(CMAKE_REQUIRED_FLAGS "${NEONFLAG} ${NATIVEFLAG} ${ZNOLTOFLAG}")
+     check_c_source_compiles(
+-        "#if defined(_M_ARM64) || defined(_M_ARM64EC)
++        "#if (defined(_M_ARM64) || defined(_M_ARM64EC)) && !defined(__clang__)
+         #  include <arm64_neon.h>
+         #else
+         #  include <arm_neon.h>
+@@ -285,7 +285,7 @@
+     # Check whether compiler supports loading 4 neon vecs into a register range
+     set(CMAKE_REQUIRED_FLAGS "${NEONFLAG} ${NATIVEFLAG} ${ZNOLTOFLAG}")
+     check_c_source_compiles(
+-        "#if defined(_MSC_VER) && (defined(_M_ARM64) || defined(_M_ARM64EC))
++        "#if defined(_MSC_VER) && (defined(_M_ARM64) || defined(_M_ARM64EC)) && !defined(__clang__)
+         #  include <arm64_neon.h>
+         #else
+         #  include <arm_neon.h>
+--- a/arch/arm/neon_intrins.h
++++ b/arch/arm/neon_intrins.h
+@@ -1,7 +1,7 @@
+ #ifndef ARM_NEON_INTRINS_H
+ #define ARM_NEON_INTRINS_H
+ 
+-#if defined(_MSC_VER) && (defined(_M_ARM64) || defined(_M_ARM64EC))
++#if defined(_MSC_VER) && (defined(_M_ARM64) || defined(_M_ARM64EC)) && !defined(__clang__)
+ /* arm64_neon.h is MSVC specific */
+ #  include <arm64_neon.h>
+ #else

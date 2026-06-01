@@ -12,6 +12,12 @@ vcpkg_replace_string("${SOURCE_PATH}/cmake/Modules/merge_static_libs.cmake"
     "elseif(CMAKE_C_COMPILER_ID MATCHES \"^(Clang|GNU|Intel|IntelLLVM)$\")"
     "elseif(CMAKE_C_COMPILER_ID MATCHES \"^(Clang|GNU|Intel|IntelLLVM)$\" AND NOT MSVC)"
 )
+# When using clang-cl, CMAKE_AR is llvm-lib but libavif only searches for 'lib.exe'.
+# Patch to use CMAKE_AR as the primary choice for the MSVC branch.
+vcpkg_replace_string("${SOURCE_PATH}/cmake/Modules/merge_static_libs.cmake"
+    "find_program(BUNDLE_TOOL lib HINTS \"\${CMAKE_C_COMPILER}/..\")"
+    "find_program(BUNDLE_TOOL NAMES lib llvm-lib HINTS \"\${CMAKE_C_COMPILER}/..\" \"\${CMAKE_AR}/..\")"
+)
 file(REMOVE_RECURSE "${SOURCE_PATH}/third_party")
 
 set(FEATURE_OPTIONS "")

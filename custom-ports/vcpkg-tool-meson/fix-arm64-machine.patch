@@ -1,0 +1,11 @@
+--- a/mesonbuild/compilers/mixins/visualstudio.py
++++ b/mesonbuild/compilers/mixins/visualstudio.py
+@@ -107,7 +107,7 @@
+             self.machine = 'x64'
+         elif '86' in target:
+             self.machine = 'x86'
+-        elif 'aarch64' in target:
++        elif 'aarch64' in target or 'arm64' in target:
+             self.machine = 'arm64'
+         elif 'arm' in target:
+             self.machine = 'arm'

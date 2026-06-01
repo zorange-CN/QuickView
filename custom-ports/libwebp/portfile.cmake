@@ -11,6 +11,8 @@ vcpkg_from_github(
         0009-cpufeatures-android.patch
 )
 
+vcpkg_replace_string("${SOURCE_PATH}/cmake/cpu.cmake" "-mfpu=neon" "")
+
 vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
     FEATURES
         anim         WEBP_BUILD_ANIM_UTILS

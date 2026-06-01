@@ -25,7 +25,7 @@ find_program(VSWHERE_EXE vswhere
 set(VS_INSTALL_PATH "")
 if(VSWHERE_EXE)
     execute_process(
-        COMMAND "${VSWHERE_EXE}" -latest -property installationPath
+        COMMAND "${VSWHERE_EXE}" -latest -prerelease -property installationPath
         OUTPUT_VARIABLE VS_INSTALL_PATH
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
@@ -38,17 +38,62 @@ if(WIN32 AND VS_INSTALL_PATH)
     set(VCVARS_BAT "${VS_INSTALL_PATH}/VC/Auxiliary/Build/vcvarsall.bat")
     if(EXISTS "${VCVARS_BAT}")
         message(STATUS "[AdaptiveToolchain] Extracting MSVC environment via vcvarsall.bat...")
+        if(DEFINED ENV{ADAPTIVE_VCVARS_ARCH})
+            set(VCVARS_ARCH "$ENV{ADAPTIVE_VCVARS_ARCH}")
+        else()
+            set(VCVARS_ARCH "x64")
+            # Detection order: VCPKG_TARGET_ARCHITECTURE (triplet), CMAKE_SYSTEM_PROCESSOR, CMAKE_C_FLAGS
+            # Note: When loaded via VCPKG_CHAINLOAD_TOOLCHAIN_FILE, CMAKE_SYSTEM_PROCESSOR
+            # is NOT yet set (vcpkg's windows.cmake sets it after chainload).
+            # VCPKG_TARGET_ARCHITECTURE is set by the triplet file and is always available.
+            set(_IS_ARM64 FALSE)
+            if(VCPKG_TARGET_ARCHITECTURE STREQUAL "arm64")
+                set(_IS_ARM64 TRUE)
+            elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^[Aa][Rr][Mm]64$" OR CMAKE_SYSTEM_PROCESSOR MATCHES "^[Aa][Aa][Rr][Cc][Hh]64$")
+                set(_IS_ARM64 TRUE)
+            elseif(CMAKE_C_FLAGS MATCHES "arm64" OR CMAKE_CXX_FLAGS MATCHES "arm64" OR VCPKG_C_FLAGS MATCHES "arm64")
+                set(_IS_ARM64 TRUE)
+            endif()
+
+            if(_IS_ARM64)
+                set(VCVARS_ARCH "x64_arm64")
+                # For clang-cl cross-compilation, set the compiler target triple
+                if(CMAKE_C_COMPILER MATCHES "clang")
+                    set(CMAKE_C_COMPILER_TARGET "arm64-pc-windows-msvc" CACHE STRING "")
+                    set(CMAKE_CXX_COMPILER_TARGET "arm64-pc-windows-msvc" CACHE STRING "")
+                endif()
+            elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^[Aa][Rr][Mm]$" OR CMAKE_SYSTEM_PROCESSOR MATCHES "^[Aa][Rr][Mm][Vv]7" OR CMAKE_C_FLAGS MATCHES "armv7")
+                set(VCVARS_ARCH "x64_arm")
+            elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^[Xx]86$" OR CMAKE_SYSTEM_PROCESSOR MATCHES "^[Ii]386$" OR CMAKE_SYSTEM_PROCESSOR MATCHES "^[Ii]686$")
+                set(VCVARS_ARCH "x64_x86")
+            endif()
+            set(ENV{ADAPTIVE_VCVARS_ARCH} "${VCVARS_ARCH}")
+        endif()
+
+        set(ENV{INCLUDE} "")
+        set(ENV{LIB} "")
+        set(ENV{LIBPATH} "")
         execute_process(
-            COMMAND cmd /c "${VCVARS_BAT}" x64 && set
+            COMMAND cmd /c "${VCVARS_BAT}" ${VCVARS_ARCH} && set
             OUTPUT_VARIABLE VCVARS_OUTPUT
             ERROR_QUIET
         )
         
-        # Helper to extract variable from 'set' output
+        # Helper to extract variable from 'set' output robustly
         macro(extract_vc_var VAR_NAME OUT_VAR)
-            string(REGEX MATCH "${VAR_NAME}=([^\\r\\n]*)" _MATCH "${VCVARS_OUTPUT}")
-            if(_MATCH)
-                set(${OUT_VAR} "${CMAKE_MATCH_1}")
+            string(FIND "${VCVARS_OUTPUT}" "${VAR_NAME}=" VAR_IDX)
+            if(VAR_IDX GREATER_EQUAL 0)
+                string(SUBSTRING "${VCVARS_OUTPUT}" ${VAR_IDX} -1 TEMP_STR)
+                string(FIND "${TEMP_STR}" "\n" NL_IDX)
+                if(NL_IDX GREATER 0)
+                    string(SUBSTRING "${TEMP_STR}" 0 ${NL_IDX} TEMP_STR)
+                endif()
+                string(FIND "${TEMP_STR}" "\r" CR_IDX)
+                if(CR_IDX GREATER 0)
+                    string(SUBSTRING "${TEMP_STR}" 0 ${CR_IDX} TEMP_STR)
+                endif()
+                string(LENGTH "${VAR_NAME}=" PREFIX_LEN)
+                string(SUBSTRING "${TEMP_STR}" ${PREFIX_LEN} -1 ${OUT_VAR})
                 file(TO_CMAKE_PATH "${${OUT_VAR}}" ${OUT_VAR}_LIST)
                 set(ADAPTIVE_MSVC_${VAR_NAME}_PATHS "${${OUT_VAR}_LIST}" CACHE INTERNAL "MSVC ${VAR_NAME} Paths")
             endif()
@@ -165,10 +210,10 @@ macro(adaptive_inject_env)
     
     # Also inject INCLUDE/LIB for Clang-cl if found
     if(ADAPTIVE_MSVC_INCLUDE_PATHS)
-        set(ENV{INCLUDE} "${ADAPTIVE_MSVC_INCLUDE}")
+        set(ENV{INCLUDE} "${ADAPTIVE_INC}")
     endif()
     if(ADAPTIVE_MSVC_LIB_PATHS)
-        set(ENV{LIB} "${ADAPTIVE_MSVC_LIB}")
+        set(ENV{LIB} "${ADAPTIVE_LIB}")
     endif()
 endmacro()
 
@@ -185,3 +230,6 @@ report_tool("Clang-cl" ADAPTIVE_CLANG_CL)
 report_tool("lld-link" ADAPTIVE_LLD_LINK)
 report_tool("Ninja"    ADAPTIVE_NINJA)
 report_tool("NASM"     ADAPTIVE_NASM)
+
+# 9. Actually apply the injected environment
+adaptive_inject_env()
