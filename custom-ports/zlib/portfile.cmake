@@ -7,6 +7,8 @@ vcpkg_from_github(
     PATCHES fix-clang-cl-neon.patch
 )
 
+vcpkg_replace_string("${SOURCE_PATH}/arch/arm/acle_intrins.h" "#elif defined(HAVE_ARM_ACLE_H)" "#endif\n#if defined(HAVE_ARM_ACLE_H) || defined(__clang__)")
+
 # Set ZLIB_COMPAT in the triplet file to turn on
 if(NOT DEFINED ZLIB_COMPAT)
     set(ZLIB_COMPAT OFF)
