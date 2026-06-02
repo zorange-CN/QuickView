@@ -1,8 +1,13 @@
 #pragma once
 #include "pch.h"
-#include <memory_resource>
 #include <atomic>
+#include <mutex>
+#include <cstdint>
+#include <memory>
+
 #include <cstdlib>
+#include <stdexcept>
+#include <windows.h>
 
 // ============================================================================
 // QuantumArena - 量子流架构核心内存池
@@ -13,7 +18,11 @@
 //   3. 双缓冲支持 - Active/Back 交换
 //   4. 无锁设计 - 单线程独占使用 (HeavyLane 专用)
 //   5. 溢出保护 - 超大图自动溢出到系统堆
+//   6. 动态按需提交 - 预留海量地址空间，用到多少提交多少，闲置时释放物理内存
 // ============================================================================
+
+class QuantumArena;
+
 
 class QuantumArena {
 public:
@@ -30,7 +39,7 @@ public:
     ~QuantumArena() {
         FreeOverflows();
         if (m_buffer) {
-            _aligned_free(m_buffer);
+            VirtualFree(m_buffer, 0, MEM_RELEASE);
             m_buffer = nullptr;
         }
     }
@@ -43,41 +52,52 @@ public:
     QuantumArena(QuantumArena&& other) noexcept 
         : m_buffer(other.m_buffer)
         , m_capacity(other.m_capacity)
+        , m_committed(other.m_committed.load())
         , m_offset(other.m_offset.load())
         , m_peakUsage(other.m_peakUsage.load())
-        , m_resource(std::move(other.m_resource))
         , m_overflowHead(other.m_overflowHead)
     {
         other.m_buffer = nullptr;
         other.m_capacity = 0;
+        other.m_committed = 0;
         other.m_offset = 0;
         other.m_overflowHead = nullptr;
     }
 
     // ========== 核心操作 ==========
 
-    /// <summary>
-    /// 获取 PMR 资源 (用于 std::pmr 容器)
-    /// 注意: 首次调用会触发内存分配
-    /// </summary>
-    std::pmr::memory_resource* GetResource() {
-        EnsureInitialized();
-        return m_resource.get();
-    }
+
+    // Declaration for global strategy check (implemented in main.cpp or ImageEngine.cpp)
+    static bool ShouldShrinkMemory() noexcept;
 
     /// <summary>
     /// 极速重置 - 0ns 级操作
-    /// 不释放内存，仅重置分配指针
+    /// 不释放内存，仅重置分配指针。并动态释放物理内存归还系统
     /// 警告: 调用后，之前分配的所有内存变为无效！
     /// </summary>
     void Reset() noexcept {
         FreeOverflows();
         m_offset = 0;
-        // 重建 PMR 资源 (指向同一块 buffer)
-        if (m_buffer && m_resource) {
-            m_resource = std::make_unique<std::pmr::monotonic_buffer_resource>(
-                m_buffer, m_capacity, std::pmr::new_delete_resource()
-            );
+        if (ShouldShrinkMemory()) {
+            Shrink(); // 归还空闲物理内存
+        }
+    }
+
+    /// <summary>
+    /// 收缩内存 - 将未使用的预留内存去提交 (Decommit)，归还给 OS
+    /// </summary>
+    void Shrink() noexcept {
+        if (!m_buffer) return;
+        size_t used = m_offset.load(std::memory_order_relaxed);
+        // 按 4KB 页对齐
+        size_t keepSize = (used + 4095) & ~4095;
+        if (keepSize < m_committed) {
+            std::lock_guard<std::mutex> lock(m_commitMutex);
+            if (keepSize < m_committed) {
+                size_t decommitSize = m_committed - keepSize;
+                VirtualFree(m_buffer + keepSize, decommitSize, MEM_DECOMMIT);
+                m_committed = keepSize;
+            }
         }
     }
 
@@ -87,17 +107,34 @@ public:
     /// </summary>
     void* Allocate(size_t size, size_t alignment = ALIGNMENT) noexcept {
         EnsureInitialized();
-        if (!m_buffer) return nullptr;
+        if (!m_buffer) return AllocateOverflow(size, alignment);
 
         // 计算对齐后的偏移
         size_t current = m_offset.load(std::memory_order_relaxed);
         size_t aligned = (current + alignment - 1) & ~(alignment - 1);
         size_t newOffset = aligned + size;
 
-        // 检查是否溢出
+        // 检查是否溢出虚拟容量
         if (newOffset > m_capacity) {
             // 溢出到系统堆 (防爆仓)
             return AllocateOverflow(size, alignment);
+        }
+
+        // 按需动态提交物理内存 (MEM_COMMIT)
+        if (newOffset > m_committed) {
+            std::lock_guard<std::mutex> lock(m_commitMutex);
+            if (newOffset > m_committed) {
+                size_t chunk = 1024 * 1024; // 1MB 粒度提交，兼顾性能和内存占用
+                size_t targetCommit = (newOffset + chunk - 1) & ~(chunk - 1);
+                if (targetCommit > m_capacity) targetCommit = m_capacity;
+
+                size_t commitSize = targetCommit - m_committed;
+                void* res = VirtualAlloc(m_buffer + m_committed, commitSize, MEM_COMMIT, PAGE_READWRITE);
+                if (!res) {
+                    return AllocateOverflow(size, alignment);
+                }
+                m_committed = targetCommit;
+            }
         }
 
         // CAS 更新 (虽然设计为单线程，但保持原子性以防万一)
@@ -106,8 +143,24 @@ public:
         {
             aligned = (current + alignment - 1) & ~(alignment - 1);
             newOffset = aligned + size;
+            
             if (newOffset > m_capacity) {
                 return AllocateOverflow(size, alignment);
+            }
+            
+            if (newOffset > m_committed) {
+                std::lock_guard<std::mutex> lock(m_commitMutex);
+                if (newOffset > m_committed) {
+                    size_t chunk = 1024 * 1024;
+                    size_t targetCommit = (newOffset + chunk - 1) & ~(chunk - 1);
+                    if (targetCommit > m_capacity) targetCommit = m_capacity;
+                    size_t commitSize = targetCommit - m_committed;
+                    void* res = VirtualAlloc(m_buffer + m_committed, commitSize, MEM_COMMIT, PAGE_READWRITE);
+                    if (!res) {
+                        return AllocateOverflow(size, alignment);
+                    }
+                    m_committed = targetCommit;
+                }
             }
         }
 
@@ -153,6 +206,7 @@ private:
         // 分配 size + alignment，将链表节点放在前面，以保证返回的业务指针依然满足 alignment
         void* raw_ptr = _aligned_malloc(size + alignment, alignment);
         if (raw_ptr) {
+            std::lock_guard<std::mutex> lock(m_overflowMutex);
             void** header = static_cast<void**>(raw_ptr);
             *header = m_overflowHead;
             m_overflowHead = raw_ptr;
@@ -162,41 +216,46 @@ private:
     }
 
     void FreeOverflows() noexcept {
-        void* curr = m_overflowHead;
+        void* curr = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(m_overflowMutex);
+            curr = m_overflowHead;
+            m_overflowHead = nullptr;
+        }
         while (curr) {
             void* next = *static_cast<void**>(curr);
             _aligned_free(curr);
             curr = next;
         }
-        m_overflowHead = nullptr;
     }
 
     void EnsureInitialized() {
         if (m_buffer) return;
 
-        // 分配对齐内存
-        m_buffer = static_cast<char*>(_aligned_malloc(m_capacity, ALIGNMENT));
+        // 仅预留虚拟地址空间 (MEM_RESERVE)，不消耗任何物理内存！
+        m_buffer = static_cast<char*>(VirtualAlloc(nullptr, m_capacity, MEM_RESERVE, PAGE_READWRITE));
         if (!m_buffer) {
-            // 分配失败，降级到纯堆模式
-            m_resource = std::make_unique<std::pmr::monotonic_buffer_resource>(
-                std::pmr::new_delete_resource()
-            );
             return;
         }
 
-        // 创建 PMR 资源
-        m_resource = std::make_unique<std::pmr::monotonic_buffer_resource>(
-            m_buffer, m_capacity, std::pmr::new_delete_resource()
-        );
+        m_committed = 0;
     }
 
     char* m_buffer = nullptr;
     size_t m_capacity;
+    std::atomic<size_t> m_committed{0};
+    std::mutex m_commitMutex;
     std::atomic<size_t> m_offset{0};
     std::atomic<size_t> m_peakUsage{0};
-    std::unique_ptr<std::pmr::monotonic_buffer_resource> m_resource;
+
+    std::mutex m_overflowMutex;
     void* m_overflowHead = nullptr;
+    
+public:
+    std::atomic<int> m_activeJobs{0};
 };
+
+
 
 // ============================================================================
 // QuantumArenaPool - 双缓冲 Arena 管理器
@@ -276,16 +335,16 @@ struct ArenaConfig {
         ArenaConfig config;
         
         if (totalPhys <= 4ULL * 1024 * 1024 * 1024) {
-            // <= 4GB: 穷人模式
-            config.scoutArenaSize = 32 * 1024 * 1024;   // 32MB
+            // <= 4GB: Lite 模式
+            config.scoutArenaSize = 64 * 1024 * 1024;   // 64MB
             config.heavyArenaSize = 256 * 1024 * 1024;  // 256MB × 2
         } else if (totalPhys <= 8ULL * 1024 * 1024 * 1024) {
             // <= 8GB: 标准模式
-            config.scoutArenaSize = 64 * 1024 * 1024;   // 64MB
+            config.scoutArenaSize = 128 * 1024 * 1024;  // 128MB
             config.heavyArenaSize = 512 * 1024 * 1024;  // 512MB × 2
         } else {
-            // > 8GB: 土豪模式
-            config.scoutArenaSize = 64 * 1024 * 1024;   // 64MB
+            // > 8GB: 极限模式 (仅预留地址空间，按需提交)
+            config.scoutArenaSize = 256 * 1024 * 1024;  // 256MB
             config.heavyArenaSize = 1024 * 1024 * 1024; // 1GB × 2
         }
         
@@ -405,8 +464,6 @@ public:
                m_heavyArenas[0]->GetCapacity() + 
                m_heavyArenas[1]->GetCapacity();
     }
-    
-
 
 private:
     void EnsureInitialized() {
@@ -427,4 +484,3 @@ using MemoryArena = QuantumArena;
 
 template <typename T>
 using ArenaAllocator = std::pmr::polymorphic_allocator<T>;
-

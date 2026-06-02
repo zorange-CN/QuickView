@@ -533,6 +533,10 @@ void HeavyLanePool::DetachAll() {
     }
 }
 
+void HeavyLanePool::ShrinkMemory() {
+    m_tileMemory.Shrink();
+}
+
 // ============================================================================
 // Task Submission
 // ============================================================================
@@ -1216,12 +1220,30 @@ void HeavyLanePool::PerformDecode(int workerId, const JobInfo& job, std::stop_to
     // For now, reuse the heavy arena (it resets anyway).
     QuantumArena& arena = m_pool->GetBackHeavyArena();
     
+    // RAII guard for concurrent jobs
+    struct ArenaJobGuard {
+        QuantumArena& a;
+        ArenaJobGuard(QuantumArena& arena) : a(arena) {
+            a.m_activeJobs.fetch_add(1, std::memory_order_acq_rel);
+        }
+        ~ArenaJobGuard() {
+            a.m_activeJobs.fetch_sub(1, std::memory_order_acq_rel);
+        }
+    } jobGuard(arena);
+    
     QuickView::RawImageFrame rawFrame;
     std::wstring loaderName;
     CImageLoader::ImageMetadata meta;
     HRESULT hr = E_FAIL;
     
     auto decodeStart = std::chrono::high_resolution_clock::now();
+
+    // Only reset the arena if we are the first and only job running on it right now.
+    // (e.g. all background tile decoding for previous image finished).
+    // Since we already incremented it, it will be exactly 1.
+    if (arena.m_activeJobs.load(std::memory_order_acquire) == 1) {
+        arena.Reset();
+    }
 
          if (job.type == JobType::Standard) {
               // --- Standard Decode (Full/Scaled) ---
