@@ -19,6 +19,8 @@ namespace {
         ImageEngine* engine;
         std::wstring path;
         ImageID id;
+        PaneSlot targetSlot;
+        uint64_t generationId;
     };
 }
 
@@ -150,7 +152,7 @@ void ImageEngine::SetTargetHdrHeadroomStops(float stops) {
 }
 
 // Request full resolution decode for current image (used by JXL serial pipeline)
-void ImageEngine::RequestFullDecode(const std::wstring& path, ImageID imageId) {
+void ImageEngine::RequestFullDecode(const std::wstring& path, ImageID imageId, PaneSlot targetSlot, uint64_t generationId) {
     // Node B: Decoding Complete / Request Full Decode
     QV_LOG("ImageEngine_FullDecode",
         TraceLoggingInt32(g_debugMetrics.lastUploadChannel.load(), "LastUploadChannel"),
@@ -161,7 +163,7 @@ void ImageEngine::RequestFullDecode(const std::wstring& path, ImageID imageId) {
     if (!m_heavyPool) return;
     
     // Only proceed if this is still the current image
-    if (imageId != m_currentImageId.load()) {
+    if (imageId != m_currentImageIdBySlot[static_cast<int>(targetSlot)].load()) {
         QV_LOG("Engine_FullDecode", TraceLoggingString("Cancelled ImageChanged", "Action"));
         return;
     }
@@ -178,7 +180,7 @@ void ImageEngine::RequestFullDecode(const std::wstring& path, ImageID imageId) {
     // [Note] No MMF passed here because this is a delayed request (MMF might not persist unless Titan)
     // Actually, if we are in Titan mode, m_mmf is valid. If not, it's null.
     // It's safe to pass m_mmf (member) here.
-    m_heavyPool->SubmitFullDecode(path, imageId, m_mmf);
+    m_heavyPool->SubmitFullDecode(path, imageId, m_mmf, targetSlot, generationId);
     
     QV_LOG("Engine_FullDecode",
         TraceLoggingString("Requested", "Action"),
@@ -186,7 +188,7 @@ void ImageEngine::RequestFullDecode(const std::wstring& path, ImageID imageId) {
 }
 
 // [Phase 2] Dispatcher Implementation
-void ImageEngine::DispatchImageLoad(const std::wstring& path, ImageID imageId, uintmax_t fileSize) {
+void ImageEngine::DispatchImageLoad(const std::wstring& path, ImageID imageId, uintmax_t fileSize, PaneSlot targetSlot, uint64_t generationId) {
     // 1. Peek Header
     CImageLoader::ImageHeaderInfo info = m_loader->PeekHeader(path.c_str());
 
@@ -343,6 +345,8 @@ void ImageEngine::DispatchImageLoad(const std::wstring& path, ImageID imageId, u
                 e.type = EventType::FullReady;
                 e.filePath = path; 
                 e.imageId = imageId;
+                e.targetSlot = targetSlot;
+                e.generationId = generationId;
                 e.rawFrame = cachedFrame; // Zero-copy shared_ptr
                 
                 // [Fix - Bug 7] Re-populate metadata from cache
@@ -413,7 +417,7 @@ void ImageEngine::DispatchImageLoad(const std::wstring& path, ImageID imageId, u
         if (m_config.ForceRawDecode) {
             // [Fix] Explicitly request Full Decode
             // This ensures we bypass IDCT scaling and get the full sensor resolution
-            m_heavyPool->SubmitFullDecode(path, imageId, primaryMMF);
+            m_heavyPool->SubmitFullDecode(path, imageId, primaryMMF, targetSlot, generationId);
             return; 
         }
         else if (info.hasEmbeddedThumb) {
@@ -455,7 +459,7 @@ void ImageEngine::DispatchImageLoad(const std::wstring& path, ImageID imageId, u
              } else {
                 // [v7.2 Fix] Large WebP -> Force Heavy Direct (non-Titan is full decode).
                  QV_LOG("Dispatch_Route", TraceLoggingString("WebP Large HeavyDirect", "Action"));
-                 m_heavyPool->Submit(path, imageId, primaryMMF);
+                 m_heavyPool->Submit(path, imageId, primaryMMF, targetSlot, generationId);
                  return; 
              }
         }
@@ -470,7 +474,7 @@ void ImageEngine::DispatchImageLoad(const std::wstring& path, ImageID imageId, u
         
         if (fmtLower == L"webp") {
              QV_LOG("Dispatch_Route", TraceLoggingString("WebP Heavy HeavyDirect", "Action"));
-             m_heavyPool->Submit(path, imageId, primaryMMF); // Base Layer Scaled
+             m_heavyPool->Submit(path, imageId, primaryMMF, targetSlot, generationId); // Base Layer Scaled
              return;
         }
         
@@ -481,6 +485,8 @@ void ImageEngine::DispatchImageLoad(const std::wstring& path, ImageID imageId, u
     if (info.format == L"JXL") {
         m_pendingJxlHeavyPath.clear();
         m_pendingJxlHeavyId = 0;
+        m_pendingJxlHeavySlot = targetSlot;
+        m_pendingJxlHeavyGenerationId = generationId;
         
         // Scene A: Small JXL (< 1MB AND < 2MP) -> FastLane Direct Full Decode
         // 1MB = 1048576 bytes
@@ -493,7 +499,7 @@ void ImageEngine::DispatchImageLoad(const std::wstring& path, ImageID imageId, u
         if (isSmall) {
             QV_LOG("Dispatch_Route", TraceLoggingString("JXL Small FastLane", "Action"));
             // FastLane will use target=0 if detected as small
-            m_fastLane.Push(path, imageId, m_targetHdrHeadroomStops.load(std::memory_order_relaxed));
+            m_fastLane.Push(path, imageId, m_targetHdrHeadroomStops.load(std::memory_order_relaxed), targetSlot, generationId);
         } 
         else {
             if (enableTitan) {
@@ -504,13 +510,15 @@ void ImageEngine::DispatchImageLoad(const std::wstring& path, ImageID imageId, u
                 // [Fix] Stage 2 Trigger explicitly needs these to be set for the pending heavy decode
                 m_pendingJxlHeavyPath = path;
                 m_pendingJxlHeavyId = imageId;
+                m_pendingJxlHeavySlot = targetSlot;
+                m_pendingJxlHeavyGenerationId = generationId;
                 
-                m_heavyPool->Submit(path, imageId, primaryMMF);
+                m_heavyPool->Submit(path, imageId, primaryMMF, targetSlot, generationId);
             } else {
                 // [v3.2.5 Restore] 普通非Titan大型大图，像旧版一样直接跑 FullDecode
                 // 免去 300ms 延迟，速度最快，并天然由解码端展示自带预览图！
                 QV_LOG("Dispatch_Route", TraceLoggingString("JXL Large HeavyFullDecode", "Action"));
-                m_heavyPool->SubmitFullDecode(path, imageId, primaryMMF);
+                m_heavyPool->SubmitFullDecode(path, imageId, primaryMMF, targetSlot, generationId);
             }
         }
         return; // JXL dispatched
@@ -559,10 +567,10 @@ void ImageEngine::DispatchImageLoad(const std::wstring& path, ImageID imageId, u
 
         if (isSmall) {
             QV_LOG("Dispatch_Route", TraceLoggingString("FormatSmall FastLane", "Action"));
-            m_fastLane.Push(path, imageId, m_targetHdrHeadroomStops.load(std::memory_order_relaxed));
+            m_fastLane.Push(path, imageId, m_targetHdrHeadroomStops.load(std::memory_order_relaxed), targetSlot, generationId);
         } else {
             QV_LOG("Dispatch_Route", TraceLoggingString("FormatLarge HeavyLane", "Action"));
-            m_heavyPool->Submit(path, imageId, primaryMMF);
+            m_heavyPool->Submit(path, imageId, primaryMMF, targetSlot, generationId);
         }
         return;
     }
@@ -570,18 +578,18 @@ void ImageEngine::DispatchImageLoad(const std::wstring& path, ImageID imageId, u
     // 7. Standard Routing
     if (useHeavy) {
         QV_LOG("Dispatch_Route", TraceLoggingString("HeavyLane", "Action"));
-        m_heavyPool->Submit(path, imageId, primaryMMF);
+        m_heavyPool->Submit(path, imageId, primaryMMF, targetSlot, generationId);
     }
     if (useFastLane) {
         // Avoid parallel duplicate work if Heavy is already taking it?
         // Logic: TypeA -> FastLane only. TypeB -> Heavy only.
         // Unknown type -> Parallel (Both).
         QV_LOG("Dispatch_Route", TraceLoggingString("FastLane", "Action"));
-        m_fastLane.Push(path, imageId, m_targetHdrHeadroomStops.load(std::memory_order_relaxed));
+        m_fastLane.Push(path, imageId, m_targetHdrHeadroomStops.load(std::memory_order_relaxed), targetSlot, generationId);
     }
 }
 
-void ImageEngine::NavigateTo(const std::wstring& path, uintmax_t fileSize, uint64_t navToken) {
+void ImageEngine::NavigateTo(const std::wstring& path, uintmax_t fileSize, uint64_t navToken, PaneSlot targetSlot, uint64_t generationId) {
     if (path.empty()) return;
     
     // [Phase 3] Store the navigation token
@@ -590,8 +598,9 @@ void ImageEngine::NavigateTo(const std::wstring& path, uintmax_t fileSize, uint6
     // [ImageID Architecture] Compute stable hash
     ImageID imageId = ComputePathHash(path);
     m_currentImageId.store(imageId);
-    // Cancel stale heavy/tile work immediately for all dispatch paths.
-    m_heavyPool->CancelOthers(imageId);
+    m_currentImageIdBySlot[static_cast<int>(targetSlot)].store(imageId);
+    // Cancel stale heavy/tile work immediately for the target pane.
+    m_heavyPool->CancelOthers(imageId, targetSlot);
     
     m_currentNavPath = path;
     m_lastInputTime = std::chrono::steady_clock::now();
@@ -602,7 +611,11 @@ void ImageEngine::NavigateTo(const std::wstring& path, uintmax_t fileSize, uint6
     m_baseLayerReady.store(false);
 
     // Use Central Dispatcher
-    DispatchImageLoad(path, imageId, fileSize);
+    DispatchImageLoad(path, imageId, fileSize, targetSlot, generationId);
+}
+
+ImageID ImageEngine::GetCurrentImageId(PaneSlot slot) const {
+    return m_currentImageIdBySlot[static_cast<int>(slot)].load();
 }
 
 bool ImageEngine::ShouldSkipFastLaneForFastFormat(const std::wstring& path) {
@@ -685,7 +698,7 @@ std::vector<EngineEvent> ImageEngine::PollState() {
                 // [JXL Serial] Trigger Stage 2 IMMEDIATELY for JXL (No 300ms wait)
                 if (m_pendingJxlHeavyId == e.imageId && m_pendingJxlHeavyId != 0) {
                      QV_LOG("PollState_Route", TraceLoggingString("JXL PreviewReady HeavyImmediate", "Action"));
-                     RequestFullDecode(m_pendingJxlHeavyPath, m_pendingJxlHeavyId);
+                     RequestFullDecode(m_pendingJxlHeavyPath, m_pendingJxlHeavyId, m_pendingJxlHeavySlot, m_pendingJxlHeavyGenerationId);
                      m_stage2Requested = true; 
                      m_pendingJxlHeavyId = 0; 
                 }
@@ -699,7 +712,7 @@ std::vector<EngineEvent> ImageEngine::PollState() {
                 // [JXL Scene C] FastLane Aborted (Modular?) -> Trigger Heavy Immediately
                 if (m_pendingJxlHeavyId == e.imageId && m_pendingJxlHeavyId != 0) {
                      QV_LOG("PollState_Route", TraceLoggingString("FastLane Failed HeavyImmediate", "Action"));
-                     RequestFullDecode(m_pendingJxlHeavyPath, m_pendingJxlHeavyId);
+                     RequestFullDecode(m_pendingJxlHeavyPath, m_pendingJxlHeavyId, m_pendingJxlHeavySlot, m_pendingJxlHeavyGenerationId);
                      m_stage2Requested = true; // Mark as requested
                      m_pendingJxlHeavyId = 0;  // Consumed
                 }
@@ -770,11 +783,11 @@ std::vector<EngineEvent> ImageEngine::PollState() {
     
     // Check Timer (300ms idle)
     // Only if pending JXL is waiting and not already requested
-    if (m_isViewingScaledImage && !m_stage2Requested && m_pendingJxlHeavyId != 0 && m_pendingJxlHeavyId == m_currentImageId.load()) {
+    if (m_isViewingScaledImage && !m_stage2Requested && m_pendingJxlHeavyId != 0 && m_pendingJxlHeavyId == m_currentImageIdBySlot[static_cast<int>(m_pendingJxlHeavySlot)].load()) {
         auto now = std::chrono::steady_clock::now();
         auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_stage1Time).count();
         if (dur > 300) {
-             RequestFullDecode(m_currentNavPath, m_currentImageId.load());
+             RequestFullDecode(m_currentNavPath, m_currentImageIdBySlot[static_cast<int>(m_pendingJxlHeavySlot)].load(), m_pendingJxlHeavySlot, m_pendingJxlHeavyGenerationId);
              m_stage2Requested = true;
              m_pendingJxlHeavyId = 0; // Consumed
         }
@@ -1057,11 +1070,11 @@ void ImageEngine::FastLane::Clear() {
     // m_skipCount is not reset here, it accumulates for debug stats.
 }
 
-void ImageEngine::FastLane::Push(const std::wstring& path, ImageID id, float targetHdrHeadroomStops) {
+void ImageEngine::FastLane::Push(const std::wstring& path, ImageID id, float targetHdrHeadroomStops, PaneSlot targetSlot, uint64_t generationId) {
     if (m_stopSignal) return;
     {
         std::lock_guard lock(m_queueMutex);
-        m_queue.push_back({path, id, targetHdrHeadroomStops});
+        m_queue.push_back({path, id, targetHdrHeadroomStops, targetSlot, generationId});
         // [v3.1] Simplified Push: No complex anti-explosion here.
         // UpdateView()'s "Ruthless Purge" handles queue depth.
     }
@@ -1157,7 +1170,7 @@ void ImageEngine::FastLane::QueueWorker() {
 
             // [Direct D2D] Load directly to RawImageFrame backed by Arena
             {
-                auto* ctx = new(std::nothrow) AuxLayerReadyCtx{ m_parent, cmd.path, cmd.id };
+                auto* ctx = new(std::nothrow) AuxLayerReadyCtx{ m_parent, cmd.path, cmd.id, cmd.targetSlot, cmd.generationId };
                 if (ctx) {
                     rawFrame.onAuxLayerReady.ctx = ctx;
                     rawFrame.onAuxLayerReady.pfn = [](void* c, std::unique_ptr<QuickView::AuxLayer> aux, QuickView::GpuBlendOp op, QuickView::GpuShaderPayload payload) {
@@ -1166,6 +1179,8 @@ void ImageEngine::FastLane::QueueWorker() {
                         ev.type = EventType::AuxLayerReady;
                         ev.filePath = lctx->path;
                         ev.imageId = lctx->id;
+                        ev.targetSlot = lctx->targetSlot;
+                        ev.generationId = lctx->generationId;
                         ev.auxLayer = std::move(aux);
                         ev.blendOp = op;
                         ev.shaderPayload = payload;
@@ -1195,7 +1210,9 @@ void ImageEngine::FastLane::QueueWorker() {
                 EngineEvent e;
                 e.type = isClear ? EventType::FullReady : EventType::PreviewReady;
                 e.filePath = cmd.path;
-                e.imageId = cmd.id; 
+                e.imageId = cmd.id;
+                e.targetSlot = cmd.targetSlot;
+                e.generationId = cmd.generationId;
                 
                 // [v8.16 Fix] DEEP COPY pixels to heap BEFORE outputting event!
                 // When FastLane immediately starts next job, Arena memory is reused.
@@ -1307,6 +1324,8 @@ void ImageEngine::FastLane::QueueWorker() {
                     e.type = EventType::LoadError;
                     e.filePath = cmd.path;
                     e.imageId = cmd.id;
+                    e.targetSlot = cmd.targetSlot;
+                    e.generationId = cmd.generationId;
                     e.hr = hr; // Propagate error code
                     {
                         std::lock_guard lock(m_queueMutex);
@@ -1336,7 +1355,7 @@ void ImageEngine::SetPrefetchPolicy(const PrefetchPolicy& policy) {
 void ImageEngine::TriggerPendingJxlHeavy() {
     if (!m_pendingJxlHeavyPath.empty() && m_pendingJxlHeavyId != 0) {
         QV_LOG("PollState_Route", TraceLoggingString("JXL Sequential TriggerHeavy", "Action"));
-        m_heavyPool->Submit(m_pendingJxlHeavyPath, m_pendingJxlHeavyId);
+        m_heavyPool->Submit(m_pendingJxlHeavyPath, m_pendingJxlHeavyId, nullptr, m_pendingJxlHeavySlot, m_pendingJxlHeavyGenerationId);
         m_pendingJxlHeavyPath.clear();
         m_pendingJxlHeavyId = 0;
     }

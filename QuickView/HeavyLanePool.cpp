@@ -21,6 +21,8 @@ namespace {
         HeavyLanePool* pool;
         std::wstring path;
         ImageID id;
+        PaneSlot targetSlot;
+        uint64_t generationId;
     };
 
     struct MmfDeleterCtx {
@@ -541,7 +543,7 @@ void HeavyLanePool::ShrinkMemory() {
 // Task Submission
 // ============================================================================
 
-void HeavyLanePool::Submit(const std::wstring& path, ImageID imageId, std::shared_ptr<QuickView::MappedFile> mmf) {
+void HeavyLanePool::Submit(const std::wstring& path, ImageID imageId, std::shared_ptr<QuickView::MappedFile> mmf, PaneSlot targetSlot, uint64_t generationId) {
     // [Hardware] Update IO throttling based on target drive
     bool isSSD = SystemInfo::IsSolidStateDrive(path);
     UpdateIOLimit(isSSD ? m_cap : 2);
@@ -553,7 +555,7 @@ void HeavyLanePool::Submit(const std::wstring& path, ImageID imageId, std::share
     // [Revision 2] Trigger ONLY for the active image. Prefetch jobs (ID mismatch) 
     // are prohibited from destroying current Titan resources.
     if (m_isTitanMode.load(std::memory_order_relaxed) && imageId == m_activeTitanImageId.load(std::memory_order_relaxed)) {
-        EnsureMasterWarmup(path, imageId, mmf);
+        EnsureMasterWarmup(path, imageId, mmf, targetSlot, generationId);
     }
 
     std::lock_guard lock(m_poolMutex);
@@ -564,7 +566,7 @@ void HeavyLanePool::Submit(const std::wstring& path, ImageID imageId, std::share
     // [Dedup] Prevent redundant decoding jobs in the pending queue
     if (!m_isTitanMode) {
         for (const auto& existing : m_pendingJobs) {
-            if (existing.type == JobType::Standard && existing.imageId == imageId) {
+        if (existing.type == JobType::Standard && existing.imageId == imageId && existing.targetSlot == targetSlot) {
                 // If the generation is old, we could update it. But simple dedup is fine.
                 // Just return if we already have it pending.
                 return;
@@ -576,6 +578,8 @@ void HeavyLanePool::Submit(const std::wstring& path, ImageID imageId, std::share
     job.type = JobType::Standard;
     job.path = path;
     job.imageId = imageId;
+    job.targetSlot = targetSlot;
+    job.generationId = generationId;
     job.submitTime = std::chrono::steady_clock::now();
     job.mmf = mmf;
     job.targetHdrHeadroomStops = m_targetHdrHeadroomStops.load(std::memory_order_relaxed);
@@ -590,13 +594,15 @@ void HeavyLanePool::Submit(const std::wstring& path, ImageID imageId, std::share
     m_poolCv.notify_all(); // [Fix] notify_all required
 }
 
-void HeavyLanePool::SubmitFullDecode(const std::wstring& path, ImageID imageId, std::shared_ptr<QuickView::MappedFile> mmf) {
+void HeavyLanePool::SubmitFullDecode(const std::wstring& path, ImageID imageId, std::shared_ptr<QuickView::MappedFile> mmf, PaneSlot targetSlot, uint64_t generationId) {
     std::lock_guard lock(m_poolMutex);
     
     JobInfo job;
     job.type = JobType::Standard;
     job.path = path;
     job.imageId = imageId;
+    job.targetSlot = targetSlot;
+    job.generationId = generationId;
     job.submitTime = std::chrono::steady_clock::now();
     job.mmf = mmf; 
     job.targetHdrHeadroomStops = m_targetHdrHeadroomStops.load(std::memory_order_relaxed);
@@ -733,14 +739,14 @@ void HeavyLanePool::SubmitTileBatch(const std::wstring& path, ImageID imageId, s
 // Cancellation
 // ============================================================================
 
-void HeavyLanePool::CancelOthers(ImageID currentId) {
+void HeavyLanePool::CancelOthers(ImageID currentId, PaneSlot targetSlot) {
     std::lock_guard lock(m_poolMutex);
     
 // 1. Clear Job Queue of non-matching IDs
     auto it = m_pendingJobs.begin();
     int removedTiles = 0;
     while (it != m_pendingJobs.end()) {
-        if (it->imageId != currentId) {
+        if (it->targetSlot == targetSlot && it->imageId != currentId) {
             if (it->type == JobType::Tile) {
                 removedTiles++;
                 // [Dedup] Remove from in-flight set
@@ -1340,7 +1346,7 @@ void HeavyLanePool::PerformDecode(int workerId, const JobInfo& job, std::stop_to
               // For WIC formats (TIFF, AVIF, etc), loading from MMF via SHCreateMemStream COPIES the file,
               // leading to massive memory bloat/OOM for 1GB+ large files. Pass directly to file loader instead.
               {
-                  auto* ctx = new(std::nothrow) AuxLayerReadyCtx{ this, job.path, job.imageId };
+                  auto* ctx = new(std::nothrow) AuxLayerReadyCtx{ this, job.path, job.imageId, job.targetSlot, job.generationId };
                   if (ctx) {
                       rawFrame.onAuxLayerReady.ctx = ctx;
                       rawFrame.onAuxLayerReady.pfn = [](void* c, std::unique_ptr<QuickView::AuxLayer> aux, QuickView::GpuBlendOp op, QuickView::GpuShaderPayload payload) {
@@ -1349,6 +1355,8 @@ void HeavyLanePool::PerformDecode(int workerId, const JobInfo& job, std::stop_to
                           ev.type = EventType::AuxLayerReady;
                           ev.filePath = lctx->path;
                           ev.imageId = lctx->id;
+                          ev.targetSlot = lctx->targetSlot;
+                          ev.generationId = lctx->generationId;
                           ev.auxLayer = std::move(aux);
                           ev.blendOp = op;
                           ev.shaderPayload = payload;
@@ -1779,6 +1787,8 @@ tile_decode_done: ; // [P14] Jump target for fast path (skip legacy TJ decode)
             EngineEvent evt;
             evt.filePath = job.path;
             evt.imageId = job.imageId;
+            evt.targetSlot = job.targetSlot;
+            evt.generationId = job.generationId;
             
             if (job.type == JobType::Tile) {
                 evt.type = EventType::TileReady;
@@ -1895,6 +1905,8 @@ tile_decode_done: ; // [P14] Jump target for fast path (skip legacy TJ decode)
                 evt.type = EventType::LoadError;
                 evt.filePath = job.path;
                 evt.imageId = job.imageId;
+                evt.targetSlot = job.targetSlot;
+                evt.generationId = job.generationId;
                 evt.hr = hr;
                 QueueResult(std::move(evt));
             }
@@ -2115,7 +2127,7 @@ void HeavyLanePool::StopMasterWarmup() {
     m_lodCacheCond.notify_all(); // Wake any waiters so they can re-check
 }
 
-void HeavyLanePool::EnsureMasterWarmup(const std::wstring& path, ImageID imageId, std::shared_ptr<QuickView::MappedFile> mmf) {
+void HeavyLanePool::EnsureMasterWarmup(const std::wstring& path, ImageID imageId, std::shared_ptr<QuickView::MappedFile> mmf, PaneSlot targetSlot, uint64_t generationId) {
     if (!ShouldWarmupMasterBacking()) return;
     if (!mmf || !mmf->IsValid()) return;
 
@@ -2135,7 +2147,7 @@ void HeavyLanePool::EnsureMasterWarmup(const std::wstring& path, ImageID imageId
     m_masterWarmupReady.store(false, std::memory_order_release);
     const uint32_t warmupGen = m_generationID.load(std::memory_order_acquire);
 
-    m_masterWarmupThread = std::jthread([this, path, imageId, mmf, warmupGen](std::stop_token st) {
+    m_masterWarmupThread = std::jthread([this, path, imageId, mmf, warmupGen, targetSlot, generationId](std::stop_token st) {
         // [Fix] Ensure the UI marquee stops even if we exit early (failure/stop)
         struct Finalizer {
             std::atomic<bool>* ready;
@@ -2245,7 +2257,7 @@ void HeavyLanePool::EnsureMasterWarmup(const std::wstring& path, ImageID imageId
 
             QuickView::RawImageFrame fullFrame;
             {
-                auto* ctx = new(std::nothrow) AuxLayerReadyCtx{ this, path, imageId };
+                auto* ctx = new(std::nothrow) AuxLayerReadyCtx{ this, path, imageId, targetSlot, generationId };
                 if (ctx) {
                     fullFrame.onAuxLayerReady.ctx = ctx;
                     fullFrame.onAuxLayerReady.pfn = [](void* c, std::unique_ptr<QuickView::AuxLayer> aux, QuickView::GpuBlendOp op, QuickView::GpuShaderPayload payload) {
@@ -2254,6 +2266,8 @@ void HeavyLanePool::EnsureMasterWarmup(const std::wstring& path, ImageID imageId
                         ev.type = EventType::AuxLayerReady;
                         ev.filePath = lctx->path;
                         ev.imageId = lctx->id;
+                        ev.targetSlot = lctx->targetSlot;
+                        ev.generationId = lctx->generationId;
                         ev.auxLayer = std::move(aux);
                         ev.blendOp = op;
                         ev.shaderPayload = payload;
@@ -3245,7 +3259,7 @@ HRESULT HeavyLanePool::FullDecodeAndCacheLOD(Worker& worker, const JobInfo& job,
                 const int targetW = (m_titanSrcW + (1 << lod) - 1) / (1 << lod);
                 const int targetH = (m_titanSrcH + (1 << lod) - 1) / (1 << lod);
                 {
-                    auto* ctx = new(std::nothrow) AuxLayerReadyCtx{ this, job.path, job.imageId };
+                    auto* ctx = new(std::nothrow) AuxLayerReadyCtx{ this, job.path, job.imageId, job.targetSlot, job.generationId };
                     if (ctx) {
                         fullFrame.onAuxLayerReady.ctx = ctx;
                         fullFrame.onAuxLayerReady.pfn = [](void* c, std::unique_ptr<QuickView::AuxLayer> aux, QuickView::GpuBlendOp op, QuickView::GpuShaderPayload payload) {
@@ -3254,6 +3268,8 @@ HRESULT HeavyLanePool::FullDecodeAndCacheLOD(Worker& worker, const JobInfo& job,
                             ev.type = EventType::AuxLayerReady;
                             ev.filePath = lctx->path;
                             ev.imageId = lctx->id;
+                            ev.targetSlot = lctx->targetSlot;
+                            ev.generationId = lctx->generationId;
                             ev.auxLayer = std::move(aux);
                             ev.blendOp = op;
                             ev.shaderPayload = payload;

@@ -26,8 +26,8 @@
 extern ImageEngine* g_pImageEngine;
 extern AppConfig g_config;
 extern RuntimeConfig g_runtime;
-extern std::wstring g_imagePath;
-extern FileNavigator g_navigator;
+extern std::wstring& g_imagePath;
+extern FileNavigator& g_navigator;
 extern Toolbar g_toolbar; // [Fix] Allow Settings to update toolbar state directly
 extern HelpOverlay g_helpOverlay;
 

@@ -1,5 +1,6 @@
 #pragma once
 #include "ImageEngine.h" // For EngineEvent complete type
+#include "PaneTypes.h"
 #include "ImageLoader.h"
 #include "MemoryArena.h"
 #include "SystemInfo.h"
@@ -67,10 +68,10 @@ public:
     // === Task Submission ===
     // Thread-safe. Will auto-expand if needed.
     // [ImageID] Uses stable path hash instead of incrementing token
-    void Submit(const std::wstring& path, ImageID imageId, std::shared_ptr<QuickView::MappedFile> mmf = nullptr);
+    void Submit(const std::wstring& path, ImageID imageId, std::shared_ptr<QuickView::MappedFile> mmf = nullptr, PaneSlot targetSlot = PaneSlot::Primary, uint64_t generationId = 0);
     
     // Full resolution decode (no scaling)
-    void SubmitFullDecode(const std::wstring& path, ImageID imageId, std::shared_ptr<QuickView::MappedFile> mmf = nullptr);
+    void SubmitFullDecode(const std::wstring& path, ImageID imageId, std::shared_ptr<QuickView::MappedFile> mmf = nullptr, PaneSlot targetSlot = PaneSlot::Primary, uint64_t generationId = 0);
     
     // [Titan Engine] Submit a tile decode task
     void SubmitTile(const std::wstring& path, ImageID imageId, std::shared_ptr<QuickView::MappedFile> mmf, QuickView::TileCoord coord, QuickView::RegionRequest region, int priority = 0);
@@ -89,7 +90,7 @@ public:
     
     // === Cancellation ===
     // [ImageID] Cancel tasks that don't match the current imageId
-    void CancelOthers(ImageID currentId);
+    void CancelOthers(ImageID currentId, PaneSlot targetSlot = PaneSlot::Primary);
     void CancelAll();
     
     // === Result Retrieval ===
@@ -276,6 +277,8 @@ private:
         // Common
         std::wstring path;
         ImageID imageId;
+        PaneSlot targetSlot = PaneSlot::Primary;
+        uint64_t generationId = 0;
         std::chrono::steady_clock::time_point submitTime; // [Metrics] Track queue time
         std::shared_ptr<QuickView::MappedFile> mmf; // [Optimization] Zero-Copy MMF Source
         float targetHdrHeadroomStops = -1.0f;
@@ -459,7 +462,7 @@ private:
     std::atomic<ImageID> m_masterWarmupImageId{ 0 };
     std::atomic<bool> m_masterWarmupReady{ false };  // [Direct-to-MMF] Set true when warmup decode is complete
     bool ShouldWarmupMasterBacking() const;
-    void EnsureMasterWarmup(const std::wstring& path, ImageID imageId, std::shared_ptr<QuickView::MappedFile> mmf);
+    void EnsureMasterWarmup(const std::wstring& path, ImageID imageId, std::shared_ptr<QuickView::MappedFile> mmf, PaneSlot targetSlot, uint64_t generationId);
     void StopMasterWarmup();
     
     // ============================================================================

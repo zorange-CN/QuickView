@@ -8,7 +8,7 @@
 using QuickView::UI::GeekIconRenderer;
 
 extern AppConfig g_config;
-extern FileNavigator g_navigator;
+extern FileNavigator& g_navigator;
 
 namespace Icons = GeekIcons;
 

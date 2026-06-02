@@ -45,7 +45,7 @@ using namespace QuickView;
 #include <shobjidl.h> // [Add] for IShellItemImageFactory
 #include <thread>
 
-extern FileNavigator g_navigator;
+extern FileNavigator& g_navigator;
 
 // Forward declaration
 static bool ReadFileToVector(LPCWSTR filePath, std::vector<uint8_t> &buffer);

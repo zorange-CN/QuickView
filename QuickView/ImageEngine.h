@@ -20,6 +20,7 @@
 #include "EditState.h"
 #include "SystemInfo.h"  // [N+1] Hardware detection & auto-config
 #include "FileNavigator.h"  // [ImageID] For ImageID type and ComputePathHash
+#include "PaneTypes.h"
 
 // Forward declarations
 class HeavyLanePool; 
@@ -54,6 +55,8 @@ struct EngineEvent {
     std::wstring filePath; // Which file is this event for?
     uint64_t navToken = 0; // [Phase 3] Navigation session token (deprecated, use imageId)
     ImageID imageId = 0;   // [ImageID Architecture] Stable content-based hash
+    PaneSlot targetSlot = PaneSlot::Primary;
+    uint64_t generationId = 0;
     
     // Payload (Optional parts)
     ComPtr<IWICBitmapSource> fullImage;    // For FullReady (Legacy, being deprecated)
@@ -96,7 +99,7 @@ public:
     /// </summary>
     // fileSize: Used for Threshold Dispatch (Fast/Heavy/Express)
     // navToken: [Phase 3] Navigation session token for event filtering
-    void NavigateTo(const std::wstring& path, uintmax_t fileSize = 0, uint64_t navToken = 0);
+    void NavigateTo(const std::wstring& path, uintmax_t fileSize = 0, uint64_t navToken = 0, PaneSlot targetSlot = PaneSlot::Primary, uint64_t generationId = 0);
     void SetWindow(HWND hwnd);
     void SetTargetHdrHeadroomStops(float stops);
     
@@ -104,7 +107,7 @@ public:
     void CancelHeavy();  // Implementation in ImageEngine.cpp
     
     // Request full resolution decode for current image (used by JXL serial pipeline)
-    void RequestFullDecode(const std::wstring& path, ImageID imageId);
+    void RequestFullDecode(const std::wstring& path, ImageID imageId, PaneSlot targetSlot = PaneSlot::Primary, uint64_t generationId = 0);
     
     // [JXL Sequential] Trigger pending Heavy task after FastLane completes
     void TriggerPendingJxlHeavy();
@@ -137,6 +140,7 @@ public:
     
     // [v4.0] Infrastructure: Global Token Access
     ImageID GetGlobalToken() const { return m_currentImageId.load(); }
+    ImageID GetCurrentImageId(PaneSlot slot) const;
     CImageLoader* GetLoader() const { return m_loader; }
     
     // [Phase 6] Dynamic Gating
@@ -290,7 +294,7 @@ private:
     bool ShouldSkipFastLaneForFastFormat(const std::wstring& path);
 
     // [Phase 2] Dispatcher
-    void DispatchImageLoad(const std::wstring& path, ImageID imageId, uintmax_t fileSize);
+    void DispatchImageLoad(const std::wstring& path, ImageID imageId, uintmax_t fileSize, PaneSlot targetSlot, uint64_t generationId);
 
     // --- Lane 1: The Fast Lane ---
     class FastLane {
@@ -302,7 +306,7 @@ private:
         // [v3.1] Ruthless Purge: Clear pending queue
         // [v3.1] Ruthless Purge: Clear pending queue
         void Clear();
-        void Push(const std::wstring& path, ImageID id, float targetHdrHeadroomStops = -1.0f);
+        void Push(const std::wstring& path, ImageID id, float targetHdrHeadroomStops = -1.0f, PaneSlot targetSlot = PaneSlot::Primary, uint64_t generationId = 0);
         std::optional<EngineEvent> TryPopResult();
         bool IsQueueEmpty() const;
         
@@ -341,6 +345,8 @@ private:
             std::wstring path;
             ImageID id;
             float targetHdrHeadroomStops = -1.0f;
+            PaneSlot targetSlot = PaneSlot::Primary;
+            uint64_t generationId = 0;
         };
         std::deque<FastLaneCommand> m_queue; 
         std::deque<EngineEvent> m_results; 
@@ -367,11 +373,14 @@ private:
     
     // [ImageID Architecture] Stable content-based ID for current image
     std::atomic<ImageID> m_currentImageId{0};
+    std::atomic<ImageID> m_currentImageIdBySlot[2]{};
     std::atomic<bool> m_baseLayerReady{false};
     
     // [JXL Sequential] Pending Heavy task - waits for FastLane completion
     std::wstring m_pendingJxlHeavyPath;
     ImageID m_pendingJxlHeavyId = 0;
+    PaneSlot m_pendingJxlHeavySlot = PaneSlot::Primary;
+    uint64_t m_pendingJxlHeavyGenerationId = 0;
 
     // [JXL Serial] State Tracking
     bool m_isViewingScaledImage = false; // True if current view is Fast/Preview (Scaled)

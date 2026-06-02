@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cwctype>
 #include "FileNavigator.h"
-extern FileNavigator g_navigator;
+extern FileNavigator& g_navigator;
 
 ThumbnailManager::ThumbnailManager() {}
 
