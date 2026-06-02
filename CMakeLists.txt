@@ -164,14 +164,14 @@ if(MSVC OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         # /EHs-c- (disable exceptions)
         # -fno-unwind-tables (disable stack unwind tables for binary size)
         target_compile_options(QuickView PRIVATE 
-            /O2 /Gw /Zc:inline /GR- /fp:fast /GS- /EHs-c-
+            /O2 /Gw /Zc:inline /GR- /fp:fast /GS- /EHs-c- /Z7
             /clang:-flto=full /clang:-mllvm /clang:-inline-threshold=250
             /clang:-fwhole-program-vtables /clang:-fvirtual-function-elimination
             /clang:-fno-unwind-tables
             /clang:-fno-asynchronous-unwind-tables
             /clang:-fno-ident)
         # /MERGE:.rdata=.text (merge read-only data into code section to minimize alignment padding)
-        target_link_options(QuickView PRIVATE /OPT:REF /OPT:ICF /opt:lldlto=3 "/MAP:${CMAKE_BINARY_DIR}/QuickView.map" "/MERGE:.rdata=.text")
+        target_link_options(QuickView PRIVATE /DEBUG /OPT:REF /OPT:ICF /opt:lldlto=3 "/MAP:${CMAKE_BINARY_DIR}/QuickView.map" "/MERGE:.rdata=.text")
     endif()
 endif()
 

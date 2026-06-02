@@ -21,7 +21,6 @@
 #pragma comment(lib, "windowscodecs.lib")
 #include <dwmapi.h> // Required for DwmSetWindowAttribute
 #include "Toolbar.h" // [Fix] Required for g_toolbar extern
-#include "SupportedExtensions.h" // Unified extensions
 
 // Global Accessor from main.cpp
 extern ImageEngine* g_pImageEngine;
@@ -1266,7 +1265,7 @@ void SettingsOverlay::BuildMenu() {
         }
 
         SaveConfig(); 
-        this->BuildMenu(); // Rebuild to update isDisabled states of dependent sliders
+        this->m_pendingRebuild = true; // Rebuild to update isDisabled states of dependent sliders
     };
     tabTheme.items.push_back(itemEnableGlass);
 
@@ -1361,7 +1360,7 @@ void SettingsOverlay::BuildMenu() {
     SettingsItem itemTintProfile = { AppStrings::Settings_Label_TintProfile, OptionType::Segment, nullptr, nullptr, &g_config.GlassTintProfile, nullptr, 0, 0, { AppStrings::Settings_Option_TintAuto, AppStrings::Settings_Option_TintCustom } };
     itemTintProfile.onChange = [this, autoSwitchToCustom]() { 
         autoSwitchToCustom();
-        this->BuildMenu(); 
+        this->m_pendingRebuild = true; 
     };
     tabTheme.items.push_back(itemTintProfile);
 
@@ -1423,7 +1422,7 @@ void SettingsOverlay::BuildMenu() {
     itemThemeManage.onChange = [this]() {
         if (QuickView::UI::ThemeSystem::ImportTheme(m_hwnd, g_config)) {
              g_runtime.SyncFrom(g_config);
-             this->RebuildMenu(); 
+             this->m_pendingRebuild = true; 
         }
     };
     itemThemeManage.onChange2 = [this]() {
@@ -1445,7 +1444,7 @@ void SettingsOverlay::BuildMenu() {
     
     // Canvas Color Segment
     SettingsItem itemColor = { AppStrings::Settings_Label_CanvasColor, OptionType::Segment, nullptr, nullptr, BindEnum(&g_config.CanvasColor), nullptr, 0, 0, {AppStrings::Settings_Option_Black, AppStrings::Settings_Option_White, AppStrings::Settings_Option_Grid, AppStrings::Settings_Option_Custom} };
-    itemColor.onChange = [this]() { this->BuildMenu(); }; // Rebuild to show/hide sliders
+    itemColor.onChange = [this]() { this->m_pendingRebuild = true; }; // Rebuild to show/hide sliders
     tabVisuals.items.push_back(itemColor);
     
     // Grid & Custom Color Row
@@ -2131,7 +2130,7 @@ void SettingsOverlay::BuildMenu() {
          
          // 3. Sync Runtime & Refresh UI
          g_runtime.SyncFrom(g_config);
-         this->BuildMenu(); 
+         this->m_pendingRebuild = true; 
          this->m_needsLayoutRebuild = true;
          if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
          
