@@ -292,6 +292,5 @@ enable_testing()
 
 add_executable(ColorMathTests tests/ColorMathTests.cpp QuickView/ColorMath.cpp QuickView/pch.cpp)
 target_link_libraries(ColorMathTests PRIVATE GTest::gtest_main GTest::gtest d2d1.lib dwrite.lib windowscodecs.lib dxgi.lib d3d11.lib shlwapi.lib shell32.lib mscms.lib)
-target_precompile_headers(ColorMathTests REUSE_FROM QuickView)
 target_include_directories(ColorMathTests PRIVATE QuickView)
 add_test(NAME ColorMathTests COMMAND ColorMathTests)

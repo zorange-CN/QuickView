@@ -47,6 +47,7 @@ struct DialogState {
     HWND hEdit = nullptr;
     HWND hInputHost = nullptr; 
     WNDPROC oldEditProc = nullptr;
+    HFONT hFont = nullptr;
 
     DialogResult FinalResult = DialogResult::None;
     bool UseCustomCenter = false;
@@ -130,6 +131,7 @@ struct CompareState {
 #include <memory>
 class CompareController;
 class DialogController;
+class SmoothZoomController;
 
 class AppContext {
 public:
@@ -142,6 +144,7 @@ public:
 
     std::unique_ptr<CompareController> CompareCtrl;
     std::unique_ptr<DialogController> DialogCtrl;
+    std::unique_ptr<SmoothZoomController> ZoomAnimCtrl;
 
     bool IsFullScreen = false;
     bool IsDraggingAnimSeek = false;
@@ -185,5 +188,4 @@ void EnsureWindowSizeForDialog(HWND hwnd);
 
 #define g_isFullScreen AppContext::GetInstance().IsFullScreen
 #define g_isLoading AppContext::GetInstance().IsLoading
-#define IsCompareModeActive() AppContext::GetInstance().CompareCtrl->IsActive()
-#define RefreshCompareRawUI(hwnd) AppContext::GetInstance().CompareCtrl->RefreshRawUI(hwnd)
+

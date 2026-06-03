@@ -44,10 +44,8 @@ extern CompositionEngine* g_compEngine;
 extern int g_renderExifOrientation;
 
 extern std::function<void(bool)> g_leftPaneReadyCallback;
-extern void RequestRepaint(uint32_t flags);
 extern void MarkCompareDirty();
 extern void ReloadCurrentImage(HWND hwnd);
-extern bool IsAppZoomed(HWND hwnd);
 extern float ComputeZoomMultiplier(float delta, bool fineInterval);
 extern void ApplyCompareZoomWithMultiplier([[maybe_unused]] HWND hwnd, ComparePane pane, float multiplier, const POINT* anchorPoint, bool syncZoom);
 
@@ -57,12 +55,18 @@ extern GalleryOverlay g_gallery;
 extern std::unique_ptr<CRenderEngine> g_renderEngine;
 extern std::unique_ptr<UIRenderer> g_uiRenderer;
 extern void AdjustWindowToImage(HWND hwnd);
-extern void CenterDialogOnComparePaneIfNeeded([[maybe_unused]] HWND hwnd, ComparePane pane);
 extern bool IsRawFile(const std::wstring& path);
 
 CompareController::CompareController(AppContext& context) : m_context(context) {}
 
-std::optional<LRESULT> CompareController::HandleMessage([[maybe_unused]] HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
+void CompareController::Render([[maybe_unused]] ID2D1DeviceContext* ctx) {
+    if (m_hwnd) {
+        RenderComposite(m_hwnd);
+    }
+}
+
+std::optional<LRESULT> CompareController::HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
+    m_hwnd = hwnd;
     if (!IsActive()) return std::nullopt;
 
     switch (message) {
@@ -90,20 +94,68 @@ std::optional<LRESULT> CompareController::HandleMessage([[maybe_unused]] HWND hw
             }
             return OnKeyDown(hwnd, wParam);
         }
+        case WM_SETCURSOR: {
+            if (LOWORD(lParam) == HTCLIENT) {
+                POINT pt;
+                GetCursorPos(&pt);
+                ScreenToClient(hwnd, &pt);
+                if (IsNearCompareDivider(hwnd, pt)) {
+                    SetCursor(LoadCursor(nullptr, IDC_SIZEWE));
+                    return TRUE;
+                }
+            }
+            break;
+        }
+        case WM_CAPTURECHANGED: {
+            if (m_context.Compare.draggingDivider && (HWND)lParam != hwnd) {
+                m_context.Compare.draggingDivider = false;
+                MarkDirty();
+                RequestRepaint(QuickView::PaintLayer::Image | QuickView::PaintLayer::Static);
+            }
+            break;
+        }
+        case WM_TIMER: {
+            if (wParam == 999) {
+                bool changed = false;
+                const float step = 0.15f;
+                if (m_context.Compare.showDividerHandle) {
+                    if (m_context.Compare.dividerOpacity < 1.0f) {
+                        m_context.Compare.dividerOpacity = std::min(1.0f, m_context.Compare.dividerOpacity + step);
+                        changed = true;
+                    }
+                } else {
+                    if (m_context.Compare.dividerOpacity > 0.0f) {
+                        m_context.Compare.dividerOpacity = std::max(0.0f, m_context.Compare.dividerOpacity - step);
+                        changed = true;
+                    }
+                }
+
+                if (changed) {
+                    MarkDirty();
+                    RequestRepaint(QuickView::PaintLayer::Image | QuickView::PaintLayer::Dynamic);
+                } else {
+                    KillTimer(hwnd, 999);
+                }
+                return 0;
+            }
+            break;
+        }
     }
     return std::nullopt;
 }
 
-std::optional<LRESULT> CompareController::OnLButtonDown([[maybe_unused]] HWND hwnd, [[maybe_unused]] int x, [[maybe_unused]] int y) {
-    if (m_context.Compare.mode == ViewMode::CompareWipe || m_context.Compare.mode == ViewMode::CompareSideBySide) {
-        RECT rc;
-        GetClientRect(hwnd, &rc);
-        float splitX = rc.right * m_context.Compare.splitRatio;
-        if (abs(x - splitX) < 15.0f) {
-            m_context.Compare.draggingDivider = true;
-            SetCapture(hwnd);
-            return 0; 
-        }
+std::optional<LRESULT> CompareController::OnLButtonDown(HWND hwnd, int x, int y) {
+    POINT pt = { x, y };
+    m_context.Compare.activePane = HitTest(hwnd, pt);
+    m_context.Compare.selectedPane = m_context.Compare.activePane;
+    UpdateRawButton();
+    MarkDirty();
+    RequestRepaint(QuickView::PaintLayer::Image | QuickView::PaintLayer::Static);
+
+    if (IsNearCompareDivider(hwnd, pt)) {
+        m_context.Compare.draggingDivider = true;
+        SetCapture(hwnd);
+        return 0; 
     }
     return std::nullopt;
 }
@@ -118,22 +170,51 @@ std::optional<LRESULT> CompareController::OnLButtonUp([[maybe_unused]] HWND hwnd
     return std::nullopt;
 }
 
-std::optional<LRESULT> CompareController::OnMouseMove([[maybe_unused]] HWND hwnd, [[maybe_unused]] int x, [[maybe_unused]] int y) {
+std::optional<LRESULT> CompareController::OnMouseMove(HWND hwnd, int x, int y) {
+    POINT pt = { x, y };
     if (m_context.Compare.draggingDivider) {
         RECT rc;
         GetClientRect(hwnd, &rc);
         if (rc.right > 0) {
             m_context.Compare.splitRatio = std::max(0.05f, std::min((float)x / rc.right, 0.95f));
+            GetPaneContext(PaneSlot::Primary).view.CompareSplitRatio = m_context.Compare.splitRatio;
             MarkDirty();
             SyncDCompState(hwnd, (float)rc.right, (float)rc.bottom, false);
+            RequestRepaint(QuickView::PaintLayer::Image | QuickView::PaintLayer::Static);
         }
         return 0; 
+    }
+
+    if (!GetPaneContext(PaneSlot::Primary).view.IsDragging && !GetPaneContext(PaneSlot::Primary).view.IsMiddleDragWindow) {
+        m_context.Compare.activePane = HitTest(hwnd, pt);
+    }
+
+    if (IsNearCompareDivider(hwnd, pt)) {
+        if (!m_context.Compare.showDividerHandle) {
+            m_context.Compare.showDividerHandle = true;
+            SetTimer(hwnd, 999, 16, nullptr); // Fade in timer
+        }
+    } else if (!m_context.Compare.draggingDivider) {
+        if (m_context.Compare.showDividerHandle) {
+            m_context.Compare.showDividerHandle = false;
+            SetTimer(hwnd, 999, 16, nullptr); // Fade out timer
+        }
     }
     return std::nullopt;
 }
 
 std::optional<LRESULT> CompareController::OnKeyDown([[maybe_unused]] HWND hwnd, [[maybe_unused]] WPARAM key) {
     return std::nullopt;
+}
+
+bool CompareController::IsNearCompareDivider(HWND hwnd, POINT ptClient, float threshold) const {
+    if (!IsActive() || m_context.Compare.mode != ViewMode::CompareWipe) return false;
+    RECT rc{};
+    GetClientRect(hwnd, &rc);
+    const float w = (float)(rc.right - rc.left);
+    if (w <= 1.0f) return false;
+    const float splitX = ClampCompareRatio(m_context.Compare.splitRatio) * w;
+    return fabsf((float)ptClient.x - splitX) <= threshold;
 }
 
 void CompareController::UpdateRawButton() {
@@ -411,6 +492,7 @@ bool CompareController::RenderComposite(HWND hwnd) {
 
 
 void CompareController::EnterMode(HWND hwnd) {
+    m_hwnd = hwnd;
     if (IsActive() || !GetPaneContext(PaneSlot::Primary).resource) return;
     if (GetPaneContext(PaneSlot::Primary).metadata.Width > 8192 || GetPaneContext(PaneSlot::Primary).metadata.Height > 8192) {
         g_osd.Show(hwnd, L"Compare mode is not available for Titan images yet.", true);
@@ -644,3 +726,30 @@ void CompareController::RefreshRawUI(HWND hwnd) {
     GetClientRect(hwnd, &rc);
     g_toolbar.UpdateLayout((float)rc.right, (float)rc.bottom);
 }
+
+bool CompareController::GetPaneRawState(ComparePane pane, bool& isRaw, bool& isFullDecode) const {
+    if (!IsActive()) {
+        isRaw = false;
+        isFullDecode = false;
+        return false;
+    }
+
+    if (pane == ComparePane::Left) {
+        isRaw = !GetPaneContext(PaneSlot::Left).path.empty() && IsRawFile(GetPaneContext(PaneSlot::Left).path);
+        isFullDecode = isRaw && GetPaneContext(PaneSlot::Left).metadata.IsRawFullDecode;
+        return GetPaneContext(PaneSlot::Left).valid;
+    }
+
+    isRaw = !GetPaneContext(PaneSlot::Primary).path.empty() && IsRawFile(GetPaneContext(PaneSlot::Primary).path);
+    isFullDecode = isRaw && GetPaneContext(PaneSlot::Primary).metadata.IsRawFullDecode;
+    return static_cast<bool>(GetPaneContext(PaneSlot::Primary).resource);
+}
+
+void CompareController::CenterDialogOnPaneIfNeeded(HWND hwnd, ComparePane pane) {
+    if (!IsActive()) return;
+    const D2D1_RECT_F vp = GetViewport(hwnd, pane);
+    m_context.Dialog.UseCustomCenter = true;
+    m_context.Dialog.CustomCenter = D2D1::Point2F((vp.left + vp.right) * 0.5f, (vp.top + vp.bottom) * 0.5f);
+}
+
+

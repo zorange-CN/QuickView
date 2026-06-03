@@ -9,6 +9,19 @@ static constexpr const char* CURRENT_MODULE = "Main";
 #include "ImageEngine.h"
 #include "MappedFile.h"
 #include "UIRenderer.h"
+#include "IController.h"
+#include "AppContext.h"
+#include "CompareController.h"
+#include "DialogController.h"
+#include "ZoomAnimation.h"
+#include "ColorMath.h"
+using namespace ColorMath;
+
+// --- Controller Refactoring Constants & Declarations ---
+static void ExitPassthroughMode(HWND hwnd);
+static D2D1_MATRIX_3X2_F CombineWithCurrentTransform(ID2D1DeviceContext* ctx, const D2D1_MATRIX_3X2_F& transform);
+static UINT GetSvgSurfaceSizeLimit();
+
 
 #include "TileManager.h" // [Infinity Engine]
 #include "ToolProcessProtocol.h"
@@ -76,53 +89,7 @@ using namespace Microsoft::WRL;
 
 // --- Dialog & OSD Definitions ---
 
-enum class DialogResult { None, Yes, No, Cancel, Custom1, Custom2 };
 
-struct DialogButton {
-    DialogResult Result;
-    std::wstring Text;
-    bool IsDefault;
-    DialogButton(DialogResult r, const wchar_t* t, bool d = false) : Result(r), Text(t), IsDefault(d) {}
-    DialogButton(const DialogButton&) = default;
-    DialogButton(DialogButton&&) = default;
-    DialogButton& operator=(const DialogButton&) = default;
-    DialogButton& operator=(DialogButton&&) = default;
-};
-
-struct DialogLayout {
-    D2D1_RECT_F Box;
-    D2D1_RECT_F Checkbox;
-    D2D1_RECT_F Input; // New input field rect
-    std::vector<D2D1_RECT_F> Buttons;
-};
-
-struct DialogState {
-    bool IsVisible = false;
-    std::wstring Title;
-    std::wstring Message;
-    std::wstring QualityText; 
-    D2D1_COLOR_F AccentColor = D2D1::ColorF(D2D1::ColorF::DodgerBlue);
-    std::vector<DialogButton> Buttons;
-    int SelectedButtonIndex = 0;
-    bool HasCheckbox = false;
-    std::wstring CheckboxText;
-    bool IsChecked = false;
-    
-    // [Input Mode]
-    bool HasInput = false;
-    std::wstring InputText;
-    HWND hEdit = nullptr;
-    HWND hInputHost = nullptr; // Host container for visibility
-    WNDPROC oldEditProc = nullptr;
-
-    DialogResult FinalResult = DialogResult::None;
-    bool UseCustomCenter = false;
-    D2D1_POINT_2F CustomCenter = D2D1::Point2F(0.0f, 0.0f);
-    };
-
-    DialogResult ShowQuickViewDialog(HWND hwnd, const std::wstring& title, const std::wstring& messageContent,
-                             D2D1_COLOR_F accentColor, const std::vector<DialogButton>& buttons,
-                             bool hasChecbox = false, const std::wstring& checkboxText = L"", const std::wstring& qualityText = L"");
 
     // Globals
 #include "FileNavigator.h"
@@ -161,7 +128,7 @@ static std::string GetAppVersionUTF8() {
 
 
 // Function Prototypes
-static void SyncDCompState(HWND hwnd, float winW, float winH, bool animate);
+void SyncDCompState(HWND hwnd, float winW, float winH, bool animate);
 
 
 // --- Globals ---
@@ -179,14 +146,13 @@ void HandleAnimFrameStep(HWND hwnd, bool forward); // [v10.5] fwd decl
 void PerformAnimSeek(HWND hwnd, float targetProgress);
 static std::unique_ptr<CRenderEngine> g_renderEngine;
 static std::unique_ptr<CImageLoader> g_imageLoader;
-static std::unique_ptr<ImageEngine> g_imageEngine;
+std::unique_ptr<ImageEngine> g_imageEngine;
 ImageEngine* g_pImageEngine = nullptr; // [v3.1] Global Accessor for UIRenderer
-static CompositionEngine* g_compEngine = nullptr; // [Fix] Raw pointer to avoid unique_ptr include hell
+CompositionEngine* g_compEngine = nullptr; // [Fix] Raw pointer to avoid unique_ptr include hell
 static std::unique_ptr<UIRenderer> g_uiRenderer;  // 鐙珛 UI 灞傛覆鏌撳櫒
 static InputController g_inputController;  // Quantum Stream: 杈撳叆鐘舵€佹満
 CRenderEngine* g_pRenderEngine = nullptr; // Global raw alias for linker compatibility
 
-bool g_isFullScreen = false;
 bool g_isDraggingAnimSeek = false;
 bool g_windowSizeRestoredFromConfig = false;
 static WINDOWPLACEMENT g_savedWindowPlacement = { sizeof(WINDOWPLACEMENT), 0, 0, {0,0}, {0,0}, {0,0,0,0} };
@@ -258,12 +224,11 @@ bool g_pendingRegistryCheck = false;
 static const UINT_PTR TIMER_ID_REGISTRY_CHECK = 993;
 
 DWORD g_toolbarHideTime = 0; // For auto-hide delay
-static DialogState g_dialog;
 AppConfig g_config;
 RuntimeConfig g_runtime;
 bool g_preserveViewStateOnNextLoad = false;
 ViewState g_preservedViewState;
-static int g_renderExifOrientation = 1; // Exif orientation baked into the bitmap surface
+int g_renderExifOrientation = 1; // Exif orientation baked into the bitmap surface
 static ThumbnailManager g_thumbMgr;
 GalleryOverlay g_gallery;  // Non-static for extern access from UIRenderer
 Toolbar g_toolbar;  // Non-static for extern access from UIRenderer
@@ -287,7 +252,7 @@ static float GetMinWindowWidth() {
     if (g_gallery.IsVisible()) {
         defaultMinW = std::max(defaultMinW, 660.0f * g_uiScale + 50.0f * g_uiScale);
     }
-    if (g_dialog.IsVisible) {
+    if (AppContext::GetInstance().Dialog.IsVisible) {
         defaultMinW = std::max(defaultMinW, 420.0f * g_uiScale + 24.0f * g_uiScale);
     }
     if (g_runtime.ShowInfoPanel && g_uiRenderer) {
@@ -315,15 +280,15 @@ static float GetMinWindowHeight() {
     if (g_gallery.IsVisible()) {
         defaultMinH = std::max(defaultMinH, 720.0f * g_uiScale + 50.0f * g_uiScale);
     }
-    if (g_dialog.IsVisible) {
+    if (AppContext::GetInstance().Dialog.IsVisible) {
         float titleHeight = 35.0f;
         float messageHeight = 25.0f;
-        int titleLines = (int)(g_dialog.Title.length() / 22) + 1;
+        int titleLines = (int)(AppContext::GetInstance().Dialog.Title.length() / 22) + 1;
         if (titleLines > 3) titleLines = 3;
         float contentHeight = (titleLines * titleHeight) + (1 * messageHeight);
-        float qualityHeight = !g_dialog.QualityText.empty() ? 30.0f : 0.0f;
-        float inputHeight = g_dialog.HasInput ? 50.0f : 0.0f;
-        float checkboxHeight = g_dialog.HasCheckbox ? 45.0f : 0.0f;
+        float qualityHeight = !AppContext::GetInstance().Dialog.QualityText.empty() ? 30.0f : 0.0f;
+        float inputHeight = AppContext::GetInstance().Dialog.HasInput ? 50.0f : 0.0f;
+        float checkboxHeight = AppContext::GetInstance().Dialog.HasCheckbox ? 45.0f : 0.0f;
         float buttonsHeight = 55.0f;
         float padding = 45.0f;
 
@@ -350,11 +315,10 @@ int g_galleryContextMenuIndex = -1;
 bool g_isLeftPaneDecoding = false;
 std::function<void(bool)> g_leftPaneReadyCallback = nullptr;
 
-bool g_isLoading = false;           // Show Wait Cursor
 std::atomic<bool> g_isPhase2Debouncing{false}; // Suppress IsIdle logic during phase 2 delay
 bool g_isNavigatingToTitan = false; // Is the currently loading image a Titan image?
 static std::atomic<uint64_t> g_currentNavToken = 0; // [Phase 3] Navigation Token (deprecated)
-static std::atomic<ImageID> g_currentImageId{0}; // [ImageID] Stable path hash for event filtering
+std::atomic<ImageID> g_currentImageId{0}; // [ImageID] Stable path hash for event filtering
 static int g_imageQualityLevel = 0;         // [v3.1] 0: Void, 1: Wiki/Scout, 2: Truth/Heavy
 static bool g_isImageScaled = false;         // True if current image was decoded at reduced resolution
 static constexpr UINT_PTR IDT_SVG_RERENDER = 44; // [SVG Lossless] Timer for lazy high-res re-render
@@ -451,51 +415,6 @@ static constexpr UINT g_maxBitmapSurfaceSize = 8192; // Max dimension for bitmap
 // === DComp Ping-Pong State ===
 static D2D1_SIZE_F g_lastSurfaceSize = {0, 0}; // Track DComp Surface size for UpdateLayout
 
-struct SmoothZoomState {
-    bool Active = false;
-    ImageID ImageId = 0;
-    bool AnimateWindow = false;
-    bool HasAnchor = false;
-    POINT AnchorScreenPt = { 0, 0 };
-    RECT SourceWindowRect = { 0, 0, 0, 0 };
-    RECT TargetWindowRect = { 0, 0, 0, 0 };
-    float SourceZoom = 1.0f;    // Absolute display zoom at animation start
-    float CurrentZoom = 1.0f;   // Absolute display zoom in DComp space
-    float CurrentPanX = 0.0f;
-    float CurrentPanY = 0.0f;
-    float TargetZoom = 1.0f;
-    float TargetPanX = 0.0f;
-    float TargetPanY = 0.0f;
-    float AnchorImageX = 0.0f;  // Image-space offset from visual center
-    float AnchorImageY = 0.0f;
-    float LastWinW = 0.0f;
-    float LastWinH = 0.0f;
-    ULONGLONG LastTick = 0;
-
-    void Reset() {
-        Active = false;
-        ImageId = 0;
-        AnimateWindow = false;
-        HasAnchor = false;
-        AnchorScreenPt = { 0, 0 };
-        SourceWindowRect = { 0, 0, 0, 0 };
-        TargetWindowRect = { 0, 0, 0, 0 };
-        SourceZoom = 1.0f;
-        CurrentZoom = 1.0f;
-        CurrentPanX = 0.0f;
-        CurrentPanY = 0.0f;
-        TargetZoom = 1.0f;
-        TargetPanX = 0.0f;
-        TargetPanY = 0.0f;
-        AnchorImageX = 0.0f;
-        AnchorImageY = 0.0f;
-        LastWinW = 0.0f;
-        LastWinH = 0.0f;
-        LastTick = 0;
-    }
-};
-static SmoothZoomState g_smoothZoom;
-
 // === Debug HUD ===
 DebugMetrics g_debugMetrics; // Global Metrics Instance
 static bool g_showDebugHUD = false;  // Toggle with F12
@@ -505,78 +424,26 @@ static float g_fps = 0.0f;
 // Indicates a programmatic resize initiated by zoom/overlay logic.
 // When true, WM_SIZE should not reset GetPaneContext(PaneSlot::Primary).view.Zoom which would cancel
 // the intended zoom change. Cleared by WM_SIZE after handling.
-static bool g_programmaticResize = false;
+bool g_programmaticResize = false;
 static bool g_deferProgrammaticZoomResizeSync = false;
 
-struct SmoothWindowZoomState {
-    bool active = false;
-    std::chrono::steady_clock::time_point startTime;
-    float durationMs = 90.0f;
-    RECT startRect{};
-    RECT targetRect{};
-    float startZoom = 1.0f;
-    float targetZoom = 1.0f;
-    float startPanX = 0.0f;
-    float startPanY = 0.0f;
-    float targetPanX = 0.0f;
-    float targetPanY = 0.0f;
-};
-
-static SmoothWindowZoomState g_smoothWindowZoom;
-
-enum class ViewMode {
-    Single = 0,
-    CompareSideBySide,
-    CompareWipe
-};
-
-enum class ComparePane {
-    Left = 0,
-    Right
-};
 
 using CompareView = ViewState;
 
-struct CompareState {
-    ViewMode mode = ViewMode::Single;
-    float splitRatio = 0.5f;
-    bool syncZoom = true;
-    bool syncPan = true;
-    bool draggingDivider = false;
-    ComparePane activePane = ComparePane::Right;
-    ComparePane contextPane = ComparePane::Right;
-    ComparePane selectedPane = ComparePane::Right;
-    bool dirty = false;
-    bool autoExpandedWindow = false;
-    bool pendingSnap = false;
-    float dividerOpacity = 0.0f;
-    bool showDividerHandle = false;
-};
-static CompareState g_compare;
-
 // Forward Declaration needed for UpgradeSvgSurface and Helpers
 
-static void SyncDCompState(HWND hwnd, float w, float h, bool animate = false);
-static void ResetSmoothZoomState();
-static void ConfigureSmoothZoom(HWND hwnd,
-                                float sourceZoom,
-                                float sourcePanX,
-                                float sourcePanY,
-                                float targetZoom,
-                                float targetPanX,
-                                float targetPanY,
-                                const POINT* anchorScreenPt,
-                                bool animateWindow,
-                                const RECT* targetWindowRect);
-static void SyncSmoothZoomToLogical(float winW, float winH, bool activate);
-static bool TickSmoothZoom(HWND hwnd);
+void SyncDCompState(HWND hwnd, float w, float h, bool animate = false);
+
+
+
+
 
 static UINT GetSvgSurfaceSizeLimit();
 static D2D1_MATRIX_3X2_F CombineWithCurrentTransform(ID2D1DeviceContext* ctx, const D2D1_MATRIX_3X2_F& transform);
-static bool RenderCompareComposite(HWND hwnd);
-static void MarkCompareDirty();
-static void EnterCompareMode(HWND hwnd);
-static void ExitCompareMode(HWND hwnd);
+
+void MarkCompareDirty();
+
+
 
 // Overlay (Tracing) Mode
 static void EnterOverlayMode(HWND hwnd);
@@ -589,68 +456,25 @@ static bool IsPassthroughModeActive();
 static constexpr int HOTKEY_ID_EXIT_PASSTHROUGH = 0x0001;
 static constexpr int HOTKEY_ID_ALPHA_UP = 0x0002;
 static constexpr int HOTKEY_ID_ALPHA_DOWN = 0x0003;
-static void CaptureCurrentImageAsCompareLeft();
-static FireAndForget LoadImageIntoCompareLeftSlot(HWND hwnd, std::wstring path, std::function<void(bool)> callback = nullptr);
-static void ReloadComparePaneForDisplayChange(HWND hwnd, ComparePane pane);
-static ComparePane HitTestComparePane(HWND hwnd, POINT ptClient);
-static D2D1_RECT_F GetCompareViewport(HWND hwnd, ComparePane pane);
+
+
+
+
+
 static void SetDialogCenter(float x, float y);
 static void ClearDialogCenter();
-bool IsCompareModeActive();
+
 bool IsRawFile(const std::wstring& path); // Forward declaration
 
-static void UpdateCompareRawButton() {
-    bool leftIsRaw = !GetPaneContext(PaneSlot::Left).path.empty() && IsRawFile(GetPaneContext(PaneSlot::Left).path);
-    bool rightIsRaw = !GetPaneContext(PaneSlot::Primary).path.empty() && IsRawFile(GetPaneContext(PaneSlot::Primary).path);
-    bool anyRaw = leftIsRaw || rightIsRaw;
-    bool selectedIsRaw = (g_compare.selectedPane == ComparePane::Left) ? leftIsRaw : rightIsRaw;
-    
-    // [Fix] Read isolated decode state from the metadata of the selected pane instead of global g_runtime.ForceRawDecode
-    bool isFullDecode = false;
-    if (g_compare.selectedPane == ComparePane::Left) {
-        if (leftIsRaw) isFullDecode = GetPaneContext(PaneSlot::Left).metadata.IsRawFullDecode;
-    } else {
-        if (rightIsRaw) isFullDecode = GetPaneContext(PaneSlot::Primary).metadata.IsRawFullDecode;
-    }
 
-    g_toolbar.SetCompareRawState(anyRaw, selectedIsRaw, isFullDecode);
-}
 
-static bool GetComparePaneRawState(ComparePane pane, bool& isRaw, bool& isFullDecode) {
-    if (!IsCompareModeActive()) {
-        isRaw = false;
-        isFullDecode = false;
-        return false;
-    }
 
-    if (pane == ComparePane::Left) {
-        isRaw = !GetPaneContext(PaneSlot::Left).path.empty() && IsRawFile(GetPaneContext(PaneSlot::Left).path);
-        isFullDecode = isRaw && GetPaneContext(PaneSlot::Left).metadata.IsRawFullDecode;
-        return GetPaneContext(PaneSlot::Left).valid;
-    }
 
-    isRaw = !GetPaneContext(PaneSlot::Primary).path.empty() && IsRawFile(GetPaneContext(PaneSlot::Primary).path);
-    isFullDecode = isRaw && GetPaneContext(PaneSlot::Primary).metadata.IsRawFullDecode;
-    return static_cast<bool>(GetPaneContext(PaneSlot::Primary).resource);
-}
 
-static void RefreshCompareRawUI(HWND hwnd) {
-    if (!IsCompareModeActive()) return;
 
-    UpdateCompareRawButton();
 
-    RECT rc{};
-    GetClientRect(hwnd, &rc);
-    g_toolbar.UpdateLayout((float)rc.right, (float)rc.bottom);
-}
 
-static void CenterDialogOnComparePaneIfNeeded(HWND hwnd, ComparePane pane) {
-    if (!IsCompareModeActive()) return;
-    const D2D1_RECT_F vp = GetCompareViewport(hwnd, pane);
-    SetDialogCenter((vp.left + vp.right) * 0.5f, (vp.top + vp.bottom) * 0.5f);
-}
 
-static void ApplyCompareZoomStep(HWND hwnd, float delta, bool fineInterval);
 static void CancelSmoothWindowZoom(HWND hwnd);
 static void StartSmoothWindowZoom(HWND hwnd,
                                   const RECT& startRect,
@@ -662,7 +486,7 @@ static void StartSmoothWindowZoom(HWND hwnd,
                                   float targetPanX,
                                   float targetPanY);
 static void TickSmoothWindowZoom(HWND hwnd);
-static float GetCompareSplitRatio();
+
 void AdjustWindowToImage(HWND hwnd);
 RECT GetVirtualScreenRect();
 static RECT GetWindowExpansionBounds(HWND hwnd);
@@ -717,225 +541,7 @@ static bool g_isAutoLocked = false;
 
 // [Interpolation] Get best interpolation mode
 static bool IsEffectivelyPixelArtMode(float totalScale, float origW, float origH) {
-    // 1. Temporary Override wins all
-    if (g_runtime.PixelArtModeOverride == 1) return true;
-    if (g_runtime.PixelArtModeOverride == 2) return false;
-
-    // 2. Setting
-    int mode = (totalScale >= 1.0f) ? g_config.ZoomModeIn : g_config.ZoomModeOut;
-    if (mode == 2) return true;
-
-    // 3. Auto Mode (0) heuristics
-    if (mode == 0 && totalScale >= 1.0f) {
-        if ((origW > 0 && origW <= 256 && origH > 0 && origH <= 256) || totalScale >= 3.0f) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-namespace {
-struct ColorMatrix3 {
-    float m[3][3];
-};
-
-struct ChromaticityPoint {
-    float x = 0.0f;
-    float y = 0.0f;
-};
-
-static ColorMatrix3 MultiplyColorMatrices(const ColorMatrix3& a, const ColorMatrix3& b) {
-    ColorMatrix3 out = {};
-    for (int row = 0; row < 3; ++row) {
-        for (int col = 0; col < 3; ++col) {
-            out.m[row][col] =
-                a.m[row][0] * b.m[0][col] +
-                a.m[row][1] * b.m[1][col] +
-                a.m[row][2] * b.m[2][col];
-        }
-    }
-    return out;
-}
-
-static bool InvertColorMatrix(const ColorMatrix3& matrix, ColorMatrix3* outInverse) {
-    if (!outInverse) return false;
-
-    const float a = matrix.m[0][0], b = matrix.m[0][1], c = matrix.m[0][2];
-    const float d = matrix.m[1][0], e = matrix.m[1][1], f = matrix.m[1][2];
-    const float g = matrix.m[2][0], h = matrix.m[2][1], i = matrix.m[2][2];
-
-    const float A = e * i - f * h;
-    const float B = -(d * i - f * g);
-    const float C = d * h - e * g;
-    const float D = -(b * i - c * h);
-    const float E = a * i - c * g;
-    const float F = -(a * h - b * g);
-    const float G = b * f - c * e;
-    const float H = -(a * f - c * d);
-    const float I = a * e - b * d;
-
-    const float det = a * A + b * B + c * C;
-    if (fabsf(det) < 1e-8f) return false;
-
-    const float invDet = 1.0f / det;
-    *outInverse = {{{A * invDet, D * invDet, G * invDet},
-                    {B * invDet, E * invDet, H * invDet},
-                    {C * invDet, F * invDet, I * invDet}}};
-    return true;
-}
-
-static bool BuildRgbToXyzMatrixFromChromaticities(
-    const ChromaticityPoint& red,
-    const ChromaticityPoint& green,
-    const ChromaticityPoint& blue,
-    const ChromaticityPoint& white,
-    ColorMatrix3* outMatrix) {
-    if (!outMatrix ||
-        red.x <= 0.0f || red.y <= 0.0f ||
-        green.x <= 0.0f || green.y <= 0.0f ||
-        blue.x <= 0.0f || blue.y <= 0.0f ||
-        white.x <= 0.0f || white.y <= 0.0f) {
-        return false;
-    }
-
-    const ColorMatrix3 primaries = {{
-        {red.x / red.y, green.x / green.y, blue.x / blue.y},
-        {1.0f,          1.0f,             1.0f},
-        {(1.0f - red.x - red.y) / red.y,
-         (1.0f - green.x - green.y) / green.y,
-         (1.0f - blue.x - blue.y) / blue.y}
-    }};
-
-    ColorMatrix3 primariesInverse = {};
-    if (!InvertColorMatrix(primaries, &primariesInverse)) {
-        return false;
-    }
-
-    const float whiteX = white.x / white.y;
-    const float whiteY = 1.0f;
-    const float whiteZ = (1.0f - white.x - white.y) / white.y;
-
-    const float scaleR = primariesInverse.m[0][0] * whiteX +
-                         primariesInverse.m[0][1] * whiteY +
-                         primariesInverse.m[0][2] * whiteZ;
-    const float scaleG = primariesInverse.m[1][0] * whiteX +
-                         primariesInverse.m[1][1] * whiteY +
-                         primariesInverse.m[1][2] * whiteZ;
-    const float scaleB = primariesInverse.m[2][0] * whiteX +
-                         primariesInverse.m[2][1] * whiteY +
-                         primariesInverse.m[2][2] * whiteZ;
-
-    const ColorMatrix3 scales = {{{scaleR, 0.0f, 0.0f},
-                                  {0.0f, scaleG, 0.0f},
-                                  {0.0f, 0.0f, scaleB}}};
-    *outMatrix = MultiplyColorMatrices(primaries, scales);
-    return true;
-}
-
-static ColorMatrix3 GetRgbToXyzMatrix(QuickView::ColorPrimaries primaries) {
-    switch (primaries) {
-    case QuickView::ColorPrimaries::DisplayP3:
-        return {{{0.486571f, 0.265668f, 0.198217f},
-                 {0.228975f, 0.691739f, 0.079287f},
-                 {0.000000f, 0.045113f, 1.043944f}}};
-    case QuickView::ColorPrimaries::Rec2020:
-        return {{{0.636958f, 0.144617f, 0.168881f},
-                 {0.262700f, 0.677998f, 0.059302f},
-                 {0.000000f, 0.028073f, 1.060985f}}};
-    case QuickView::ColorPrimaries::AdobeRGB:
-        return {{{0.576670f, 0.185558f, 0.188229f},
-                 {0.297345f, 0.627364f, 0.075291f},
-                 {0.027031f, 0.070689f, 0.991338f}}};
-    case QuickView::ColorPrimaries::ProPhotoRGB:
-        return {{{0.797760f, 0.135185f, 0.031349f},
-                 {0.288071f, 0.711844f, 0.000085f},
-                 {0.000000f, 0.000000f, 0.825210f}}};
-    case QuickView::ColorPrimaries::SRGB:
-    case QuickView::ColorPrimaries::Unknown:
-    default:
-        return {{{0.412456f, 0.357576f, 0.180438f},
-                 {0.212673f, 0.715152f, 0.072175f},
-                 {0.019334f, 0.119192f, 0.950304f}}};
-    }
-}
-
-static ColorMatrix3 GetXyzToRgbMatrix(QuickView::ColorPrimaries primaries) {
-    switch (primaries) {
-    case QuickView::ColorPrimaries::DisplayP3:
-        return {{{2.493497f, -0.931384f, -0.402711f},
-                 {-0.829489f, 1.762664f, 0.023625f},
-                 {0.035846f, -0.076172f, 0.956885f}}};
-    case QuickView::ColorPrimaries::Rec2020:
-        return {{{1.716651f, -0.355671f, -0.253366f},
-                 {-0.666684f, 1.616481f, 0.015769f},
-                 {0.017640f, -0.042771f, 0.942103f}}};
-    case QuickView::ColorPrimaries::AdobeRGB:
-        return {{{2.041587f, -0.565007f, -0.344731f},
-                 {-0.969244f, 1.875968f, 0.041555f},
-                 {0.013444f, -0.118362f, 1.015175f}}};
-    case QuickView::ColorPrimaries::ProPhotoRGB:
-        return {{{1.345943f, -0.255608f, -0.051111f},
-                 {-0.544599f, 1.508168f, 0.020536f},
-                 {0.000000f, 0.000000f, 1.211812f}}};
-    case QuickView::ColorPrimaries::SRGB:
-    case QuickView::ColorPrimaries::Unknown:
-    default:
-        return {{{3.240454f, -1.537138f, -0.498531f},
-                 {-0.969266f, 1.876011f, 0.041556f},
-                 {0.055643f, -0.204026f, 1.057225f}}};
-    }
-}
-
-static QuickView::ColorPrimaries NormalizePrimaries(QuickView::ColorPrimaries primaries) {
-    return primaries == QuickView::ColorPrimaries::Unknown ? QuickView::ColorPrimaries::SRGB : primaries;
-}
-
-static QuickView::ColorPrimaries ResolveDisplayPrimaries(const QuickView::DisplayColorState& state) {
-    switch (state.colorSpace) {
-    case DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020:
-    case DXGI_COLOR_SPACE_RGB_STUDIO_G2084_NONE_P2020:
-    case DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P2020:
-        return QuickView::ColorPrimaries::Rec2020;
-    default:
-        return QuickView::ColorPrimaries::SRGB;
-    }
-}
-
-static bool TryBuildDisplayXyzToRgbMatrix(const QuickView::DisplayColorState& state,
-                                          ColorMatrix3* outMatrix) {
-    if (!outMatrix) return false;
-
-    if (state.HasChromaticities()) {
-        ColorMatrix3 rgbToXyz = {};
-        if (BuildRgbToXyzMatrixFromChromaticities(
-                {state.redPrimary[0], state.redPrimary[1]},
-                {state.greenPrimary[0], state.greenPrimary[1]},
-                {state.bluePrimary[0], state.bluePrimary[1]},
-                {state.whitePoint[0], state.whitePoint[1]},
-                &rgbToXyz) &&
-            InvertColorMatrix(rgbToXyz, outMatrix)) {
-            return true;
-        }
-    }
-
-    *outMatrix = GetXyzToRgbMatrix(ResolveDisplayPrimaries(state));
-    return true;
-}
-
-static std::wstring ToLowerCopy(std::wstring value) {
-    std::transform(value.begin(), value.end(), value.begin(), towlower);
-    return value;
-}
-
-static QuickView::ColorPrimaries GuessPrimariesFromPath(const std::wstring& path) {
-    const std::wstring lower = ToLowerCopy(path);
-    if (lower.find(L"prophoto") != std::wstring::npos) return QuickView::ColorPrimaries::ProPhotoRGB;
-    if (lower.find(L"adobe") != std::wstring::npos) return QuickView::ColorPrimaries::AdobeRGB;
-    if (lower.find(L"displayp3") != std::wstring::npos || lower.find(L"p3") != std::wstring::npos) return QuickView::ColorPrimaries::DisplayP3;
-    if (lower.find(L"2020") != std::wstring::npos || lower.find(L"rec2020") != std::wstring::npos) return QuickView::ColorPrimaries::Rec2020;
-    if (lower.find(L"srgb") != std::wstring::npos) return QuickView::ColorPrimaries::SRGB;
-    return QuickView::ColorPrimaries::Unknown;
+    return ColorMath::IsEffectivelyPixelArtMode(totalScale, origW, origH, g_runtime.PixelArtModeOverride, g_config.ZoomModeIn, g_config.ZoomModeOut);
 }
 
 static QuickView::ColorPrimaries ResolveFramePrimaries(const QuickView::RawImageFrame& frame) {
@@ -950,11 +556,6 @@ static QuickView::ColorPrimaries ResolveFramePrimaries(const QuickView::RawImage
         }
     }
     return NormalizePrimaries(primaries);
-}
-
-static float SrgbToLinear(float v) {
-    if (v <= 0.04045f) return v / 12.92f;
-    return powf((v + 0.055f) / 1.055f, 2.4f);
 }
 
 static void DecodeSampleLinearRgb(const QuickView::RawImageFrame& frame, int x, int y, float& r, float& g, float& b) {
@@ -1203,7 +804,7 @@ static void ScheduleGamutWarningAnalysisImpl(HWND hwnd) {
         PostMessageW(hwnd, WM_GAMUT_WARNING_READY, 0, 0);
     }).detach();
 }
-} // namespace
+
 
 void RefreshGamutWarningOverlayVisual(HWND hwnd) {
     if (!g_compEngine || !g_compEngine->IsInitialized()) return;
@@ -1358,7 +959,7 @@ bool GetCurrentPixelArtState(HWND hwnd) {
 
 
 // True while the user is interactively resizing/moving the window (WM_ENTERSIZEMOVE/WM_EXITSIZEMOVE)
-static bool g_isInSizeMove = false;
+bool g_isInSizeMove = false;
 static float s_resizeInitialAbsoluteScale = 1.0f;
 static bool s_maintainAbsoluteScale = false;
 static bool s_resizeStartedWithBorders = false;
@@ -1419,7 +1020,7 @@ static void RefreshWindowDpi(HWND hwnd, UINT dpiHint = 0) {
 }
 
 // [DComp] Render bitmap to DComp Pending Surface and trigger cross-fade
-static bool RenderImageToDComp(HWND hwnd, ImageResource& res, bool isFastUpgrade = false); // fwd decl
+bool RenderImageToDComp(HWND hwnd, ImageResource& res, bool isFastUpgrade = false); // fwd decl
 static bool FileExists(LPCWSTR path); // fwd decl
 
 // RenderDebugHUD moved to UIRenderer
@@ -1538,15 +1139,13 @@ void DiscardChanges();
 std::wstring ShowRenameDialog(HWND hParent, const std::wstring& oldName);
 static void RestoreCurrentExifOrientation();
 
-bool IsCompareModeActive() {
-    return g_compare.mode != ViewMode::Single;
-}
+
 
 bool GetCompareIndicatorState(int& outPane, float& outSplitRatio, bool& outIsWipe) {
     if (!IsCompareModeActive()) return false;
-    outPane = (g_compare.selectedPane == ComparePane::Left) ? 0 : 1;
-    outSplitRatio = GetCompareSplitRatio();
-    outIsWipe = (g_compare.mode == ViewMode::CompareWipe);
+    outPane = (AppContext::GetInstance().Compare.selectedPane == ComparePane::Left) ? 0 : 1;
+    outSplitRatio = AppContext::GetInstance().CompareCtrl->GetSplitRatio();
+    outIsWipe = (AppContext::GetInstance().Compare.mode == ViewMode::CompareWipe);
     return true;
 }
 
@@ -1582,7 +1181,7 @@ bool GetAdaptiveUiPaneSnapshot(int paneIndex, AdaptiveUiPaneSnapshot& outSnapsho
     if (paneIndex == 0) {
         if (!GetPaneContext(PaneSlot::Left).valid || GetPaneContext(PaneSlot::Left).path.empty()) return false;
         outSnapshot.path = GetPaneContext(PaneSlot::Left).path;
-        outSnapshot.viewport = GetCompareViewport(g_mainHwnd, ComparePane::Left);
+        outSnapshot.viewport = AppContext::GetInstance().CompareCtrl->GetViewport(g_mainHwnd, ComparePane::Left);
         outSnapshot.visualSize = GetOrientedSize(GetPaneContext(PaneSlot::Left).resource, GetPaneContext(PaneSlot::Left).view.ExifOrientation);
         outSnapshot.zoom = GetPaneContext(PaneSlot::Left).view.Zoom;
         outSnapshot.panX = GetPaneContext(PaneSlot::Left).view.PanX;
@@ -1593,7 +1192,7 @@ bool GetAdaptiveUiPaneSnapshot(int paneIndex, AdaptiveUiPaneSnapshot& outSnapsho
     if (paneIndex == 1) {
         if (!GetPaneContext(PaneSlot::Primary).resource || GetPaneContext(PaneSlot::Primary).path.empty()) return false;
         outSnapshot.path = GetPaneContext(PaneSlot::Primary).path;
-        outSnapshot.viewport = GetCompareViewport(g_mainHwnd, ComparePane::Right);
+        outSnapshot.viewport = AppContext::GetInstance().CompareCtrl->GetViewport(g_mainHwnd, ComparePane::Right);
         outSnapshot.visualSize = GetOrientedSize(GetPaneContext(PaneSlot::Primary).resource, GetPaneContext(PaneSlot::Primary).view.ExifOrientation);
         outSnapshot.zoom = GetPaneContext(PaneSlot::Primary).view.Zoom;
         outSnapshot.panX = GetPaneContext(PaneSlot::Primary).view.PanX;
@@ -1605,26 +1204,24 @@ bool GetAdaptiveUiPaneSnapshot(int paneIndex, AdaptiveUiPaneSnapshot& outSnapsho
 }
 
 static bool IsCompareContextLeft() {
-    return IsCompareModeActive() && g_compare.contextPane == ComparePane::Left;
+    return IsCompareModeActive() && AppContext::GetInstance().Compare.contextPane == ComparePane::Left;
 }
 
 
 
-static float ClampCompareRatio(float value) {
+float ClampCompareRatio(float value) {
     if (value < 0.001f) return 0.0f;
     if (value > 0.999f) return 1.0f;
     return value;
 }
 
-static float GetCompareSplitRatio() {
-    return (g_compare.mode == ViewMode::CompareSideBySide) ? 0.5f : ClampCompareRatio(g_compare.splitRatio);
+
+
+void MarkCompareDirty() {
+    AppContext::GetInstance().Compare.dirty = true;
 }
 
-static void MarkCompareDirty() {
-    g_compare.dirty = true;
-}
-
-static CompareView GetRightCompareView() {
+CompareView GetRightCompareView() {
     CompareView v;
     v.Zoom = GetPaneContext(PaneSlot::Primary).view.Zoom;
     v.PanX = GetPaneContext(PaneSlot::Primary).view.PanX;
@@ -1653,7 +1250,7 @@ static float ComputeZoomStep(float wheelDelta) {
     return powf(unit, count);
 }
 
-static float ComputeZoomMultiplier(float delta, bool fineInterval) {
+float ComputeZoomMultiplier(float delta, bool fineInterval) {
     float step = fineInterval ? 0.01f : (g_config.WheelZoomSpeed / 100.0f);
     if (delta > 0.0f) return 1.0f + step * delta;
     return 1.0f / (1.0f + step * fabsf(delta));
@@ -1713,31 +1310,15 @@ static void ZoomCompareView(CompareView& view,
     view.Zoom = newZoom;
 }
 
-static D2D1_RECT_F GetCompareViewport(HWND hwnd, ComparePane pane) {
-    RECT rc{};
-    GetClientRect(hwnd, &rc);
-    const float w = (float)(rc.right - rc.left);
-    const float h = (float)(rc.bottom - rc.top);
-    const float splitX = GetCompareSplitRatio() * w;
 
-    if (g_compare.mode == ViewMode::CompareSideBySide) {
-        if (pane == ComparePane::Left) {
-            return D2D1::RectF(0.0f, 0.0f, splitX, h);
-        }
-        return D2D1::RectF(splitX, 0.0f, w, h);
-    }
-
-    // Wipe mode: both occupy full viewport.
-    return D2D1::RectF(0.0f, 0.0f, w, h);
-}
 
 static D2D1_RECT_F GetCompareInteractionViewport(HWND hwnd, ComparePane pane) {
     RECT rc{};
     GetClientRect(hwnd, &rc);
     const float w = (float)(rc.right - rc.left);
     const float h = (float)(rc.bottom - rc.top);
-    const float splitX = (g_compare.mode == ViewMode::CompareWipe)
-        ? ClampCompareRatio(g_compare.splitRatio) * w
+    const float splitX = (AppContext::GetInstance().Compare.mode == ViewMode::CompareWipe)
+        ? ClampCompareRatio(AppContext::GetInstance().Compare.splitRatio) * w
         : 0.5f * w;
 
     if (pane == ComparePane::Left) {
@@ -1755,15 +1336,7 @@ static D2D1_SIZE_F GetOrientedSize(const ImageResource& res, int exifOrientation
     return size;
 }
 
-static ComparePane HitTestComparePane(HWND hwnd, POINT ptClient) {
-    if (!IsCompareModeActive()) return ComparePane::Right;
 
-    RECT rc{};
-    GetClientRect(hwnd, &rc);
-    const float w = (float)(rc.right - rc.left);
-    const float splitX = GetCompareSplitRatio() * w;
-    return ((float)ptClient.x < splitX) ? ComparePane::Left : ComparePane::Right;
-}
 
 static int ComputeEdgeHoverForPane(const POINT& pt, const D2D1_RECT_F& paneRect) {
     const float w = paneRect.right - paneRect.left;
@@ -1813,19 +1386,11 @@ static int HitTestNavButtonInPane(const POINT& pt, const D2D1_RECT_F& paneRect) 
     return 0;
 }
 
-static bool IsNearCompareDivider(HWND hwnd, const POINT& ptClient, float threshold = 6.0f) {
-    if (!IsCompareModeActive() || g_compare.mode != ViewMode::CompareWipe) return false;
-    RECT rc{};
-    GetClientRect(hwnd, &rc);
-    const float w = (float)(rc.right - rc.left);
-    if (w <= 1.0f) return false;
-    const float splitX = ClampCompareRatio(g_compare.splitRatio) * w;
-    return fabsf((float)ptClient.x - splitX) <= threshold;
-}
 
 
 
-static void DrawResourceIntoViewport(ID2D1DeviceContext* ctx,
+
+void DrawResourceIntoViewport(ID2D1DeviceContext* ctx,
                                      const ImageResource& res,
                                      int exifOrientation,
                                      const CompareView& view,
@@ -1909,7 +1474,7 @@ static void DrawResourceIntoViewport(ID2D1DeviceContext* ctx,
 }
 
 // LoadImageIntoCompareLeftSlot definition moved below to line 9690
-static int GetEffectiveExifOrientation(int baseExif, const EditState& editState) {
+int GetEffectiveExifOrientation(int baseExif, const EditState& editState) {
     int rot = 0;
     bool flip = false;
     switch(baseExif) {
@@ -1944,175 +1509,11 @@ static int GetEffectiveExifOrientation(int baseExif, const EditState& editState)
     return 1;
 }
 
-static void CaptureCurrentImageAsCompareLeft() {
-    if (!GetPaneContext(PaneSlot::Primary).resource || GetPaneContext(PaneSlot::Primary).path.empty()) return;
 
-    GetPaneContext(PaneSlot::Left).Reset();
-    GetPaneContext(PaneSlot::Left).resource = GetPaneContext(PaneSlot::Primary).resource.Clone();
-    GetPaneContext(PaneSlot::Left).metadata = GetPaneContext(PaneSlot::Primary).metadata;
-    GetPaneContext(PaneSlot::Left).path = GetPaneContext(PaneSlot::Primary).path;
-    GetPaneContext(PaneSlot::Left).valid = true;
-    GetPaneContext(PaneSlot::Left).view.Zoom = GetPaneContext(PaneSlot::Primary).view.Zoom;
-    GetPaneContext(PaneSlot::Left).view.PanX = GetPaneContext(PaneSlot::Primary).view.PanX;
-    GetPaneContext(PaneSlot::Left).view.PanY = GetPaneContext(PaneSlot::Primary).view.PanY;
-    // [Fix] Use g_renderExifOrientation instead of GetPaneContext(PaneSlot::Primary).view.ExifOrientation.
-    // After RenderImageToDComp, GetPaneContext(PaneSlot::Primary).view.ExifOrientation is neutralized to 1
-    // (since the DComp surface is physically rotated). But the bitmap in
-    // GetPaneContext(PaneSlot::Primary).resource is still un-rotated, so compare mode's DrawResourceIntoViewport
-    // needs the original orientation to apply the rotation correctly.
-    GetPaneContext(PaneSlot::Left).view.ExifOrientation = g_renderExifOrientation;
-    if (!g_config.AutoRotate) {
-        GetPaneContext(PaneSlot::Left).view.ExifOrientation = 1;
-        GetPaneContext(PaneSlot::Left).metadata.ExifOrientation = 1;
-    }
-    GetPaneContext(PaneSlot::Left).CmsModeOverride = g_runtime.CmsModeOverride;
-    GetPaneContext(PaneSlot::Left).EnableSoftProofing = g_runtime.EnableSoftProofing;
-    GetPaneContext(PaneSlot::Left).SoftProofProfilePath = g_runtime.SoftProofProfilePath;
-    // [Fix] Also restore metadata ExifOrientation (was neutralized after RenderImageToDComp)
-    if (g_config.AutoRotate && g_renderExifOrientation > 1) {
-        GetPaneContext(PaneSlot::Left).metadata.ExifOrientation = g_renderExifOrientation;
-    }
-}
 
-static bool RenderCompareComposite(HWND hwnd) {
-    if (!g_compEngine || !g_compEngine->IsInitialized()) return false;
-    if (!GetPaneContext(PaneSlot::Left).valid || !GetPaneContext(PaneSlot::Primary).resource) return false;
 
-    RECT rc{};
-    GetClientRect(hwnd, &rc);
-    const UINT winW = (UINT)(rc.right - rc.left);
-    const UINT winH = (UINT)(rc.bottom - rc.top);
-    if (winW == 0 || winH == 0) return false;
 
-    DXGI_FORMAT compareSurfaceFormat = GetImageResourceSurfaceFormat(GetPaneContext(PaneSlot::Primary).resource);
-    if (GetPaneContext(PaneSlot::Left).resource.bitmap) {
-        const DXGI_FORMAT leftFormat = GetImageResourceSurfaceFormat(GetPaneContext(PaneSlot::Left).resource);
-        if (leftFormat == DXGI_FORMAT_R16G16B16A16_FLOAT) {
-            compareSurfaceFormat = leftFormat;
-        }
-    }
-
-    ID2D1DeviceContext* ctx = g_compEngine->BeginPendingUpdate(winW, winH, false, 0, 0, false, compareSurfaceFormat);
-    if (!ctx) return false;
-
-    // [Fix] Capture initial transform (e.g. DComp Atlas offset) to avoid Double Translation
-    D2D1_MATRIX_3X2_F origTransform;
-    ctx->GetTransform(&origTransform);
-
-    // [Geek Glass] Capture Compare results for UI backgrounds
-    ComPtr<ID2D1CommandList> cmdList;
-    ctx->CreateCommandList(&cmdList);
-    ComPtr<ID2D1Image> origTarget;
-    ctx->GetTarget(&origTarget);
-
-    // Set recording target and reset transform to Identity for 'clean' command list
-    ctx->SetTarget(cmdList.Get());
-    ctx->SetTransform(D2D1::Matrix3x2F::Identity());
-
-    ctx->Clear(D2D1::ColorF(0, 0, 0, 0));
-    const CompareView rightView = GetRightCompareView();
-
-    // Logic for drawing the composite (moved into cmdList recording)
-    auto DrawDividerHandleInternal = [&](float splitX, float winH, float opacity) {
-        const float s = g_uiScale;
-        const float radius = 11.0f * s;
-        const float centerY = winH * 0.5f;
-        if (winH < radius * 2.0f + 4.0f) return;
-
-        ComPtr<ID2D1SolidColorBrush> bgBrush;
-        ComPtr<ID2D1SolidColorBrush> borderBrush;
-        ComPtr<ID2D1SolidColorBrush> arrowBrush;
-        if (FAILED(ctx->CreateSolidColorBrush(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.50f * opacity), &bgBrush))) return;
-        if (FAILED(ctx->CreateSolidColorBrush(D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.85f * opacity), &borderBrush))) return;
-        if (FAILED(ctx->CreateSolidColorBrush(D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.95f * opacity), &arrowBrush))) return;
-
-        D2D1_ELLIPSE ellipse = D2D1::Ellipse(D2D1::Point2F(splitX, centerY), radius, radius);
-        ctx->FillEllipse(ellipse, bgBrush.Get());
-        ctx->DrawEllipse(ellipse, borderBrush.Get(), 1.0f * s);
-
-        const float chevron = 4.5f * s;
-        const float gap = 2.0f * s;
-        ComPtr<ID2D1Factory> factory;
-        ctx->GetFactory(&factory);
-        if (!factory) return;
-
-        D2D1_STROKE_STYLE_PROPERTIES strokeProps = {};
-        strokeProps.startCap = D2D1_CAP_STYLE_ROUND;
-        strokeProps.endCap = D2D1_CAP_STYLE_ROUND;
-        strokeProps.lineJoin = D2D1_LINE_JOIN_ROUND;
-        ComPtr<ID2D1StrokeStyle> strokeStyle;
-        factory->CreateStrokeStyle(strokeProps, nullptr, 0, &strokeStyle);
-
-        float strokeWidth = 1.6f * s;
-        ctx->DrawLine(D2D1::Point2F(splitX - gap, centerY - chevron), D2D1::Point2F(splitX - gap - chevron, centerY), arrowBrush.Get(), strokeWidth, strokeStyle.Get());
-        ctx->DrawLine(D2D1::Point2F(splitX - gap - chevron, centerY), D2D1::Point2F(splitX - gap, centerY + chevron), arrowBrush.Get(), strokeWidth, strokeStyle.Get());
-        ctx->DrawLine(D2D1::Point2F(splitX + gap, centerY - chevron), D2D1::Point2F(splitX + gap + chevron, centerY), arrowBrush.Get(), strokeWidth, strokeStyle.Get());
-        ctx->DrawLine(D2D1::Point2F(splitX + gap + chevron, centerY), D2D1::Point2F(splitX + gap, centerY + chevron), arrowBrush.Get(), strokeWidth, strokeStyle.Get());
-    };
-
-    if (g_compare.mode == ViewMode::CompareWipe) {
-        const D2D1_RECT_F full = D2D1::RectF(0.0f, 0.0f, (float)winW, (float)winH);
-        const float splitX = ClampCompareRatio(g_compare.splitRatio) * (float)winW;
-        const D2D1_RECT_F leftClip = D2D1::RectF(0.0f, 0.0f, splitX, (float)winH);
-        const D2D1_RECT_F rightClip = D2D1::RectF(splitX, 0.0f, (float)winW, (float)winH);
-
-        ctx->PushAxisAlignedClip(leftClip, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-        int leftExif = GetEffectiveExifOrientation(GetPaneContext(PaneSlot::Left).view.ExifOrientation, GetPaneContext(PaneSlot::Left).editState);
-        DrawResourceIntoViewport(ctx, GetPaneContext(PaneSlot::Left).resource, leftExif, GetPaneContext(PaneSlot::Left).view, full);
-        ctx->PopAxisAlignedClip();
-
-        ctx->PushAxisAlignedClip(rightClip, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-        int rightExif = GetEffectiveExifOrientation(GetPaneContext(PaneSlot::Primary).view.ExifOrientation, GetPaneContext(PaneSlot::Primary).editState);
-        DrawResourceIntoViewport(ctx, GetPaneContext(PaneSlot::Primary).resource, rightExif, rightView, full);
-        ctx->PopAxisAlignedClip();
-
-        ComPtr<ID2D1SolidColorBrush> dividerBrush;
-        ctx->CreateSolidColorBrush(D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.85f), &dividerBrush);
-        if (dividerBrush) {
-            ctx->DrawLine(D2D1::Point2F(splitX, 0.0f), D2D1::Point2F(splitX, (float)winH), dividerBrush.Get(), 2.0f);
-        }
-        DrawDividerHandleInternal(splitX, (float)winH, g_compare.dividerOpacity);
-    } else {
-        const float splitX = 0.5f * (float)winW;
-        const D2D1_RECT_F leftVp = D2D1::RectF(0.0f, 0.0f, splitX, (float)winH);
-        const D2D1_RECT_F rightVp = D2D1::RectF(splitX, 0.0f, (float)winW, (float)winH);
-        int leftExif = GetEffectiveExifOrientation(GetPaneContext(PaneSlot::Left).view.ExifOrientation, GetPaneContext(PaneSlot::Left).editState);
-        int rightExif = GetEffectiveExifOrientation(GetPaneContext(PaneSlot::Primary).view.ExifOrientation, GetPaneContext(PaneSlot::Primary).editState);
-        DrawResourceIntoViewport(ctx, GetPaneContext(PaneSlot::Left).resource, leftExif, GetPaneContext(PaneSlot::Left).view, leftVp);
-        DrawResourceIntoViewport(ctx, GetPaneContext(PaneSlot::Primary).resource, rightExif, rightView, rightVp);
-
-        ComPtr<ID2D1SolidColorBrush> dividerBrush;
-        ctx->CreateSolidColorBrush(D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.35f), &dividerBrush);
-        if (dividerBrush) {
-            ctx->DrawLine(D2D1::Point2F(splitX, 0.0f), D2D1::Point2F(splitX, (float)winH), dividerBrush.Get(), 1.0f);
-        }
-    }
-
-    cmdList->Close();
-    ctx->SetTarget(origTarget.Get());
-    ctx->SetTransform(origTransform); // Restore offset transform
-    ctx->DrawImage(cmdList.Get());
-
-    if (g_uiRenderer) {
-        g_uiRenderer->SetBackgroundCommandList(cmdList.Get());
-    }
-
-    g_compEngine->EndPendingUpdate();
-    g_compEngine->PlayPingPongCrossFade(0.0f);
-
-    VisualState vs{};
-    vs.PhysicalSize = D2D1::SizeF((float)winW, (float)winH);
-    vs.VisualSize = vs.PhysicalSize;
-    vs.TotalRotation = 0.0f;
-    vs.IsRotated90 = false;
-    vs.FlipX = 1.0f;
-    vs.FlipY = 1.0f;
-    g_compEngine->UpdateTransformMatrix(vs, (float)winW, (float)winH, 1.0f, 0.0f, 0.0f);
-    g_compEngine->Commit();
-    return true;
-}
-
-static void SnapWindowToCompareImages(HWND hwnd) {
+void SnapWindowToCompareImages(HWND hwnd) {
     if (!IsCompareModeActive() || !GetPaneContext(PaneSlot::Left).valid || !GetPaneContext(PaneSlot::Primary).resource) return;
 
     // [Fix] Respect Fullscreen, Maximized, and Lock states. Do not snap window if already in these modes.
@@ -2124,7 +1525,7 @@ static void SnapWindowToCompareImages(HWND hwnd) {
 
         if (szLeft.width > 0 && szRight.width > 0) {
             float targetImgW, targetImgH;
-            if (g_compare.mode == ViewMode::CompareSideBySide) {
+            if (AppContext::GetInstance().Compare.mode == ViewMode::CompareSideBySide) {
                 // Match heights to the larger one to avoid vertical bars
                 float commonH = (std::max)(szLeft.height, szRight.height);
                 targetImgW = szLeft.width * (commonH / szLeft.height) + szRight.width * (commonH / szRight.height);
@@ -2177,199 +1578,9 @@ static void SnapWindowToCompareImages(HWND hwnd) {
     }
 }
 
-static void EnterCompareMode(HWND hwnd) {
-    if (IsCompareModeActive() || !GetPaneContext(PaneSlot::Primary).resource) return;
-    if (GetPaneContext(PaneSlot::Primary).metadata.Width > 8192 || GetPaneContext(PaneSlot::Primary).metadata.Height > 8192) {
-        g_osd.Show(hwnd, L"Compare mode is not available for Titan images yet.", true);
-        return;
-    }
-    g_compare.mode = ViewMode::CompareSideBySide;
-    g_compare.splitRatio = ClampCompareRatio(g_compare.splitRatio);
 
 
-    if (g_toolbar.IsComicMode() && GetPaneContext(PaneSlot::Primary).navigator.Count() > 0) {
-        int currentIndex = GetPaneContext(PaneSlot::Primary).navigator.Index();
 
-        // Standard (0,1), (2,3) pairing
-        int leftIndex = currentIndex & ~1;
-        int rightIndex = leftIndex + 1;
-
-        std::wstring leftPath;
-        if (leftIndex >= 0 && leftIndex < (int)GetPaneContext(PaneSlot::Primary).navigator.Count()) {
-            leftPath = GetPaneContext(PaneSlot::Primary).navigator.GetFile(leftIndex);
-        }
-
-        std::wstring rightPath;
-        if (rightIndex >= 0 && rightIndex < (int)GetPaneContext(PaneSlot::Primary).navigator.Count()) {
-            rightPath = GetPaneContext(PaneSlot::Primary).navigator.GetFile(rightIndex);
-        }
-
-        if (GetPaneContext(PaneSlot::Primary).path == leftPath && GetPaneContext(PaneSlot::Primary).resource.bitmap) {
-            // Optimization: Current image is the left page, capture it immediately
-            CaptureCurrentImageAsCompareLeft();
-            GetPaneContext(PaneSlot::Primary).navigator.SetIndex(rightIndex);
-            if (!rightPath.empty()) {
-                LoadImageAsync(hwnd, rightPath, false);
-            }
-        }
-        else {
-            // Standard path: Load left page asynchronously
-            if (rightPath.empty()) {
-                rightPath = leftPath;
-                leftPath = L"";
-                GetPaneContext(PaneSlot::Primary).navigator.SetIndex(leftIndex);
-            }
-            else {
-                GetPaneContext(PaneSlot::Primary).navigator.SetIndex(rightIndex);
-            }
-
-            if (!leftPath.empty()) {
-                LoadImageIntoCompareLeftSlot(hwnd, leftPath, [hwnd, rightPath](bool success) {
-                    if (success) {
-                        MarkCompareDirty();
-                    }
-                    if (!rightPath.empty() && rightPath != GetPaneContext(PaneSlot::Primary).path) {
-                        LoadImageAsync(hwnd, rightPath, false);
-                    }
-                });
-            }
-            else {
-                GetPaneContext(PaneSlot::Left).Reset();
-                MarkCompareDirty();
-                if (!rightPath.empty() && rightPath != GetPaneContext(PaneSlot::Primary).path) {
-                    LoadImageAsync(hwnd, rightPath, false);
-                }
-            }
-        }
-    } else {
-        CaptureCurrentImageAsCompareLeft();
-        if (!GetPaneContext(PaneSlot::Left).valid) {
-            g_compare.mode = ViewMode::Single;
-            return;
-        }
-    }
-
-    // [v6.8] Special Route: If soft-proofing is enabled, automatically compare Before vs After.
-    if (g_runtime.EnableSoftProofing) {
-        GetPaneContext(PaneSlot::Left).EnableSoftProofing = false; // Left pane is the "Before Proofing" version
-        g_runtime.LockWindowSize = false;         // [Fix] Allow window to adapt for side-by-side view
-        
-        g_osd.ShowCompare(hwnd, AppStrings::OSD_CompareBefore, AppStrings::OSD_CompareAfter, D2D1::ColorF(D2D1::ColorF::White), 2500);
-    }
-
-    if (g_config.AutoRotate && g_imageLoader && !GetPaneContext(PaneSlot::Primary).path.empty()) {
-        CImageLoader::ImageMetadata rightMeta;
-        if (SUCCEEDED(g_imageLoader->ReadMetadata(GetPaneContext(PaneSlot::Primary).path.c_str(), &rightMeta, true)) &&
-            rightMeta.ExifOrientation >= 1 && rightMeta.ExifOrientation <= 8) {
-            GetPaneContext(PaneSlot::Primary).view.ExifOrientation = rightMeta.ExifOrientation;
-            GetPaneContext(PaneSlot::Primary).metadata.ExifOrientation = rightMeta.ExifOrientation;
-        }
-    } else {
-        GetPaneContext(PaneSlot::Primary).view.ExifOrientation = 1;
-        GetPaneContext(PaneSlot::Primary).metadata.ExifOrientation = 1;
-    }
-
-    g_compare.syncZoom = true;
-    g_compare.syncPan = true;
-    g_compare.draggingDivider = false;
-    g_compare.activePane = ComparePane::Right;
-    g_compare.contextPane = ComparePane::Right;
-    g_compare.selectedPane = ComparePane::Right;
-    g_compare.dividerOpacity = 0.0f;
-    g_compare.showDividerHandle = false;
-    MarkCompareDirty();
-
-    GetPaneContext(PaneSlot::Primary).view.CompareActive = true;
-    
-    // [v10.0] Trigger Metrics for Left Image (A) if HUD is active
-    // [Fix] Must call AFTER CompareActive=true so IsCompareModeActive() check passes
-    if (g_runtime.ShowCompareInfo && (GetPaneContext(PaneSlot::Left).metadata.HistL.empty() || !GetPaneContext(PaneSlot::Left).metadata.IsFullMetadataLoaded)) {
-        UpdateCompareLeftHistogramAsync(hwnd, GetPaneContext(PaneSlot::Left).path);
-    }
-
-    GetPaneContext(PaneSlot::Primary).view.CompareSplitRatio = GetCompareSplitRatio();
-    GetPaneContext(PaneSlot::Primary).view.EdgeHoverLeft = 0;
-    GetPaneContext(PaneSlot::Primary).view.EdgeHoverRight = 0;
-
-    // [v10.0] Seamless Info Transition: Sync Normal Info state to Compare HUD
-    if (g_runtime.ShowInfoPanel) {
-        g_runtime.ShowInfoPanel = false;
-        g_runtime.ShowCompareInfo = true;
-        g_runtime.CompareHudMode = g_runtime.InfoPanelExpanded ? 1 : 0;
-        AdjustWindowForOverlay(hwnd, true); // Restore image layout as Normal info closes
-    }
-
-    g_toolbar.SetCompareMode(true);
-    g_toolbar.SetCompareSyncStates(g_compare.syncZoom, g_compare.syncPan);
-    g_toolbar.SetCompareInfoState(g_runtime.ShowCompareInfo);
-    // [Compare RAW] Initial state: right pane is selected by default
-    RefreshCompareRawUI(hwnd);
-
-    // Auto-load next image into right pane if possible.
-    // [v6.8] If we are in "Before vs After Soft Proofing" mode, do NOT load next image.
-    if (!g_runtime.EnableSoftProofing && GetPaneContext(PaneSlot::Primary).navigator.Count() > 1) {
-        g_compare.pendingSnap = true;
-        std::wstring nextPath = GetPaneContext(PaneSlot::Primary).navigator.PeekNext();
-        if (!nextPath.empty() && nextPath != GetPaneContext(PaneSlot::Primary).path) {
-            GetPaneContext(PaneSlot::Primary).view.Reset();
-            LoadImageAsync(hwnd, nextPath, false, QuickView::BrowseDirection::FORWARD);
-        }
-    } else if (g_runtime.EnableSoftProofing) {
-        // [Fix] Immediately adjust window size for side-by-side comparison
-        SnapWindowToCompareImages(hwnd);
-        g_compare.pendingSnap = false;
-
-        // Force refresh to re-render left pane without soft-proofing
-        RefreshImageDisplay(hwnd);
-    }
-}
-
-static void ExitCompareMode(HWND hwnd) {
-    if (!IsCompareModeActive()) return;
-
-    g_compare.mode = ViewMode::Single;
-    g_compare.draggingDivider = false;
-    g_compare.contextPane = ComparePane::Right;
-    g_compare.activePane = ComparePane::Right;
-    g_compare.selectedPane = ComparePane::Right;
-    g_compare.dirty = false;
-
-    GetPaneContext(PaneSlot::Left).Reset();
-    g_isLeftPaneDecoding = false;
-    g_leftPaneReadyCallback = nullptr;
-
-    GetPaneContext(PaneSlot::Primary).view.CompareActive = false;
-    GetPaneContext(PaneSlot::Primary).view.CompareSplitRatio = 0.5f;
-    GetPaneContext(PaneSlot::Primary).view.EdgeHoverLeft = 0;
-    GetPaneContext(PaneSlot::Primary).view.EdgeHoverRight = 0;
-    GetPaneContext(PaneSlot::Primary).view.EdgeHoverState = 0;
-
-    // [v10.0] Seamless Info Transition: Restore Compare HUD state to Normal Info
-    if (g_runtime.ShowCompareInfo) {
-        g_runtime.ShowCompareInfo = false;
-        g_runtime.ShowInfoPanel = true;
-        g_runtime.InfoPanelExpanded = (g_runtime.CompareHudMode > 0);
-        AdjustWindowForOverlay(hwnd, false); // Space out for Normal info as it opens
-    }
-
-    g_toolbar.SetCompareMode(false);
-    RECT rc{};
-    GetClientRect(hwnd, &rc);
-    g_toolbar.UpdateLayout((float)rc.right, (float)rc.bottom);
-
-    if (GetPaneContext(PaneSlot::Primary).resource) {
-        RenderImageToDComp(hwnd, GetPaneContext(PaneSlot::Primary).resource, false);
-        if (GetPaneContext(PaneSlot::Primary).view.ExifOrientation > 1 && g_config.AutoRotate) {
-            GetPaneContext(PaneSlot::Primary).metadata.ExifOrientation = 1;
-            GetPaneContext(PaneSlot::Primary).view.ExifOrientation = 1;
-        }
-        AdjustWindowToImage(hwnd);
-        RECT updatedRc{};
-        GetClientRect(hwnd, &updatedRc);
-        SyncDCompState(hwnd, (float)updatedRc.right, (float)updatedRc.bottom);
-        g_compEngine->Commit();
-    }
-}
 
 
 // ============================================================================
@@ -2391,7 +1602,7 @@ static void EnterOverlayMode(HWND hwnd) {
         SendMessage(hwnd, WM_COMMAND, IDM_FULLSCREEN, 0);
     }
     if (IsCompareModeActive()) {
-        ExitCompareMode(hwnd);
+        AppContext::GetInstance().CompareCtrl->ExitMode(hwnd);
     }
 
     // Save current topmost state for restoration
@@ -2500,7 +1711,7 @@ static void EnterPassthroughMode(HWND hwnd) {
 
     // Show confirmation dialog using custom dialog system
 
-    DialogResult result = ShowQuickViewDialog(hwnd,
+    DialogResult result = AppContext::GetInstance().DialogCtrl->ShowDialog(hwnd,
         AppStrings::Dialog_PassthroughTitle,
         AppStrings::Dialog_PassthroughContent,
         D2D1::ColorF(D2D1::ColorF::DodgerBlue),
@@ -2860,7 +2071,7 @@ static void TryUpgradeBitmapSurface(HWND hwnd) {
 // [DComp] Render content (Bitmap or SVG) to DComp Pending Surface
 // For SVG: Uses Direct2D Native path with real-time transform (Lossless Zoom)
 // For Bitmap: Uses existing logic
-static bool RenderImageToDComp(HWND hwnd, ImageResource& res, bool isFastUpgrade) {
+bool RenderImageToDComp(HWND hwnd, ImageResource& res, bool isFastUpgrade) {
     if (!g_compEngine || !g_compEngine->IsInitialized()) return false;
     
     RECT rc; GetClientRect(hwnd, &rc);
@@ -3187,16 +2398,16 @@ DialogLayout CalculateDialogLayout(D2D1_SIZE_F size) {
     float messageHeight = 22.0f * s;
     
     // Estimate title wrapping (assume ~25 chars per line at this width)
-    int titleLines = (int)(g_dialog.Title.length() / 20) + 1;
+    int titleLines = (int)(AppContext::GetInstance().Dialog.Title.length() / 20) + 1;
     if (titleLines > 3) titleLines = 3;  // Max 3 lines
     
     // Message usually single line
     int msgLines = 1;
     
     float contentHeight = (titleLines * titleHeight) + (msgLines * messageHeight);
-    float qualityHeight = !g_dialog.QualityText.empty() ? 28.0f * s : 0.0f; // Add space for quality text
-    float inputHeight = g_dialog.HasInput ? 45.0f * s : 0.0f; // [Input Mode] Space for edit box
-    float checkboxHeight = g_dialog.HasCheckbox ? 40.0f * s : 0.0f;
+    float qualityHeight = !AppContext::GetInstance().Dialog.QualityText.empty() ? 28.0f * s : 0.0f; // Add space for quality text
+    float inputHeight = AppContext::GetInstance().Dialog.HasInput ? 45.0f * s : 0.0f; // [Input Mode] Space for edit box
+    float checkboxHeight = AppContext::GetInstance().Dialog.HasCheckbox ? 40.0f * s : 0.0f;
     float buttonsHeight = 50.0f * s;
     float padding = 32.0f * s; 
     
@@ -3211,9 +2422,9 @@ DialogLayout CalculateDialogLayout(D2D1_SIZE_F size) {
     };
     float left = (size.width - dlgW) / 2.0f;
     float top = (size.height - dlgH) / 2.0f;
-    if (g_dialog.UseCustomCenter) {
-        left = g_dialog.CustomCenter.x - dlgW * 0.5f;
-        top = g_dialog.CustomCenter.y - dlgH * 0.5f;
+    if (AppContext::GetInstance().Dialog.UseCustomCenter) {
+        left = AppContext::GetInstance().Dialog.CustomCenter.x - dlgW * 0.5f;
+        top = AppContext::GetInstance().Dialog.CustomCenter.y - dlgH * 0.5f;
         const float margin = 8.0f * s;
         float maxLeft = size.width - dlgW - margin;
         float maxTop = size.height - dlgH - margin;
@@ -3227,7 +2438,7 @@ DialogLayout CalculateDialogLayout(D2D1_SIZE_F size) {
     // Input Field (Placed below Message)
     float currentY = top + padding + contentHeight;
     
-    if (g_dialog.HasInput) {
+    if (AppContext::GetInstance().Dialog.HasInput) {
         layout.Input = D2D1::RectF(left + 25.0f * s, currentY + 10.0f * s, left + dlgW - 25.0f * s, currentY + 40.0f * s);
         currentY += inputHeight;
     }
@@ -3238,7 +2449,7 @@ DialogLayout CalculateDialogLayout(D2D1_SIZE_F size) {
     float checkY = currentY + qualityHeight + 10.0f * s; 
     
     // Use bottom-aligned logic for checkbox usually to stick to buttons
-    if (g_dialog.HasCheckbox) {
+    if (AppContext::GetInstance().Dialog.HasCheckbox) {
          // Stick to bottom area above buttons
          checkY = top + dlgH - 45.0f * s - buttonsHeight - 10.0f * s;
     }
@@ -3248,13 +2459,13 @@ DialogLayout CalculateDialogLayout(D2D1_SIZE_F size) {
     float btnW = 95.0f * s;
     float btnH = 30.0f * s;
     float btnGap = 12.0f * s;
-    float totalBtnWidth = (g_dialog.Buttons.size() * btnW) + ((g_dialog.Buttons.size() - 1) * btnGap);
+    float totalBtnWidth = (AppContext::GetInstance().Dialog.Buttons.size() * btnW) + ((AppContext::GetInstance().Dialog.Buttons.size() - 1) * btnGap);
     float startX = left + dlgW - 20.0f * s - totalBtnWidth;
     if (startX < left + 20.0f * s) startX = left + 20.0f * s; // Safety clamp
     
     float btnY = top + dlgH - 45.0f * s;
     
-    for (size_t i = 0; i < g_dialog.Buttons.size(); ++i) {
+    for (size_t i = 0; i < AppContext::GetInstance().Dialog.Buttons.size(); ++i) {
         layout.Buttons.push_back(D2D1::RectF(startX + i * (btnW + btnGap), btnY, startX + i * (btnW + btnGap) + btnW, btnY + btnH));
     }
     return layout;
@@ -3506,34 +2717,15 @@ static bool ShouldReloadForHdrDisplayChange(float displayHdrHeadroomStops) {
 
 static void ReloadGainMapImagesForDisplayChange(HWND hwnd) {
     if (IsCompareModeActive()) {
-        ReloadComparePaneForDisplayChange(hwnd, ComparePane::Left);
-        ReloadComparePaneForDisplayChange(hwnd, ComparePane::Right);
+        AppContext::GetInstance().CompareCtrl->ReloadPaneForDisplayChange(hwnd, ComparePane::Left);
+        AppContext::GetInstance().CompareCtrl->ReloadPaneForDisplayChange(hwnd, ComparePane::Right);
         return;
     }
 
-    ReloadComparePaneForDisplayChange(hwnd, ComparePane::Right);
+    AppContext::GetInstance().CompareCtrl->ReloadPaneForDisplayChange(hwnd, ComparePane::Right);
 }
 
-static void ReloadComparePaneForDisplayChange(HWND hwnd, ComparePane pane) {
-    if (pane == ComparePane::Left) {
-        if (!IsCompareModeActive() || !GetPaneContext(PaneSlot::Left).valid || GetPaneContext(PaneSlot::Left).path.empty() ||
-            !GetPaneContext(PaneSlot::Left).metadata.hdrMetadata.hasGainMap) {
-            return;
-        }
 
-        LoadImageIntoCompareLeftSlot(hwnd, GetPaneContext(PaneSlot::Left).path, [](bool success) {
-            if (success) {
-                MarkCompareDirty();
-                RequestRepaint(PaintLayer::Image | PaintLayer::Static | PaintLayer::Dynamic);
-            }
-        });
-        return;
-    }
-
-    if (!GetPaneContext(PaneSlot::Primary).path.empty() && GetPaneContext(PaneSlot::Primary).metadata.hdrMetadata.hasGainMap) {
-        ReloadCurrentImage(hwnd);
-    }
-}
 
 static void ShowGallery(HWND hwnd) {
     if (!g_gallery.IsVisible()) SaveOverlayWindowState(hwnd);
@@ -3612,7 +2804,7 @@ static std::wstring PickFolder(HWND hwnd, const std::wstring& initialPath) {
     return folderPath;
 }
 
-static void ApplyCompareZoomWithMultiplier(HWND hwnd,
+void ApplyCompareZoomWithMultiplier(HWND hwnd,
                                            ComparePane pane,
                                            float multiplier,
                                            const POINT* anchorPt,
@@ -3622,7 +2814,7 @@ static void ApplyCompareZoomWithMultiplier(HWND hwnd,
     const ComparePane other = (pane == ComparePane::Left) ? ComparePane::Right : ComparePane::Left;
 
     auto applyToPane = [&](ComparePane p, const POINT* paneAnchorPt) {
-        D2D1_RECT_F fitVp = GetCompareViewport(hwnd, p);
+        D2D1_RECT_F fitVp = AppContext::GetInstance().CompareCtrl->GetViewport(hwnd, p);
         D2D1_RECT_F centerVp = GetCompareInteractionViewport(hwnd, p);
         POINT effectiveAnchor = GetViewportCenterPoint(centerVp);
         if (g_config.MouseAnchoredWindowZoom && paneAnchorPt) {
@@ -3662,12 +2854,7 @@ static void ApplyCompareZoomWithMultiplier(HWND hwnd,
     g_osd.ShowCompare(hwnd, leftBuf, rightBuf);
 }
 
-static void ApplyCompareZoomStep(HWND hwnd, float delta, bool fineInterval) {
-    if (!IsCompareModeActive()) return;
-    const ComparePane pane = g_compare.selectedPane;
-    float multiplier = ComputeZoomMultiplier(delta, fineInterval);
-    ApplyCompareZoomWithMultiplier(hwnd, pane, multiplier, nullptr, g_compare.syncZoom);
-}
+
 
 // 渚挎嵎锟?(淇濇寔鍚戝悗鍏煎)
 #define MarkStaticLayerDirty() RequestRepaint(PaintLayer::Static)
@@ -3732,249 +2919,24 @@ static float ComputeBaseFitScaleForVisual(const VisualState& vs, float winW, flo
     return baseFit;
 }
 
-static void ResetSmoothZoomState() {
-    g_smoothZoom.Reset();
-}
-
-static POINT GetResolvedAnchorScreenPoint(HWND hwnd, const POINT* anchorScreenPt) {
-    if (anchorScreenPt) {
-        return *anchorScreenPt;
-    }
-
-    RECT rc{};
-    GetClientRect(hwnd, &rc);
-    POINT centerPt = { rc.right / 2, rc.bottom / 2 };
-    ClientToScreen(hwnd, &centerPt);
-    return centerPt;
-}
-
-static void ResolveSmoothZoomPan(HWND hwnd, float zoom, float& outPanX, float& outPanY) {
-    RECT rc{};
-    GetClientRect(hwnd, &rc);
-    const float winW = (float)rc.right;
-    const float winH = (float)rc.bottom;
-
-    POINT anchorClient = g_smoothZoom.AnchorScreenPt;
-    ScreenToClient(hwnd, &anchorClient);
-
-    const float dx = (float)anchorClient.x - winW * 0.5f;
-    const float dy = (float)anchorClient.y - winH * 0.5f;
-    outPanX = dx - zoom * g_smoothZoom.AnchorImageX;
-    outPanY = dy - zoom * g_smoothZoom.AnchorImageY;
-}
-
-static bool StepRectTowardTarget(RECT& current, const RECT& target, float alpha) {
-    auto stepEdge = [alpha](LONG currentValue, LONG targetValue) -> LONG {
-        const LONG diff = targetValue - currentValue;
-        if (diff == 0) return currentValue;
-        if (std::abs(diff) <= 1) return targetValue;
-
-        LONG delta = (LONG)std::lround((double)diff * alpha);
-        if (delta == 0) delta = (diff > 0) ? 1 : -1;
-        return currentValue + delta;
-    };
-
-    RECT next = current;
-    next.left = stepEdge(current.left, target.left);
-    next.top = stepEdge(current.top, target.top);
-    next.right = stepEdge(current.right, target.right);
-    next.bottom = stepEdge(current.bottom, target.bottom);
-
-    if ((next.right - next.left) < 1) next.right = next.left + 1;
-    if ((next.bottom - next.top) < 1) next.bottom = next.top + 1;
-
-    const bool changed = memcmp(&next, &current, sizeof(RECT)) != 0;
-    current = next;
-    return changed;
-}
-
-static void ConfigureSmoothZoom(HWND hwnd,
-                                float sourceZoom,
-                                float sourcePanX,
-                                float sourcePanY,
-                                float targetZoom,
-                                float targetPanX,
-                                float targetPanY,
-                                const POINT* anchorScreenPt,
-                                bool animateWindow,
-                                const RECT* targetWindowRect) {
-    RECT clientRc{};
-    GetClientRect(hwnd, &clientRc);
-    RECT windowRc{};
-    GetWindowRect(hwnd, &windowRc);
-
-    const POINT resolvedAnchorScreenPt = GetResolvedAnchorScreenPoint(hwnd, anchorScreenPt);
-    POINT anchorClient = resolvedAnchorScreenPt;
-    ScreenToClient(hwnd, &anchorClient);
-
-    const float winW = (float)clientRc.right;
-    const float winH = (float)clientRc.bottom;
-    const float safeSourceZoom = (sourceZoom > 0.0001f) ? sourceZoom : 0.0001f;
-    const float dx = (float)anchorClient.x - winW * 0.5f;
-    const float dy = (float)anchorClient.y - winH * 0.5f;
-
-    g_smoothZoom.Active = true;
-    g_smoothZoom.ImageId = g_currentImageId.load(std::memory_order_acquire);
-    g_smoothZoom.AnimateWindow = animateWindow;
-    g_smoothZoom.HasAnchor = true;
-    g_smoothZoom.AnchorScreenPt = resolvedAnchorScreenPt;
-    g_smoothZoom.SourceWindowRect = windowRc;
-    g_smoothZoom.TargetWindowRect = targetWindowRect ? *targetWindowRect : windowRc;
-    g_smoothZoom.SourceZoom = safeSourceZoom;
-    g_smoothZoom.CurrentZoom = sourceZoom;
-    g_smoothZoom.CurrentPanX = sourcePanX;
-    g_smoothZoom.CurrentPanY = sourcePanY;
-    g_smoothZoom.TargetZoom = targetZoom;
-    g_smoothZoom.TargetPanX = targetPanX;
-    g_smoothZoom.TargetPanY = targetPanY;
-    g_smoothZoom.AnchorImageX = (dx - sourcePanX) / safeSourceZoom;
-    g_smoothZoom.AnchorImageY = (dy - sourcePanY) / safeSourceZoom;
-    g_smoothZoom.LastWinW = winW;
-    g_smoothZoom.LastWinH = winH;
-    g_smoothZoom.LastTick = GetTickCount64();
-}
-
-static void SyncSmoothZoomToLogical(float winW, float winH, bool activate) {
-    if (!GetPaneContext(PaneSlot::Primary).resource || IsCompareModeActive()) {
-        g_smoothZoom.Reset();
-        return;
-    }
-
-    VisualState vs = GetVisualState();
-    const float baseFit = ComputeBaseFitScaleForVisual(vs, winW, winH);
-    const float targetZoom = baseFit * GetPaneContext(PaneSlot::Primary).view.Zoom;
-
-    g_smoothZoom.ImageId = g_currentImageId.load(std::memory_order_acquire);
-    g_smoothZoom.CurrentZoom = targetZoom;
-    g_smoothZoom.CurrentPanX = GetPaneContext(PaneSlot::Primary).view.PanX;
-    g_smoothZoom.CurrentPanY = GetPaneContext(PaneSlot::Primary).view.PanY;
-    g_smoothZoom.TargetZoom = targetZoom;
-    g_smoothZoom.TargetPanX = GetPaneContext(PaneSlot::Primary).view.PanX;
-    g_smoothZoom.TargetPanY = GetPaneContext(PaneSlot::Primary).view.PanY;
-    g_smoothZoom.LastWinW = winW;
-    g_smoothZoom.LastWinH = winH;
-    g_smoothZoom.LastTick = GetTickCount64();
-    g_smoothZoom.Active = activate;
-}
-
-static bool TickSmoothZoom(HWND hwnd) {
-    if (!g_smoothZoom.Active || !g_compEngine || !g_compEngine->IsInitialized()) {
-        return false;
-    }
-
-    RECT rc{};
-    GetClientRect(hwnd, &rc);
-    float winW = (float)rc.right;
-    float winH = (float)rc.bottom;
-    if (winW <= 0.0f || winH <= 0.0f) {
-        ResetSmoothZoomState();
-        return false;
-    }
-
-    const ImageID currentImageId = g_currentImageId.load(std::memory_order_acquire);
-    const bool sizeChangedUnexpectedly =
-        !g_smoothZoom.AnimateWindow &&
-        (fabsf(g_smoothZoom.LastWinW - winW) > 0.5f || fabsf(g_smoothZoom.LastWinH - winH) > 0.5f);
-
-    if (!GetPaneContext(PaneSlot::Primary).resource || IsCompareModeActive() || GetPaneContext(PaneSlot::Primary).view.IsDragging || g_isInSizeMove ||
-        g_smoothZoom.ImageId != currentImageId || sizeChangedUnexpectedly) {
-        SyncSmoothZoomToLogical(winW, winH, false);
-        SyncDCompState(hwnd, winW, winH);
-        g_compEngine->Commit();
-        return false;
-    }
-
-    const ULONGLONG now = GetTickCount64();
-    float dt = (g_smoothZoom.LastTick > 0) ? (float)(now - g_smoothZoom.LastTick) / 1000.0f : (1.0f / 60.0f);
-    if (dt < (1.0f / 240.0f)) dt = (1.0f / 240.0f);
-    if (dt > 0.05f) dt = 0.05f;
-    g_smoothZoom.LastTick = now;
-
-    const float zoomAlpha = 1.0f - expf(-72.0f * dt);
-    const float windowAlpha = 1.0f - expf(-50.0f * dt);
-    g_smoothZoom.CurrentZoom += (g_smoothZoom.TargetZoom - g_smoothZoom.CurrentZoom) * zoomAlpha;
-
-    bool windowDone = true;
-    if (g_smoothZoom.AnimateWindow) {
-        RECT currentWindowRect{};
-        GetWindowRect(hwnd, &currentWindowRect);
-        RECT nextWindowRect = currentWindowRect;
-        const bool moved = StepRectTowardTarget(nextWindowRect, g_smoothZoom.TargetWindowRect, windowAlpha);
-        windowDone = !moved && memcmp(&currentWindowRect, &g_smoothZoom.TargetWindowRect, sizeof(RECT)) == 0;
-
-        if (moved) {
-            g_programmaticResize = true;
-            SetWindowPos(hwnd, nullptr,
-                         nextWindowRect.left, nextWindowRect.top,
-                         nextWindowRect.right - nextWindowRect.left,
-                         nextWindowRect.bottom - nextWindowRect.top,
-                         SWP_NOZORDER | SWP_NOACTIVATE);
-        }
-
-        GetClientRect(hwnd, &rc);
-        winW = (float)rc.right;
-        winH = (float)rc.bottom;
-    }
-
-    ResolveSmoothZoomPan(hwnd, g_smoothZoom.CurrentZoom, g_smoothZoom.CurrentPanX, g_smoothZoom.CurrentPanY);
-    g_smoothZoom.LastWinW = winW;
-    g_smoothZoom.LastWinH = winH;
-
-    bool done = fabsf(g_smoothZoom.TargetZoom - g_smoothZoom.CurrentZoom) < 0.0003f;
-    if (g_smoothZoom.AnimateWindow) {
-        RECT currentWindowRect{};
-        GetWindowRect(hwnd, &currentWindowRect);
-        done = done && memcmp(&currentWindowRect, &g_smoothZoom.TargetWindowRect, sizeof(RECT)) == 0 && windowDone;
-    }
-
-    if (done) {
-        if (g_smoothZoom.AnimateWindow) {
-            g_programmaticResize = true;
-            SetWindowPos(hwnd, nullptr,
-                         g_smoothZoom.TargetWindowRect.left, g_smoothZoom.TargetWindowRect.top,
-                         g_smoothZoom.TargetWindowRect.right - g_smoothZoom.TargetWindowRect.left,
-                         g_smoothZoom.TargetWindowRect.bottom - g_smoothZoom.TargetWindowRect.top,
-                         SWP_NOZORDER | SWP_NOACTIVATE);
-            GetClientRect(hwnd, &rc);
-            winW = (float)rc.right;
-            winH = (float)rc.bottom;
-        }
-
-        g_smoothZoom.CurrentZoom = g_smoothZoom.TargetZoom;
-        ResolveSmoothZoomPan(hwnd, g_smoothZoom.CurrentZoom, g_smoothZoom.CurrentPanX, g_smoothZoom.CurrentPanY);
-        g_smoothZoom.LastWinW = winW;
-        g_smoothZoom.LastWinH = winH;
-        GetPaneContext(PaneSlot::Primary).view.PanX = g_smoothZoom.CurrentPanX;
-        GetPaneContext(PaneSlot::Primary).view.PanY = g_smoothZoom.CurrentPanY;
-        g_programmaticResize = false;
-        g_smoothZoom.Active = false;
-    }
-
-    SyncDCompState(hwnd, winW, winH);
-    g_compEngine->Commit();
-    return g_smoothZoom.Active;
-}
 
 
 
 
-static void CycleCompareZoomForPane(CompareView& view, const ImageResource& res, const D2D1_RECT_F& viewport) {
-    D2D1_SIZE_F sz = GetOrientedSize(res, view.ExifOrientation);
-    float vpW = viewport.right - viewport.left;
-    float vpH = viewport.bottom - viewport.top;
-    if (sz.width <= 0 || sz.height <= 0 || vpW <= 0 || vpH <= 0) return;
-    float fit = std::min(vpW / sz.width, vpH / sz.height);
-    float fill = std::max(vpW / sz.width, vpH / sz.height);
-    float pixelScale = view.Zoom * fit;
-    if (fabsf(view.Zoom - 1.0f) < 0.05f) {
-        view.Zoom = 1.0f / fit;
-    } else if (fabsf(pixelScale - 1.0f) < 0.05f) {
-        view.Zoom = fill / fit;
-    } else {
-        view.Zoom = 1.0f;
-    }
-    view.PanX = 0.0f; view.PanY = 0.0f;
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 static void ToggleCompareHUD(HWND hwnd, int targetMode) {
     if (!g_runtime.ShowCompareInfo) {
@@ -4065,7 +3027,7 @@ static void PerformCompareZoom100(HWND hwnd) {
         if (p == ComparePane::Left) {
             if (!GetPaneContext(PaneSlot::Left).valid) return;
             D2D1_SIZE_F sz = GetOrientedSize(GetPaneContext(PaneSlot::Left).resource, GetPaneContext(PaneSlot::Left).view.ExifOrientation);
-            D2D1_RECT_F vp = GetCompareViewport(hwnd, ComparePane::Left);
+            D2D1_RECT_F vp = AppContext::GetInstance().CompareCtrl->GetViewport(hwnd, ComparePane::Left);
             float vpW = vp.right - vp.left;
             float vpH = vp.bottom - vp.top;
             if (sz.width > 0 && sz.height > 0 && vpW > 0 && vpH > 0) {
@@ -4077,7 +3039,7 @@ static void PerformCompareZoom100(HWND hwnd) {
             if (!GetPaneContext(PaneSlot::Primary).resource) return;
             CompareView right = GetRightCompareView();
             D2D1_SIZE_F sz = GetOrientedSize(GetPaneContext(PaneSlot::Primary).resource, right.ExifOrientation);
-            D2D1_RECT_F vp = GetCompareViewport(hwnd, ComparePane::Right);
+            D2D1_RECT_F vp = AppContext::GetInstance().CompareCtrl->GetViewport(hwnd, ComparePane::Right);
             float vpW = vp.right - vp.left;
             float vpH = vp.bottom - vp.top;
             if (sz.width > 0 && sz.height > 0 && vpW > 0 && vpH > 0) {
@@ -4089,11 +3051,11 @@ static void PerformCompareZoom100(HWND hwnd) {
         }
     };
 
-    if (g_compare.syncZoom) {
+    if (AppContext::GetInstance().Compare.syncZoom) {
         zoomPane(ComparePane::Left);
         zoomPane(ComparePane::Right);
     } else {
-        zoomPane(g_compare.selectedPane);
+        zoomPane(AppContext::GetInstance().Compare.selectedPane);
     }
     MarkCompareDirty();
     RequestRepaint(PaintLayer::Image | PaintLayer::Dynamic);
@@ -4106,13 +3068,13 @@ static void PerformCompareZoom100(HWND hwnd) {
 
 static void PerformCompareZoomFit(HWND hwnd) {
     if (!IsCompareModeActive()) return;
-    if (g_compare.syncZoom) {
+    if (AppContext::GetInstance().Compare.syncZoom) {
         GetPaneContext(PaneSlot::Left).view.Zoom = 1.0f;
         GetPaneContext(PaneSlot::Left).view.PanX = 0; GetPaneContext(PaneSlot::Left).view.PanY = 0;
         GetPaneContext(PaneSlot::Primary).view.Zoom = 1.0f;
         GetPaneContext(PaneSlot::Primary).view.PanX = 0; GetPaneContext(PaneSlot::Primary).view.PanY = 0;
     } else {
-        if (g_compare.selectedPane == ComparePane::Left) {
+        if (AppContext::GetInstance().Compare.selectedPane == ComparePane::Left) {
             GetPaneContext(PaneSlot::Left).view.Zoom = 1.0f;
             GetPaneContext(PaneSlot::Left).view.PanX = 0; GetPaneContext(PaneSlot::Left).view.PanY = 0;
         } else {
@@ -4130,7 +3092,7 @@ static void PerformCompareZoomFit(HWND hwnd) {
 }
 
 static void PerformZoom100(HWND hwnd, bool allowResizeWindow = true) {
-    ResetSmoothZoomState();
+    AppContext::GetInstance().ZoomAnimCtrl->Reset();
     if (GetPaneContext(PaneSlot::Primary).resource) {
         // [Fix] Use Robust Visual Size (This refers to current Surface Size, potentially downscaled)
         D2D1_SIZE_F effSize = GetVisualImageSize();
@@ -4229,7 +3191,7 @@ static float GetCurrentTotalScale(HWND hwnd) {
         }
     }
 
-    float sourceZoom = (g_smoothWindowZoom.active) ? g_smoothWindowZoom.targetZoom : GetPaneContext(PaneSlot::Primary).view.Zoom;
+    float sourceZoom = (AppContext::GetInstance().SmoothWindowZoom.active) ? AppContext::GetInstance().SmoothWindowZoom.targetZoom : GetPaneContext(PaneSlot::Primary).view.Zoom;
     return fitScale * sourceZoom;
 }
 
@@ -4360,7 +3322,7 @@ static void ShowZoomOsd(HWND hwnd, float newTotalScale) {
 }
 
 static void PerformZoomFit(HWND hwnd, float maxScreenPct = 1.0f, bool allowResizeWindow = true) {
-    ResetSmoothZoomState();
+    AppContext::GetInstance().ZoomAnimCtrl->Reset();
     if (GetPaneContext(PaneSlot::Primary).resource) {
         if (!allowResizeWindow) {
             GetPaneContext(PaneSlot::Primary).view.Zoom = 1.0f;
@@ -4435,336 +3397,14 @@ static void PerformZoomFit(HWND hwnd, float maxScreenPct = 1.0f, bool allowResiz
 }
 
 
-void DrawDialog(ID2D1DeviceContext* context, const RECT& clientRect) {
-    if (!g_dialog.IsVisible || !context) return;
-    
-    // Use clientRect instead of context->GetSize() to avoid Dirty Rect size issue
-    D2D1_SIZE_F size = D2D1::SizeF((float)(clientRect.right - clientRect.left), (float)(clientRect.bottom - clientRect.top));
-    DialogLayout layout = CalculateDialogLayout(size);
-    
-    // Overlay (background dimming)
-    ComPtr<ID2D1SolidColorBrush> pOverlayBrush;
-    bool isLight = IsLightThemeActive();
-    D2D1_COLOR_F dimmerClr = isLight ? D2D1::ColorF(0.95f, 0.95f, 0.97f, 0.4f) : D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.4f);
-    context->CreateSolidColorBrush(dimmerClr, &pOverlayBrush);
-    context->FillRectangle(D2D1::RectF(0, 0, size.width, size.height), pOverlayBrush.Get());
-    
-    // Box Background (Geek Glass or Fallback)
-    bool useGlass = g_uiRenderer && g_uiRenderer->GetBackgroundCommandList();
-    if (useGlass) {
-        auto& geekGlass = g_uiRenderer->GetGlassEngine("Dialog_Main");
-        geekGlass.InitializeResources(context);
-        QuickView::UI::GeekGlass::GeekGlassConfig config;
-        config.panelBounds = layout.Box;
-        config.cornerRadius = 10.0f * g_uiScale;
-        config.shadowOpacity = g_config.GlassShadowOpacity;
-        config.blurStandardDeviation = g_config.GlassBlurSigma * g_uiScale;
-        config.opacity = g_config.GlassModalsOpacity / 100.0f;
-        config.tintProfile = g_config.GlassTintProfile;
-        config.customTintColor = D2D1::ColorF(g_config.GlassCustomTintR, g_config.GlassCustomTintG, g_config.GlassCustomTintB, g_config.GlassTintAlpha);
-        config.tintAlpha = g_config.GlassTintAlpha;
-        config.specularOpacity = g_config.GlassSpecularOpacity;
-        config.pBackgroundCommandList = g_uiRenderer->GetBackgroundCommandList();
-        config.backgroundTransform = g_compEngine ? g_compEngine->GetScreenTransform() : D2D1::Matrix3x2F::Identity();
-        geekGlass.DrawGeekGlassPanel(context, config);
-
-        // [Material Boost] Consistency for Dialog Density
-        float masterOpacity = g_config.GlassModalsOpacity / 100.0f;
-        ComPtr<ID2D1SolidColorBrush> materialBrush;
-        D2D1_COLOR_F fillerColor = isLight ? D2D1::ColorF(0.95f, 0.95f, 0.97f, 1.0f) : D2D1::ColorF(0.08f, 0.08f, 0.10f, 1.0f);
-        context->CreateSolidColorBrush(fillerColor, &materialBrush);
-        if (materialBrush) {
-            materialBrush->SetOpacity(masterOpacity);
-            context->FillRoundedRectangle(D2D1::RoundedRect(layout.Box, 10.0f * g_uiScale, 10.0f * g_uiScale), materialBrush.Get());
-        }
-
-        geekGlass.DrawGeekGlassToppings(context, config);
-    } else {
-        ComPtr<ID2D1SolidColorBrush> pBgBrush;
-        bool isLight = IsLightThemeActive();
-        D2D1_COLOR_F bgClr = isLight ? D2D1::ColorF(0.95f, 0.95f, 0.97f, 1.0f) : D2D1::ColorF(0.18f, 0.18f, 0.18f, 1.0f);
-        context->CreateSolidColorBrush(D2D1::ColorF(bgClr.r, bgClr.g, bgClr.b, g_config.GlassModalsOpacity / 100.0f), &pBgBrush);
-        context->FillRoundedRectangle(D2D1::RoundedRect(layout.Box, 10.0f * g_uiScale, 10.0f * g_uiScale), pBgBrush.Get());
-    }
-    
-    // Border
-    ComPtr<ID2D1SolidColorBrush> pBorderBrush;
-    context->CreateSolidColorBrush(g_dialog.AccentColor, &pBorderBrush);
-    context->DrawRoundedRectangle(D2D1::RoundedRect(layout.Box, 10.0f * g_uiScale, 10.0f * g_uiScale), pBorderBrush.Get(), 2.0f * g_uiScale);
-    
-    // Fonts
-    static ComPtr<IDWriteFactory> pDW;
-    static ComPtr<IDWriteTextFormat> fmtTitle;
-    static ComPtr<IDWriteTextFormat> fmtBody;
-    static ComPtr<IDWriteTextFormat> fmtBtn;
-    static ComPtr<IDWriteTextFormat> fmtBtnCenter; // New centered format
-    static float s_lastUiScale = 0.0f;
-    if (s_lastUiScale != g_uiScale) {
-        s_lastUiScale = g_uiScale;
-        fmtTitle.Reset();
-        fmtBody.Reset();
-        fmtBtn.Reset();
-        fmtBtnCenter.Reset();
-    }
-    
-    if (!pDW) DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(pDW.GetAddressOf()));
-    if (pDW) {
-        if (!fmtTitle) {
-            pDW->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 17.0f * g_uiScale, L"en-us", &fmtTitle);
-            if (fmtTitle) fmtTitle->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
-        }
-        if (!fmtBody) pDW->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 12.0f * g_uiScale, L"en-us", &fmtBody);
-        if (!fmtBtn) pDW->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 13.0f * g_uiScale, L"en-us", &fmtBtn);
-        if (!fmtBtnCenter) {
-             pDW->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 13.0f * g_uiScale, L"en-us", &fmtBtnCenter);
-             if (fmtBtnCenter) fmtBtnCenter->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-             if (fmtBtnCenter) fmtBtnCenter->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-        }
-    }
-    
-    // Theme-aware Text Brushes
-    D2D1_COLOR_F txtClr = isLight ? D2D1::ColorF(0.12f, 0.12f, 0.15f, 1.0f) : D2D1::ColorF(1.0f, 1.0f, 1.0f, 1.0f);
-    D2D1_COLOR_F txtDimClr = isLight ? D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.15f) : D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.15f);
-
-    ComPtr<ID2D1SolidColorBrush> pTextBrush, pGrayTextBrush;
-    context->CreateSolidColorBrush(txtClr, &pTextBrush);
-    context->CreateSolidColorBrush(txtDimClr, &pGrayTextBrush);
-    
-    // Title (truncate to show end of filename with extension, single line)
-    // [Fix] Use robust visual truncation instead of hardcoded char limit
-    std::wstring displayTitle = g_dialog.Title;
-    if (g_uiRenderer && fmtTitle) {
-        float availableWidth = (layout.Box.right - layout.Box.left) - 50.0f; // Padding 25px each side
-        displayTitle = g_uiRenderer->MakeMiddleEllipsis(availableWidth, g_dialog.Title, fmtTitle.Get());
-    }
-
-    float titleTop = layout.Box.top + 18;
-    float titleBottom = layout.Box.top + 48;
-    context->DrawText(displayTitle.c_str(), (UINT32)displayTitle.length(), fmtTitle.Get(), 
-        D2D1::RectF(layout.Box.left + 25, titleTop, layout.Box.right - 25, titleBottom), pTextBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_NONE);
-        
-    // Message (below title with proper spacing)
-    float msgTop = titleBottom + 8;
-    // Message ends 25px above QualityText/Input
-    float msgBottom = layout.Checkbox.top - 55.0f;
-    if (g_dialog.HasInput) msgBottom = layout.Input.top - 10.0f;
-    
-    context->DrawText(g_dialog.Message.c_str(), (UINT32)g_dialog.Message.length(), fmtBody.Get(), 
-        D2D1::RectF(layout.Box.left + 25, msgTop, layout.Box.right - 25, msgBottom), pTextBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_NONE);
-    
-    // [Input Mode] Draw Input Field Background
-    if (g_dialog.HasInput) {
-        ComPtr<ID2D1SolidColorBrush> pInputBg;
-        D2D1_COLOR_F inputBgClr = isLight ? D2D1::ColorF(1.0f, 1.0f, 1.0f, 1.0f) : D2D1::ColorF(0.12f, 0.12f, 0.12f, 1.0f);
-        context->CreateSolidColorBrush(inputBgClr, &pInputBg);
-        context->FillRoundedRectangle(D2D1::RoundedRect(layout.Input, 6.0f, 6.0f), pInputBg.Get());
-        
-        // Border
-        ComPtr<ID2D1SolidColorBrush> pInputBorder;
-        D2D1_COLOR_F inputBordClr = isLight ? D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.2f) : D2D1::ColorF(0.35f, 0.35f, 0.35f, 1.0f);
-        context->CreateSolidColorBrush(inputBordClr, &pInputBorder);
-        D2D1_RECT_F borderRect = layout.Input;
-        context->DrawRoundedRectangle(D2D1::RoundedRect(borderRect, 6.0f, 6.0f), pInputBorder.Get(), 1.0f);
-        
-        // Focus Highlight (Accent Color)
-        if (g_dialog.hEdit && GetFocus() == g_dialog.hEdit) {
-             context->DrawRoundedRectangle(D2D1::RoundedRect(borderRect, 6.0f, 6.0f), pBorderBrush.Get(), 2.0f);
-        }
-    }
-
-    // Quality Info (Colored) - positioned with more space above checkbox
-    if (!g_dialog.QualityText.empty()) {
-        float qualityY = layout.Checkbox.top - 45.0f; // 45px above checkbox
-        context->DrawText(g_dialog.QualityText.c_str(), (UINT32)g_dialog.QualityText.length(), fmtBody.Get(), 
-            D2D1::RectF(layout.Box.left + 30, qualityY, layout.Box.right - 30, qualityY + 25), pBorderBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_NONE);
-    }
-        
-    // Checkbox
-    if (g_dialog.HasCheckbox) {
-        context->DrawRectangle(layout.Checkbox, pTextBrush.Get(), 1.0f);
-        if (g_dialog.IsChecked) {
-             context->FillRectangle(D2D1::RectF(layout.Checkbox.left+4, layout.Checkbox.top+4, layout.Checkbox.right-4, layout.Checkbox.bottom-4), pBorderBrush.Get());
-        }
-        context->DrawText(g_dialog.CheckboxText.c_str(), (UINT32)g_dialog.CheckboxText.length(), fmtBtn.Get(), 
-            D2D1::RectF(layout.Checkbox.right + 10, layout.Checkbox.top, layout.Box.right - 30, layout.Checkbox.bottom + 5), pTextBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_NONE);
-    }
-    
-    // Buttons
-    for (size_t i = 0; i < g_dialog.Buttons.size(); ++i) {
-        if (i >= layout.Buttons.size()) break;
-        D2D1_RECT_F btnRect = layout.Buttons[i];
-        
-        bool isSelected = (static_cast<int>(i) == g_dialog.SelectedButtonIndex);
-        if (isSelected) {
-            context->FillRoundedRectangle(D2D1::RoundedRect(btnRect, 4.0f, 4.0f), pBorderBrush.Get());
-        } else {
-             ComPtr<ID2D1SolidColorBrush> pBtnBgBrush;
-             D2D1_COLOR_F btnBgClr = isLight ? D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.1f) : D2D1::ColorF(0.3f, 0.3f, 0.3f, 1.0f);
-             context->CreateSolidColorBrush(btnBgClr, &pBtnBgBrush);
-             context->FillRoundedRectangle(D2D1::RoundedRect(btnRect, 4.0f, 4.0f), pBtnBgBrush.Get());
-             
-             // Subtle border for better visibility
-             ComPtr<ID2D1SolidColorBrush> pBtnBorderBrush;
-             D2D1_COLOR_F btnBordClr = isLight ? D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.25f) : D2D1::ColorF(0.45f, 0.45f, 0.45f, 1.0f);
-             context->CreateSolidColorBrush(btnBordClr, &pBtnBorderBrush);
-             context->DrawRoundedRectangle(D2D1::RoundedRect(btnRect, 4.0f, 4.0f), pBtnBorderBrush.Get(), 1.0f);
-        }
-        
-        std::wstring& text = g_dialog.Buttons[i].Text;
-        D2D1_RECT_F textRect = D2D1::RectF(btnRect.left, btnRect.top - 2, btnRect.right, btnRect.bottom - 2);
-        
-        // Button text is ALWAYS white if selected (on Blue), or theme-aware if not
-        [[maybe_unused]] ID2D1SolidColorBrush* finalBtnTextBrush = isSelected ? pGrayTextBrush.Get() : pTextBrush.Get(); // Wait, selected bg is pBorderBrush (Accent)
-        // If selected, use White text for better contrast on Accent Blue.
-        ComPtr<ID2D1SolidColorBrush> whiteBrush;
-        context->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White), &whiteBrush);
-        
-        context->DrawText(text.c_str(), (UINT32)text.length(), fmtBtnCenter.Get(), textRect, isSelected ? whiteBrush.Get() : pTextBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_NONE, DWRITE_MEASURING_MODE_NATURAL);
-    }
-}
-
-// --- Modal Dialog Loop ---
-
-// [Input Mode] Logic Helpers
-
-// Host Window Procedure (Container for Edit to ensure visibility over DComp and styling)
-LRESULT CALLBACK InputHostWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    if (msg == WM_CTLCOLOREDIT) {
-        HDC hdc = (HDC)wParam;
-        bool isLight = IsLightThemeActive();
-        if (isLight) {
-            SetTextColor(hdc, RGB(30, 30, 30));
-            SetBkColor(hdc, RGB(255, 255, 255));
-            static HBRUSH hBrushLight = CreateSolidBrush(RGB(255, 255, 255));
-            return (LRESULT)hBrushLight;
-        } else {
-            SetTextColor(hdc, RGB(255, 255, 255));
-            SetBkColor(hdc, RGB(30, 30, 30)); // Match D2D Dialog BG
-            static HBRUSH hBrushDark = CreateSolidBrush(RGB(30, 30, 30));
-            return (LRESULT)hBrushDark;
-        }
-    }
-    return DefWindowProc(hwnd, msg, wParam, lParam);
-}
-
-// Subclass Procedure for Edit Control to handle Enter/Esc
-LRESULT CALLBACK EditSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-    if (uMsg == WM_KEYDOWN) {
-        if (wParam == VK_RETURN) {
-            // Commit
-            int len = GetWindowTextLengthW(hWnd);
-            if (len > 0) {
-                std::vector<wchar_t> buf(len + 1);
-                GetWindowTextW(hWnd, buf.data(), len + 1);
-                g_dialog.InputText = buf.data();
-                
-                // Select Rename button
-                g_dialog.SelectedButtonIndex = 0;
-                if (!g_dialog.Buttons.empty()) {
-                     g_dialog.FinalResult = g_dialog.Buttons[0].Result;
-                } else {
-                     g_dialog.FinalResult = DialogResult::Yes;
-                }
-                g_dialog.IsVisible = false;
-            }
-            return 0;
-        } 
-        else if (wParam == VK_ESCAPE) {
-            // Cancel
-            g_dialog.FinalResult = DialogResult::None; 
-            g_dialog.IsVisible = false;
-            return 0;
-        }
-    }
-    else if (uMsg == WM_CHAR) {
-        if (wParam == VK_RETURN || wParam == VK_ESCAPE) return 0;
-    }
-    
-    return CallWindowProc(g_dialog.oldEditProc, hWnd, uMsg, wParam, lParam);
-}
-
-void CreateDialogInput(HWND parent) {
-    if (g_dialog.hInputHost) return; 
-    
-    // Register Host Class (Once)
-    static bool registered = false;
-    if (!registered) {
-        WNDCLASSEXW wc{};
-        wc.cbSize = sizeof(wc);
-        wc.lpfnWndProc = InputHostWndProc;
-        wc.hInstance = GetModuleHandle(nullptr);
-        wc.lpszClassName = L"QuickViewInputHost";
-        wc.hbrBackground = CreateSolidBrush(RGB(30, 30, 30));
-        wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-        RegisterClassExW(&wc);
-        registered = true;
-    }
-
-    // Calculate Screen Rect
-    RECT rcClient; GetClientRect(parent, &rcClient);
-    D2D1_SIZE_F size = D2D1::SizeF((float)(rcClient.right - rcClient.left), (float)(rcClient.bottom - rcClient.top));
-    DialogLayout layout = CalculateDialogLayout(size);
-    D2D1_RECT_F r = layout.Input; // Relative to Client
-    
-    // Map to Screen Coords for Popup
-    POINT ptTL = { (LONG)r.left, (LONG)r.top };
-    POINT ptBR = { (LONG)r.right, (LONG)r.bottom };
-    ClientToScreen(parent, &ptTL);
-    ClientToScreen(parent, &ptBR);
-    
-    // Adjust logic to match D2D padding (Left +8, Top +2 from box edge)
-    int x = ptTL.x + (int)(8 * g_uiScale);
-    int y = ptTL.y + (int)(2 * g_uiScale);
-    int w = (ptBR.x - ptTL.x) - (int)(16 * g_uiScale);
-    int h = (ptBR.y - ptTL.y) - (int)(4 * g_uiScale);
-
-    // Create Host Popup (TopMost to ensure it floats over DComp)
-    g_dialog.hInputHost = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, L"QuickViewInputHost", L"", 
-        WS_POPUP | WS_VISIBLE, x, y, w, h, parent, nullptr, GetModuleHandle(nullptr), nullptr);
-        
-    if (g_dialog.hInputHost) {
-        // Create Edit Child (Fill Host)
-        RECT rcHost; GetClientRect(g_dialog.hInputHost, &rcHost);
-        g_dialog.hEdit = CreateWindowExW(0, L"EDIT", g_dialog.InputText.c_str(),
-            WS_CHILD | WS_VISIBLE | ES_LEFT | ES_AUTOHSCROLL,
-            0, 0, rcHost.right, rcHost.bottom,
-            g_dialog.hInputHost, nullptr, GetModuleHandle(nullptr), nullptr);
-            
-        if (g_dialog.hEdit) {
-          int fontHeight = (int)(22 * g_uiScale);
-          HFONT hFont = CreateFontW(
-              fontHeight, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-              DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-              DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
-          SendMessage(g_dialog.hEdit, WM_SETFONT, (WPARAM)hFont, TRUE);
-          g_dialog.oldEditProc = (WNDPROC)SetWindowLongPtr(
-              g_dialog.hEdit, GWLP_WNDPROC, (LONG_PTR)EditSubclassProc);
-          SetFocus(g_dialog.hEdit);
-          SendMessage(g_dialog.hEdit, EM_SETSEL, 0, -1);
-        }
-    }
-}
-
-void DestroyDialogInput() {
-    if (g_dialog.hEdit) {
-        if (g_dialog.oldEditProc) {
-            SetWindowLongPtr(g_dialog.hEdit, GWLP_WNDPROC, (LONG_PTR)g_dialog.oldEditProc);
-        }
-        g_dialog.hEdit = nullptr;
-    }
-    if (g_dialog.hInputHost) {
-        DestroyWindow(g_dialog.hInputHost);
-        g_dialog.hInputHost = nullptr;
-    }
-}
 
 static void SetDialogCenter(float x, float y) {
-    g_dialog.UseCustomCenter = true;
-    g_dialog.CustomCenter = D2D1::Point2F(x, y);
+    AppContext::GetInstance().Dialog.UseCustomCenter = true;
+    AppContext::GetInstance().Dialog.CustomCenter = D2D1::Point2F(x, y);
 }
 
 static void ClearDialogCenter() {
-    g_dialog.UseCustomCenter = false;
+    AppContext::GetInstance().Dialog.UseCustomCenter = false;
 }
 
 static void EnsureWindowSizeForDialog(HWND hwnd) {
@@ -4773,207 +3413,10 @@ static void EnsureWindowSizeForDialog(HWND hwnd) {
     }
 }
 
-DialogResult ShowQuickViewDialog(HWND hwnd, const std::wstring& title, const std::wstring& messageContent, 
-                             D2D1_COLOR_F accentColor, const std::vector<DialogButton>& buttons,
-                             bool hasChecbox, const std::wstring& checkboxText, const std::wstring& qualityText)
-                             {
-                             g_dialog.IsVisible = true;    g_dialog.Title = title;
-    g_dialog.Message = messageContent;
-    g_dialog.QualityText = qualityText;
-    g_dialog.AccentColor = accentColor;
-    g_dialog.Buttons = buttons;
-    g_dialog.SelectedButtonIndex = 0;
-    g_dialog.HasCheckbox = hasChecbox;
-    g_dialog.CheckboxText = checkboxText;
-    g_dialog.IsChecked = false;
-    
-    // Reset Input Mode
-    g_dialog.HasInput = false;
-    g_dialog.hEdit = nullptr;
-    
-    g_dialog.FinalResult = DialogResult::None;
-    
-    EnsureWindowSizeForDialog(hwnd);
-    
-    RequestRepaint(PaintLayer::Dynamic);
-    UpdateWindow(hwnd); 
-    
-    MSG msgStruct;
-    while (g_dialog.IsVisible && GetMessage(&msgStruct, NULL, 0, 0)) {
-        if (msgStruct.message == WM_KEYDOWN) {
-            if (msgStruct.wParam == VK_LEFT) {
-                if (g_dialog.SelectedButtonIndex > 0) g_dialog.SelectedButtonIndex--;
-                RequestRepaint(PaintLayer::Dynamic);
-            } else if (msgStruct.wParam == VK_RIGHT) {
-                if (g_dialog.SelectedButtonIndex < static_cast<int>(g_dialog.Buttons.size()) - 1) g_dialog.SelectedButtonIndex++;
-                RequestRepaint(PaintLayer::Dynamic);
-            } else if (msgStruct.wParam == VK_TAB || msgStruct.wParam == VK_SPACE) { 
-                 if (g_dialog.HasCheckbox) {
-                     g_dialog.IsChecked = !g_dialog.IsChecked;
-                     RequestRepaint(PaintLayer::Dynamic);
-                 }
-            } else if (msgStruct.wParam == VK_RETURN) {
-                g_dialog.FinalResult = g_dialog.Buttons[g_dialog.SelectedButtonIndex].Result;
-                g_dialog.IsVisible = false;
-            } else if (msgStruct.wParam == VK_ESCAPE) {
-                g_dialog.FinalResult = DialogResult::None; 
-                g_dialog.IsVisible = false;
-            }
-        } else if (msgStruct.message == WM_LBUTTONDOWN) {
-            RECT clientRect; GetClientRect(hwnd, &clientRect);
-            D2D1_SIZE_F size = D2D1::SizeF((float)(clientRect.right - clientRect.left), (float)(clientRect.bottom - clientRect.top));
-            DialogLayout layout = CalculateDialogLayout(size);
-            
-            float mouseX = (float)((short)LOWORD(msgStruct.lParam));
-            float mouseY = (float)((short)HIWORD(msgStruct.lParam));
-            
-            bool handled = false;
-            // Check checkbox
-            if (g_dialog.HasCheckbox) {
-                // Expand hit area slightly
-                D2D1_RECT_F checkHit = D2D1::RectF(layout.Checkbox.left - 5, layout.Checkbox.top - 5, layout.Box.right - 20, layout.Checkbox.bottom + 5); 
-                if (mouseX >= checkHit.left && mouseX <= checkHit.right && mouseY >= checkHit.top && mouseY <= checkHit.bottom) {
-                    g_dialog.IsChecked = !g_dialog.IsChecked;
-                    RequestRepaint(PaintLayer::Dynamic);
-                    handled = true;
-                }
-            }
-            if (!handled) {
-                for (size_t i = 0; i < layout.Buttons.size(); ++i) {
-                    if (mouseX >= layout.Buttons[i].left && mouseX <= layout.Buttons[i].right &&
-                        mouseY >= layout.Buttons[i].top && mouseY <= layout.Buttons[i].bottom) {
-                        g_dialog.SelectedButtonIndex = (int)i;
-                        g_dialog.FinalResult = g_dialog.Buttons[i].Result;
-                        g_dialog.IsVisible = false;
-                        break;
-                    }
-                }
-            }
-        } else if (msgStruct.message == WM_MOUSEMOVE) {
-             // Optional: hover effect (update SelectedButtonIndex based on mouse pos)
-             // For now, let's keep it simple.
-        }
-        
-        TranslateMessage(&msgStruct); DispatchMessage(&msgStruct);
-    }
-    
-    RequestRepaint(PaintLayer::Dynamic);
-    if (!IsCompareModeActive()) {
-        AdjustWindowForOverlay(hwnd, true);
-    }
-    return g_dialog.FinalResult;
-}
+
 
 // [Rename Dialog]
-std::wstring ShowQuickViewInputDialog(HWND hwnd, const std::wstring& title, const std::wstring& message, const std::wstring& initialText) 
-{
-    g_dialog.IsVisible = true;
-    g_dialog.Title = title;
-    g_dialog.Message = message;
-    g_dialog.QualityText.clear();
-    g_dialog.AccentColor = D2D1::ColorF(D2D1::ColorF::Orange); 
-    g_dialog.Buttons = { { DialogResult::Yes, L"Rename", true }, { DialogResult::None, L"Cancel" } };
-    g_dialog.SelectedButtonIndex = 0;
-    g_dialog.HasCheckbox = false;
-    g_dialog.HasInput = true;
-    g_dialog.InputText = initialText;
-    g_dialog.FinalResult = DialogResult::None;
-    
-    EnsureWindowSizeForDialog(hwnd);
-    
-    CreateDialogInput(hwnd);
-    RequestRepaint(PaintLayer::Dynamic);
-    UpdateWindow(hwnd); 
-    
-    MSG msgStruct;
-    // Force Arrow Cursor initially for the modal
-    SetCursor(LoadCursor(nullptr, IDC_ARROW));
 
-    while (g_dialog.IsVisible && GetMessage(&msgStruct, NULL, 0, 0)) {
-        bool handled = false;
-
-        // Modal Logic: Trap inputs for Main Window to prevent background interaction
-        if (msgStruct.hwnd == hwnd) {
-            switch (msgStruct.message) {
-                case WM_KEYDOWN:
-                    if (msgStruct.wParam == VK_ESCAPE) {
-                         g_dialog.IsVisible = false;
-                         g_dialog.FinalResult = DialogResult::None;
-                         handled = true;
-                    }
-                    else if (msgStruct.wParam == VK_TAB) {
-                        handled = true; // Swallow TAB on main window
-                    }
-                    break;
-
-                case WM_LBUTTONDOWN: {
-                     // Handle clicks on Dialog Buttons
-                     RECT clientRect; GetClientRect(hwnd, &clientRect);
-                     D2D1_SIZE_F size = D2D1::SizeF((float)(clientRect.right - clientRect.left), (float)(clientRect.bottom - clientRect.top));
-                     DialogLayout layout = CalculateDialogLayout(size);
-                     float mouseX = (float)((short)LOWORD(msgStruct.lParam));
-                     float mouseY = (float)((short)HIWORD(msgStruct.lParam));
-                     
-                     // Check Buttons
-                     for (size_t i = 0; i < layout.Buttons.size(); ++i) {
-                        if (mouseX >= layout.Buttons[i].left && mouseX <= layout.Buttons[i].right &&
-                            mouseY >= layout.Buttons[i].top && mouseY <= layout.Buttons[i].bottom) {
-                            
-                            if (i == 0) { // Rename (Commit)
-                                 int len = GetWindowTextLengthW(g_dialog.hEdit);
-                                 if (len > 0) {
-                                    std::vector<wchar_t> buf(len + 1);
-                                    GetWindowTextW(g_dialog.hEdit, buf.data(), len + 1);
-                                    g_dialog.InputText = buf.data();
-                                    g_dialog.FinalResult = DialogResult::Yes;
-                                 } else {
-                                    g_dialog.FinalResult = DialogResult::None;
-                                 }
-                            } else { // Cancel
-                                 g_dialog.FinalResult = DialogResult::None;
-                            }
-                            g_dialog.IsVisible = false;
-                            break;
-                        }
-                     }
-                     
-                     // Always consume click (prevent panning background)
-                     handled = true;
-                     break;
-                }
-                
-                case WM_RBUTTONDOWN:
-                case WM_MBUTTONDOWN:
-                case WM_MOUSEWHEEL:
-                case WM_LBUTTONDBLCLK:
-                    // Swallow background interactions
-                    handled = true;
-                    break;
-                    
-                case WM_MOUSEMOVE:
-                    // Force Arrow Cursor and swallow to prevent toolbar/edge-nav activation
-                    SetCursor(LoadCursor(nullptr, IDC_ARROW));
-                    handled = true;
-                    break;
-            }
-        }
-        
-        if (!handled) {
-            TranslateMessage(&msgStruct); DispatchMessage(&msgStruct);
-        }
-    }
-    
-    DestroyDialogInput();
-    RequestRepaint(PaintLayer::Dynamic);
-    if (!IsCompareModeActive()) {
-        AdjustWindowForOverlay(hwnd, true);
-    }
-    
-    if (g_dialog.FinalResult == DialogResult::Yes) {
-        return g_dialog.InputText;
-    }
-    return L"";
-}
 
 // --- Logic Functions ---
 
@@ -5716,12 +4159,12 @@ bool CheckUnsavedChanges(HWND hwnd) {
         qualityMsg = L"Quality: Lossy Re-encoded";
     }
     
-    DialogResult result = ShowQuickViewDialog(hwnd, AppStrings::Dialog_SaveTitle, AppStrings::Dialog_SaveContent, 
+    DialogResult result = AppContext::GetInstance().DialogCtrl->ShowDialog(hwnd, AppStrings::Dialog_SaveTitle, AppStrings::Dialog_SaveContent, 
                                           GetPaneContext(PaneSlot::Primary).editState.GetQualityColor(), buttons, true, checkboxLabel, qualityMsg);
     
     if (result == DialogResult::None) return false;
     
-    if (g_dialog.IsChecked) {
+    if (AppContext::GetInstance().Dialog.IsChecked) {
         if (GetPaneContext(PaneSlot::Primary).editState.Quality == EditQuality::EdgeAdapted) g_config.AlwaysSaveEdgeAdapted = true;
         else if (GetPaneContext(PaneSlot::Primary).editState.Quality == EditQuality::Lossy) g_config.AlwaysSaveLossy = true;
         else g_config.AlwaysSaveLossless = true;
@@ -6215,8 +4658,8 @@ void RefreshImageDisplay(HWND hwnd) {
             extern bool RenderImageToDComp(HWND hwnd, ImageResource & res, bool isFastUpgrade);
             RenderImageToDComp(hwnd, GetPaneContext(PaneSlot::Primary).resource, true);
         } else {
-            extern bool RenderCompareComposite(HWND hwnd);
-            RenderCompareComposite(hwnd);
+
+            AppContext::GetInstance().CompareCtrl->RenderComposite(hwnd);
         }
         RequestRepaint(PaintLayer::Image | PaintLayer::Static);
     } else {
@@ -6426,7 +4869,7 @@ static D2D1_COLOR_F ResolveCanvasColor() {
 // [Visual Rotation] Helper to calculate accumulated matrix
 // [Fix] Centralized DComp Synchronization Logic
 // Calculates correct Zoom/Pan/Centering based on Visual Dimensions (Rotated)
-static void SyncDCompState([[maybe_unused]] HWND hwnd, float winW, float winH, bool animate) {
+void SyncDCompState([[maybe_unused]] HWND hwnd, float winW, float winH, bool animate) {
     if (!g_compEngine || !g_compEngine->IsInitialized()) return;
     if (winW <= 0 || winH <= 0) return;
 
@@ -6439,7 +4882,7 @@ static void SyncDCompState([[maybe_unused]] HWND hwnd, float winW, float winH, b
     g_compEngine->UpdateBackground(winW, winH, bgColor, IsOverlayModeActive() ? false : (g_config.CanvasColor == 2 || g_config.CanvasShowGrid));
 
     if (IsCompareModeActive()) {
-        ResetSmoothZoomState();
+        AppContext::GetInstance().ZoomAnimCtrl->Reset();
         VisualState vs{};
         vs.PhysicalSize = D2D1::SizeF(winW, winH);
         vs.VisualSize = vs.PhysicalSize;
@@ -6483,25 +4926,25 @@ static void SyncDCompState([[maybe_unused]] HWND hwnd, float winW, float winH, b
             float displayPanY = GetPaneContext(PaneSlot::Primary).view.PanY;
 
             const ImageID currentImageId = g_currentImageId.load(std::memory_order_acquire);
-            if (g_smoothZoom.Active) {
+            if (AppContext::GetInstance().SmoothZoom.Active) {
                 const bool smoothInvalid =
-                    g_smoothZoom.ImageId != currentImageId ||
-                    (!g_smoothZoom.AnimateWindow &&
-                     (fabsf(g_smoothZoom.LastWinW - winW) > 0.5f ||
-                      fabsf(g_smoothZoom.LastWinH - winH) > 0.5f)) ||
+                    AppContext::GetInstance().SmoothZoom.ImageId != currentImageId ||
+                    (!AppContext::GetInstance().SmoothZoom.AnimateWindow &&
+                     (fabsf(AppContext::GetInstance().SmoothZoom.LastWinW - winW) > 0.5f ||
+                      fabsf(AppContext::GetInstance().SmoothZoom.LastWinH - winH) > 0.5f)) ||
                     GetPaneContext(PaneSlot::Primary).view.IsDragging ||
                     g_isInSizeMove;
                 if (smoothInvalid) {
-                    SyncSmoothZoomToLogical(winW, winH, false);
+                    AppContext::GetInstance().ZoomAnimCtrl->SyncToLogical(winW, winH, false);
                 }
             }
 
-            if (g_smoothZoom.Active) {
-                displayZoom = g_smoothZoom.CurrentZoom;
-                displayPanX = g_smoothZoom.CurrentPanX;
-                displayPanY = g_smoothZoom.CurrentPanY;
+            if (AppContext::GetInstance().SmoothZoom.Active) {
+                displayZoom = AppContext::GetInstance().SmoothZoom.CurrentZoom;
+                displayPanX = AppContext::GetInstance().SmoothZoom.CurrentPanX;
+                displayPanY = AppContext::GetInstance().SmoothZoom.CurrentPanY;
             } else {
-                SyncSmoothZoomToLogical(winW, winH, false);
+                AppContext::GetInstance().ZoomAnimCtrl->SyncToLogical(winW, winH, false);
             }
 
 
@@ -6534,7 +4977,7 @@ static void SyncDCompState([[maybe_unused]] HWND hwnd, float winW, float winH, b
             }
         }
     } else {
-        ResetSmoothZoomState();
+        AppContext::GetInstance().ZoomAnimCtrl->Reset();
     }
 }
 
@@ -6545,7 +4988,7 @@ static float EaseOutCubic01(float t) {
 }
 
 static void CancelSmoothWindowZoom(HWND hwnd) {
-    g_smoothWindowZoom.active = false;
+    AppContext::GetInstance().SmoothWindowZoom.active = false;
     KillTimer(hwnd, IDT_SMOOTH_WINDOW_ZOOM);
     g_deferProgrammaticZoomResizeSync = false;
     g_programmaticResize = false;
@@ -6560,17 +5003,17 @@ static void StartSmoothWindowZoom(HWND hwnd,
                                   float startPanY,
                                   float targetPanX,
                                   float targetPanY) {
-    g_smoothWindowZoom.active = true;
-    g_smoothWindowZoom.startTime = std::chrono::steady_clock::now();
-    g_smoothWindowZoom.durationMs = 50.0f;
-    g_smoothWindowZoom.startRect = startRect;
-    g_smoothWindowZoom.targetRect = targetRect;
-    g_smoothWindowZoom.startZoom = startZoom;
-    g_smoothWindowZoom.targetZoom = targetZoom;
-    g_smoothWindowZoom.startPanX = startPanX;
-    g_smoothWindowZoom.startPanY = startPanY;
-    g_smoothWindowZoom.targetPanX = targetPanX;
-    g_smoothWindowZoom.targetPanY = targetPanY;
+    AppContext::GetInstance().SmoothWindowZoom.active = true;
+    AppContext::GetInstance().SmoothWindowZoom.startTime = std::chrono::steady_clock::now();
+    AppContext::GetInstance().SmoothWindowZoom.durationMs = 50.0f;
+    AppContext::GetInstance().SmoothWindowZoom.startRect = startRect;
+    AppContext::GetInstance().SmoothWindowZoom.targetRect = targetRect;
+    AppContext::GetInstance().SmoothWindowZoom.startZoom = startZoom;
+    AppContext::GetInstance().SmoothWindowZoom.targetZoom = targetZoom;
+    AppContext::GetInstance().SmoothWindowZoom.startPanX = startPanX;
+    AppContext::GetInstance().SmoothWindowZoom.startPanY = startPanY;
+    AppContext::GetInstance().SmoothWindowZoom.targetPanX = targetPanX;
+    AppContext::GetInstance().SmoothWindowZoom.targetPanY = targetPanY;
     g_programmaticResize = true;
     g_deferProgrammaticZoomResizeSync = true;
     SetTimer(hwnd, IDT_SMOOTH_WINDOW_ZOOM, 8, nullptr);
@@ -6578,12 +5021,12 @@ static void StartSmoothWindowZoom(HWND hwnd,
 }
 
 static void TickSmoothWindowZoom(HWND hwnd) {
-    if (!g_smoothWindowZoom.active) return;
+    if (!AppContext::GetInstance().SmoothWindowZoom.active) return;
 
     auto now = std::chrono::steady_clock::now();
-    float elapsedMs = std::chrono::duration<float, std::milli>(now - g_smoothWindowZoom.startTime).count();
-    float t = (g_smoothWindowZoom.durationMs > 0)
-        ? std::clamp(elapsedMs / g_smoothWindowZoom.durationMs, 0.0f, 1.0f)
+    float elapsedMs = std::chrono::duration<float, std::milli>(now - AppContext::GetInstance().SmoothWindowZoom.startTime).count();
+    float t = (AppContext::GetInstance().SmoothWindowZoom.durationMs > 0)
+        ? std::clamp(elapsedMs / AppContext::GetInstance().SmoothWindowZoom.durationMs, 0.0f, 1.0f)
         : 1.0f;
     float eased = EaseOutCubic01(t);
 
@@ -6595,15 +5038,15 @@ static void TickSmoothWindowZoom(HWND hwnd) {
     };
 
     RECT stepRect{
-        lerpLong(g_smoothWindowZoom.startRect.left, g_smoothWindowZoom.targetRect.left),
-        lerpLong(g_smoothWindowZoom.startRect.top, g_smoothWindowZoom.targetRect.top),
-        lerpLong(g_smoothWindowZoom.startRect.right, g_smoothWindowZoom.targetRect.right),
-        lerpLong(g_smoothWindowZoom.startRect.bottom, g_smoothWindowZoom.targetRect.bottom)
+        lerpLong(AppContext::GetInstance().SmoothWindowZoom.startRect.left, AppContext::GetInstance().SmoothWindowZoom.targetRect.left),
+        lerpLong(AppContext::GetInstance().SmoothWindowZoom.startRect.top, AppContext::GetInstance().SmoothWindowZoom.targetRect.top),
+        lerpLong(AppContext::GetInstance().SmoothWindowZoom.startRect.right, AppContext::GetInstance().SmoothWindowZoom.targetRect.right),
+        lerpLong(AppContext::GetInstance().SmoothWindowZoom.startRect.bottom, AppContext::GetInstance().SmoothWindowZoom.targetRect.bottom)
     };
 
-    GetPaneContext(PaneSlot::Primary).view.Zoom = lerpFloat(g_smoothWindowZoom.startZoom, g_smoothWindowZoom.targetZoom);
-    GetPaneContext(PaneSlot::Primary).view.PanX = lerpFloat(g_smoothWindowZoom.startPanX, g_smoothWindowZoom.targetPanX);
-    GetPaneContext(PaneSlot::Primary).view.PanY = lerpFloat(g_smoothWindowZoom.startPanY, g_smoothWindowZoom.targetPanY);
+    GetPaneContext(PaneSlot::Primary).view.Zoom = lerpFloat(AppContext::GetInstance().SmoothWindowZoom.startZoom, AppContext::GetInstance().SmoothWindowZoom.targetZoom);
+    GetPaneContext(PaneSlot::Primary).view.PanX = lerpFloat(AppContext::GetInstance().SmoothWindowZoom.startPanX, AppContext::GetInstance().SmoothWindowZoom.targetPanX);
+    GetPaneContext(PaneSlot::Primary).view.PanY = lerpFloat(AppContext::GetInstance().SmoothWindowZoom.startPanY, AppContext::GetInstance().SmoothWindowZoom.targetPanY);
 
     g_programmaticResize = true;
     g_deferProgrammaticZoomResizeSync = true;
@@ -6627,9 +5070,9 @@ static void TickSmoothWindowZoom(HWND hwnd) {
     RequestRepaint(PaintLayer::Dynamic);
 
     if (t >= 1.0f) {
-        GetPaneContext(PaneSlot::Primary).view.Zoom = g_smoothWindowZoom.targetZoom;
-        GetPaneContext(PaneSlot::Primary).view.PanX = g_smoothWindowZoom.targetPanX;
-        GetPaneContext(PaneSlot::Primary).view.PanY = g_smoothWindowZoom.targetPanY;
+        GetPaneContext(PaneSlot::Primary).view.Zoom = AppContext::GetInstance().SmoothWindowZoom.targetZoom;
+        GetPaneContext(PaneSlot::Primary).view.PanX = AppContext::GetInstance().SmoothWindowZoom.targetPanX;
+        GetPaneContext(PaneSlot::Primary).view.PanY = AppContext::GetInstance().SmoothWindowZoom.targetPanY;
         CancelSmoothWindowZoom(hwnd);
     }
 }
@@ -6637,7 +5080,7 @@ static void TickSmoothWindowZoom(HWND hwnd) {
 // [Fix] Draw Internal Background (Grid/Color) explicitly.
 
 void PerformTransform(HWND hwnd, TransformType type) {
-    bool isLeft = IsCompareModeActive() && (g_compare.selectedPane == ComparePane::Left);
+    bool isLeft = IsCompareModeActive() && (AppContext::GetInstance().Compare.selectedPane == ComparePane::Left);
     EditState& state = isLeft ? GetPaneContext(PaneSlot::Left).editState : GetPaneContext(PaneSlot::Primary).editState;
     std::wstring& path = isLeft ? GetPaneContext(PaneSlot::Left).path : GetPaneContext(PaneSlot::Primary).path;
 
@@ -7339,6 +5782,20 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, [[maybe_unused]] LPWSTR lpCm
 }
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
+    if (AppContext::GetInstance().DialogCtrl && AppContext::GetInstance().DialogCtrl->IsActive()) {
+        auto result = AppContext::GetInstance().DialogCtrl->HandleMessage(hwnd, message, wParam, lParam);
+        if (result.has_value()) {
+            return result.value();
+        }
+    }
+
+    if (AppContext::GetInstance().CompareCtrl && AppContext::GetInstance().CompareCtrl->IsActive()) {
+        auto result = AppContext::GetInstance().CompareCtrl->HandleMessage(hwnd, message, wParam, lParam);
+        if (result.has_value()) {
+            return result.value();
+        }
+    }
+
     if (message == WM_SETCURSOR) {
         // Don't show Wait cursor when gallery is visible
         if (g_isLoading && !g_gallery.IsVisible()) {
@@ -7357,7 +5814,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
     case WM_CTLCOLOREDIT: {
         HDC hdc = (HDC)wParam;
         HWND hEdit = (HWND)lParam;
-        if (g_dialog.IsVisible && hEdit == g_dialog.hEdit) {
+        if (AppContext::GetInstance().Dialog.IsVisible && hEdit == AppContext::GetInstance().Dialog.hEdit) {
             const bool useLightTheme = IsLightThemeActive();
             const COLORREF bg = useLightTheme ? RGB(246, 248, 251) : RGB(30, 30, 30);
             const COLORREF fg = useLightTheme ? RGB(20, 24, 28) : RGB(255, 255, 255);
@@ -7476,7 +5933,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
             { DialogResult::Custom2, L"OEM Version (Device)", false },
             { DialogResult::Cancel,  L"Cancel" }
         };
-        DialogResult dlgResult = ShowQuickViewDialog(hwnd,
+        DialogResult dlgResult = AppContext::GetInstance().DialogCtrl->ShowDialog(hwnd,
             L"HEVC Codec Required",
             L"This HEIC/HEIF image requires the HEVC Video Extensions for Windows.\n"
             L"Please choose the version that fits your device to enable decoding.",
@@ -7689,33 +6146,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
              }
              return 0;
         }
-
-        // Divider Handle Fade Timer (999)
-        if (wParam == 999) {
-            bool changed = false;
-            const float step = 0.15f;
-            if (g_compare.showDividerHandle) {
-                if (g_compare.dividerOpacity < 1.0f) {
-                    g_compare.dividerOpacity = std::min(1.0f, g_compare.dividerOpacity + step);
-                    changed = true;
-                }
-            } else {
-                if (g_compare.dividerOpacity > 0.0f) {
-                    g_compare.dividerOpacity = std::max(0.0f, g_compare.dividerOpacity - step);
-                    changed = true;
-                }
-            }
-
-            if (changed) {
-                MarkCompareDirty();
-                RequestRepaint(PaintLayer::Image | PaintLayer::Dynamic);
-            } else {
-                KillTimer(hwnd, 999);
-            }
-            return 0;
-        }
-
-        // Interaction Timer (1001)
+         // Interaction Timer (1001)
         if (wParam == IDT_INTERACTION) {
             KillTimer(hwnd, IDT_INTERACTION);
             GetPaneContext(PaneSlot::Primary).view.IsInteracting = false;  // End interaction mode
@@ -7724,7 +6155,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
         }
 
         if (wParam == IDT_SMOOTH_ZOOM) {
-            if (!TickSmoothZoom(hwnd)) {
+            if (!AppContext::GetInstance().ZoomAnimCtrl->Tick(hwnd)) {
                 KillTimer(hwnd, IDT_SMOOTH_ZOOM);
             }
             return 0;
@@ -7857,7 +6288,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
     }
 
     case WM_MOVE:
-        if (g_dialog.IsVisible && g_dialog.HasInput && g_dialog.hInputHost) {
+        if (AppContext::GetInstance().Dialog.IsVisible && AppContext::GetInstance().Dialog.HasInput && AppContext::GetInstance().Dialog.hInputHost) {
             RECT rcClient; GetClientRect(hwnd, &rcClient);
             D2D1_SIZE_F size = D2D1::SizeF((float)(rcClient.right - rcClient.left), (float)(rcClient.bottom - rcClient.top));
             DialogLayout layout = CalculateDialogLayout(size);
@@ -7870,7 +6301,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
             int x = ptTL.x + 8;
             int y = ptTL.y + 6;
             
-            SetWindowPos(g_dialog.hInputHost, nullptr, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+            SetWindowPos(AppContext::GetInstance().Dialog.hInputHost, nullptr, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
         }
         return 0;
 
@@ -8082,7 +6513,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
           }
           if (GetPaneContext(PaneSlot::Primary).view.IsDragging) {
               g_currentCursor = LoadCursor(nullptr, IDC_SIZEALL);
-          } else if (g_config.EdgeNavClick && !g_gallery.IsVisible() && !g_settingsOverlay.IsVisible() && !g_helpOverlay.IsVisible() && !g_dialog.IsVisible) {
+          } else if (g_config.EdgeNavClick && !g_gallery.IsVisible() && !g_settingsOverlay.IsVisible() && !g_helpOverlay.IsVisible() && !AppContext::GetInstance().Dialog.IsVisible) {
               POINT pt = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
               bool hoverEdge = false;
               if (g_config.NavIndicator == 0) {
@@ -8090,12 +6521,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
                   int w = rcv.right - rcv.left;
                   int h = rcv.bottom - rcv.top;
                   if (IsCompareModeActive() && !g_config.DisableEdgeNavInCompare) {
-                      float splitX = (g_compare.mode == ViewMode::CompareWipe)
-                          ? ClampCompareRatio(g_compare.splitRatio) * (float)w
+                      float splitX = (AppContext::GetInstance().Compare.mode == ViewMode::CompareWipe)
+                          ? ClampCompareRatio(AppContext::GetInstance().Compare.splitRatio) * (float)w
                           : 0.5f * (float)w;
                       D2D1_RECT_F leftRect = D2D1::RectF(0.0f, 0.0f, splitX, (float)h);
                       D2D1_RECT_F rightRect = D2D1::RectF(splitX, 0.0f, (float)w, (float)h);
-                      ComparePane pane = HitTestComparePane(hwnd, pt);
+                      ComparePane pane = AppContext::GetInstance().CompareCtrl->HitTest(hwnd, pt);
                       const D2D1_RECT_F paneRect = (pane == ComparePane::Left) ? leftRect : rightRect;
                       hoverEdge = (HitTestNavButtonInPane(pt, paneRect) != 0);
                   } else if (!IsCompareModeActive()) {
@@ -8118,21 +6549,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
              isTracking = true;
           }
           POINT pt = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
-          if (IsCompareModeActive() && !GetPaneContext(PaneSlot::Primary).view.IsDragging && !GetPaneContext(PaneSlot::Primary).view.IsMiddleDragWindow) {
-              g_compare.activePane = HitTestComparePane(hwnd, pt);
-          }
-          if (IsNearCompareDivider(hwnd, pt)) {
-              g_currentCursor = LoadCursor(nullptr, IDC_SIZEWE);
-              if (!g_compare.showDividerHandle) {
-                  g_compare.showDividerHandle = true;
-                  SetTimer(hwnd, 999, 16, nullptr); // Fade in timer
-              }
-          } else if (!g_compare.draggingDivider) {
-              if (g_compare.showDividerHandle) {
-                  g_compare.showDividerHandle = false;
-                  SetTimer(hwnd, 999, 16, nullptr); // Fade out timer
-              }
-          }
           
           SettingsAction action = g_settingsOverlay.OnMouseMove((float)pt.x, (float)pt.y);
           if (action == SettingsAction::RepaintAll) RequestRepaint(PaintLayer::All);
@@ -8145,7 +6561,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
           }
           
             // Edge Navigation Hover Detection
-            if (g_config.EdgeNavClick && !g_gallery.IsVisible() && !g_settingsOverlay.IsVisible() && !g_helpOverlay.IsVisible() && !g_dialog.IsVisible) {
+            if (g_config.EdgeNavClick && !g_gallery.IsVisible() && !g_settingsOverlay.IsVisible() && !g_helpOverlay.IsVisible() && !AppContext::GetInstance().Dialog.IsVisible) {
                 RECT rcv; GetClientRect(hwnd, &rcv);
                 int w = rcv.right - rcv.left;
                 int h = rcv.bottom - rcv.top;
@@ -8164,7 +6580,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
                 }
 
                 if (IsCompareModeActive()) {
-                    if (g_compare.draggingDivider || GetPaneContext(PaneSlot::Primary).view.IsDragging) {
+                    if (AppContext::GetInstance().Compare.draggingDivider || GetPaneContext(PaneSlot::Primary).view.IsDragging) {
                         if (GetPaneContext(PaneSlot::Primary).view.EdgeHoverLeft != 0 || GetPaneContext(PaneSlot::Primary).view.EdgeHoverRight != 0) {
                             GetPaneContext(PaneSlot::Primary).view.EdgeHoverLeft = 0;
                             GetPaneContext(PaneSlot::Primary).view.EdgeHoverRight = 0;
@@ -8176,8 +6592,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
                         GetPaneContext(PaneSlot::Primary).view.EdgeHoverState = 0;
                         GetPaneContext(PaneSlot::Primary).view.CompareActive = true;
 
-                        float splitX = (g_compare.mode == ViewMode::CompareWipe)
-                            ? ClampCompareRatio(g_compare.splitRatio) * (float)w
+                        float splitX = (AppContext::GetInstance().Compare.mode == ViewMode::CompareWipe)
+                            ? ClampCompareRatio(AppContext::GetInstance().Compare.splitRatio) * (float)w
                             : 0.5f * (float)w;
                         GetPaneContext(PaneSlot::Primary).view.CompareSplitRatio = (w > 1) ? (splitX / (float)w) : 0.5f;
 
@@ -8365,7 +6781,7 @@ SKIP_EDGE_NAV:;
                      GetPaneContext(PaneSlot::Left).view = g_rightDragZoomStartLeftView;
                      SetRightCompareView(g_rightDragZoomStartRightView);
                  }
-                 ApplyCompareZoomWithMultiplier(hwnd, g_compare.activePane, multiplier, &GetPaneContext(PaneSlot::Primary).view.DragStartPos, g_compare.syncZoom);
+                 ApplyCompareZoomWithMultiplier(hwnd, AppContext::GetInstance().Compare.activePane, multiplier, &GetPaneContext(PaneSlot::Primary).view.DragStartPos, AppContext::GetInstance().Compare.syncZoom);
              } else if (GetPaneContext(PaneSlot::Primary).resource) {
                  constexpr float kPixelsPerStep = 48.0f;
                  POINT cursorPos{};
@@ -8420,13 +6836,13 @@ SKIP_EDGE_NAV:;
             }
         }
 
-        if (IsCompareModeActive() && g_compare.draggingDivider) {
+        if (IsCompareModeActive() && AppContext::GetInstance().Compare.draggingDivider) {
             RECT rcSplit{};
             GetClientRect(hwnd, &rcSplit);
             const float w = (float)(rcSplit.right - rcSplit.left);
             if (w > 1.0f) {
-                g_compare.splitRatio = ClampCompareRatio((float)pt.x / w);
-                GetPaneContext(PaneSlot::Primary).view.CompareSplitRatio = g_compare.splitRatio;
+                AppContext::GetInstance().Compare.splitRatio = ClampCompareRatio((float)pt.x / w);
+                GetPaneContext(PaneSlot::Primary).view.CompareSplitRatio = AppContext::GetInstance().Compare.splitRatio;
                 MarkCompareDirty();
                 RequestRepaint(PaintLayer::Image | PaintLayer::Static);
             }
@@ -8439,17 +6855,17 @@ SKIP_EDGE_NAV:;
              GetPaneContext(PaneSlot::Primary).view.LastMousePos = pt;
 
              if (IsCompareModeActive()) {
-                 if (g_compare.activePane == ComparePane::Left) {
+                 if (AppContext::GetInstance().Compare.activePane == ComparePane::Left) {
                      GetPaneContext(PaneSlot::Left).view.PanX += dx;
                      GetPaneContext(PaneSlot::Left).view.PanY += dy;
-                     if (g_compare.syncPan) {
+                     if (AppContext::GetInstance().Compare.syncPan) {
                          GetPaneContext(PaneSlot::Primary).view.PanX += dx;
                          GetPaneContext(PaneSlot::Primary).view.PanY += dy;
                      }
                  } else {
                      GetPaneContext(PaneSlot::Primary).view.PanX += dx;
                      GetPaneContext(PaneSlot::Primary).view.PanY += dy;
-                     if (g_compare.syncPan) {
+                     if (AppContext::GetInstance().Compare.syncPan) {
                          GetPaneContext(PaneSlot::Left).view.PanX += dx;
                          GetPaneContext(PaneSlot::Left).view.PanY += dy;
                      }
@@ -8519,8 +6935,8 @@ SKIP_EDGE_NAV:;
             GetPaneContext(PaneSlot::Primary).view.EdgeHoverRight = 0;
             MarkStaticLayerDirty();
         }
-        if (g_compare.showDividerHandle) {
-            g_compare.showDividerHandle = false;
+        if (AppContext::GetInstance().Compare.showDividerHandle) {
+            AppContext::GetInstance().Compare.showDividerHandle = false;
             SetTimer(hwnd, 999, 16, nullptr);
         }
 
@@ -8532,7 +6948,7 @@ SKIP_EDGE_NAV:;
         
     case WM_LBUTTONDBLCLK: {
         POINT pt = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
-        if (g_gallery.IsVisible() || g_settingsOverlay.IsVisible() || g_helpOverlay.IsVisible() || g_dialog.IsVisible) return 0;
+        if (g_gallery.IsVisible() || g_settingsOverlay.IsVisible() || g_helpOverlay.IsVisible() || AppContext::GetInstance().Dialog.IsVisible) return 0;
         if (g_toolbar.IsVisible() && g_toolbar.HitTest((float)pt.x, (float)pt.y)) {
             return 0;
         }
@@ -8543,20 +6959,20 @@ SKIP_EDGE_NAV:;
         // Fullscreen and maximized logic unified below
 
         if (IsCompareModeActive()) {
-            ComparePane pane = HitTestComparePane(hwnd, pt);
+            ComparePane pane = AppContext::GetInstance().CompareCtrl->HitTest(hwnd, pt);
             auto cyclePane = [&](ComparePane p) {
                 if (p == ComparePane::Left) {
                     if (!GetPaneContext(PaneSlot::Left).valid) return;
-                    CycleCompareZoomForPane(GetPaneContext(PaneSlot::Left).view, GetPaneContext(PaneSlot::Left).resource, GetCompareViewport(hwnd, ComparePane::Left));
+
                 } else {
                     if (!GetPaneContext(PaneSlot::Primary).resource) return;
                     CompareView right = GetRightCompareView();
-                    CycleCompareZoomForPane(right, GetPaneContext(PaneSlot::Primary).resource, GetCompareViewport(hwnd, ComparePane::Right));
+
                     SetRightCompareView(right);
                 }
             };
 
-            if (g_compare.syncZoom) {
+            if (AppContext::GetInstance().Compare.syncZoom) {
                 cyclePane(pane);
                 // ComparePane other = (pane == ComparePane::Left) ? ComparePane::Right : ComparePane::Left;
                 if (pane == ComparePane::Left) {
@@ -8572,7 +6988,7 @@ SKIP_EDGE_NAV:;
                 cyclePane(pane);
             }
 
-            if (g_compare.syncPan) {
+            if (AppContext::GetInstance().Compare.syncPan) {
                 if (pane == ComparePane::Left) {
                     GetPaneContext(PaneSlot::Primary).view.PanX = GetPaneContext(PaneSlot::Left).view.PanX;
                     GetPaneContext(PaneSlot::Primary).view.PanY = GetPaneContext(PaneSlot::Left).view.PanY;
@@ -8648,7 +7064,7 @@ SKIP_EDGE_NAV:;
             !g_gallery.IsVisible() &&
             !g_settingsOverlay.IsVisible() &&
             !g_helpOverlay.IsVisible() &&
-            !g_dialog.IsVisible &&
+            !AppContext::GetInstance().Dialog.IsVisible &&
             !GetPaneContext(PaneSlot::Primary).view.IsDragging &&
             !GetPaneContext(PaneSlot::Primary).view.IsMiddleDragWindow &&
             !GetPaneContext(PaneSlot::Primary).view.IsPendingFullscreenExitDrag;
@@ -8657,7 +7073,7 @@ SKIP_EDGE_NAV:;
             POINT cursorPos{};
             GetCursorPos(&cursorPos);
             if (IsCompareModeActive()) {
-                g_compare.activePane = HitTestComparePane(hwnd, pt);
+                AppContext::GetInstance().Compare.activePane = AppContext::GetInstance().CompareCtrl->HitTest(hwnd, pt);
             }
             GetPaneContext(PaneSlot::Primary).view.IsRightButtonDown = true;
             GetPaneContext(PaneSlot::Primary).view.LastMousePos = pt;
@@ -8666,7 +7082,7 @@ SKIP_EDGE_NAV:;
             GetPaneContext(PaneSlot::Primary).view.DragStartTime = GetTickCount();
             GetPaneContext(PaneSlot::Primary).view.RightDragZoomStartTotalScale = GetCurrentTotalScale(hwnd);
             if (IsCompareModeActive()) {
-                if (g_compare.activePane == ComparePane::Left) {
+                if (AppContext::GetInstance().Compare.activePane == ComparePane::Left) {
                     GetPaneContext(PaneSlot::Primary).view.RightDragZoomStartComparePrimaryZoom = GetPaneContext(PaneSlot::Left).view.Zoom;
                     GetPaneContext(PaneSlot::Primary).view.RightDragZoomStartCompareSecondaryZoom = GetRightCompareView().Zoom;
                 } else {
@@ -8692,7 +7108,7 @@ SKIP_EDGE_NAV:;
         GetPaneContext(PaneSlot::Primary).view.DragStartTime = GetTickCount();
 
         if (IsCompareModeActive()) {
-            g_compare.activePane = HitTestComparePane(hwnd, pt);
+            AppContext::GetInstance().Compare.activePane = AppContext::GetInstance().CompareCtrl->HitTest(hwnd, pt);
         }
         
         // Check MiddleDragAction config
@@ -9056,34 +7472,21 @@ SKIP_EDGE_NAV:;
             return 0; // Handled by LBUTTONUP (or LBUTTONDOWN for sliders)
         }
 
-        if (IsCompareModeActive()) {
-            g_compare.activePane = HitTestComparePane(hwnd, pt);
-            g_compare.selectedPane = g_compare.activePane;
-            RefreshCompareRawUI(hwnd);
-            MarkCompareDirty();
-            RequestRepaint(PaintLayer::Image | PaintLayer::Static);
-            if (IsNearCompareDivider(hwnd, pt)) {
-                g_compare.draggingDivider = true;
-                SetCapture(hwnd);
-                return 0;
-            }
-        }
-        
         // Edge Navigation Zone Check - Record start, handle in LBUTTONUP
         // Zone: Left/Right 15%, Vertical range depends on NavIndicator mode
         RECT rcCheck; GetClientRect(hwnd, &rcCheck);
         int w = rcCheck.right - rcCheck.left;
         int h = rcCheck.bottom - rcCheck.top;
         bool inEdgeZone = false;
-        if (g_config.EdgeNavClick && !g_gallery.IsVisible() && !g_settingsOverlay.IsVisible() && !g_helpOverlay.IsVisible() && !g_dialog.IsVisible) {
+        if (g_config.EdgeNavClick && !g_gallery.IsVisible() && !g_settingsOverlay.IsVisible() && !g_helpOverlay.IsVisible() && !AppContext::GetInstance().Dialog.IsVisible) {
             if (IsCompareModeActive()) {
                 if (!g_config.DisableEdgeNavInCompare) {
-                    float splitX = (g_compare.mode == ViewMode::CompareWipe)
-                        ? ClampCompareRatio(g_compare.splitRatio) * (float)w
+                    float splitX = (AppContext::GetInstance().Compare.mode == ViewMode::CompareWipe)
+                        ? ClampCompareRatio(AppContext::GetInstance().Compare.splitRatio) * (float)w
                         : 0.5f * (float)w;
                     D2D1_RECT_F leftRect = D2D1::RectF(0.0f, 0.0f, splitX, (float)h);
                     D2D1_RECT_F rightRect = D2D1::RectF(splitX, 0.0f, (float)w, (float)h);
-                    ComparePane pane = HitTestComparePane(hwnd, pt);
+                    ComparePane pane = AppContext::GetInstance().CompareCtrl->HitTest(hwnd, pt);
                     const D2D1_RECT_F paneRect = (pane == ComparePane::Left) ? leftRect : rightRect;
                     if (g_config.NavIndicator == 0) {
                         inEdgeZone = (HitTestNavButtonInPane(pt, paneRect) != 0);
@@ -9141,7 +7544,7 @@ SKIP_EDGE_NAV:;
         } else if (effectiveAction == MouseAction::PanImage) {
             bool allowPan = CanPan(hwnd);
             if (IsCompareModeActive()) {
-                allowPan = (g_compare.activePane == ComparePane::Left) ? GetPaneContext(PaneSlot::Left).valid : (bool)GetPaneContext(PaneSlot::Primary).resource;
+                allowPan = (AppContext::GetInstance().Compare.activePane == ComparePane::Left) ? GetPaneContext(PaneSlot::Left).valid : (bool)GetPaneContext(PaneSlot::Primary).resource;
             }
             if (allowPan) {
                 SetCapture(hwnd);
@@ -9183,15 +7586,6 @@ SKIP_EDGE_NAV:;
             GetPaneContext(PaneSlot::Primary).view.IsPendingFullscreenExitDrag = false;
             ReleaseCapture();
         }
-        if (IsCompareModeActive()) {
-            g_compare.activePane = HitTestComparePane(hwnd, pt);
-        }
-        if (IsCompareModeActive() && g_compare.draggingDivider) {
-            g_compare.draggingDivider = false;
-            ReleaseCapture();
-            return 0;
-        }
-        
         if (g_settingsOverlay.IsVisible()) {
              SettingsAction action = g_settingsOverlay.OnLButtonUp((float)pt.x, (float)pt.y);
              if (action == SettingsAction::RepaintAll) RequestRepaint(PaintLayer::All);
@@ -9272,20 +7666,20 @@ SKIP_EDGE_NAV:;
                     break;
                 case ToolbarButtonID::CompareToggle:
                     if (IsCompareModeActive()) {
-                        ExitCompareMode(hwnd);
+                        AppContext::GetInstance().CompareCtrl->ExitMode(hwnd);
                     } else {
-                        EnterCompareMode(hwnd);
+                        AppContext::GetInstance().CompareCtrl->EnterMode(hwnd);
                     }
                     RequestRepaint(PaintLayer::All);
                     break;
                 case ToolbarButtonID::CompareOpen:
                     if (IsCompareModeActive()) {
-                        g_compare.contextPane = g_compare.selectedPane;
+                        AppContext::GetInstance().Compare.contextPane = AppContext::GetInstance().Compare.selectedPane;
                         SendMessage(hwnd, WM_COMMAND, IDM_OPEN, 0);
                     }
                     break;
                 case ToolbarButtonID::CompareExit:
-                    ExitCompareMode(hwnd);
+                    AppContext::GetInstance().CompareCtrl->ExitMode(hwnd);
                     RequestRepaint(PaintLayer::All);
                     break;
                 case ToolbarButtonID::OverlayAlphaUp:
@@ -9331,17 +7725,17 @@ SKIP_EDGE_NAV:;
                     break;
                 case ToolbarButtonID::CompareLayout:
                     if (IsCompareModeActive()) {
-                        g_compare.mode = (g_compare.mode == ViewMode::CompareSideBySide)
+                        AppContext::GetInstance().Compare.mode = (AppContext::GetInstance().Compare.mode == ViewMode::CompareSideBySide)
                             ? ViewMode::CompareWipe
                             : ViewMode::CompareSideBySide;
-                        g_compare.draggingDivider = false;
+                        AppContext::GetInstance().Compare.draggingDivider = false;
                         ReleaseCapture();
                         GetPaneContext(PaneSlot::Primary).view.CompareActive = true;
                         
                         // SNAP window to images on mode change (Side-by-Side <-> Wipe)
                         SnapWindowToCompareImages(hwnd);
                         
-                        GetPaneContext(PaneSlot::Primary).view.CompareSplitRatio = GetCompareSplitRatio();
+                        GetPaneContext(PaneSlot::Primary).view.CompareSplitRatio = AppContext::GetInstance().CompareCtrl->GetSplitRatio();
                         MarkCompareDirty();
                         RequestRepaint(PaintLayer::Image | PaintLayer::Static);
                     }
@@ -9353,18 +7747,18 @@ SKIP_EDGE_NAV:;
                     break;
                 case ToolbarButtonID::CompareRawToggle:
                     if (IsCompareModeActive()) {
-                        bool isLeft = (g_compare.selectedPane == ComparePane::Left);
+                        bool isLeft = (AppContext::GetInstance().Compare.selectedPane == ComparePane::Left);
                         const std::wstring& selPath = isLeft ? GetPaneContext(PaneSlot::Left).path : GetPaneContext(PaneSlot::Primary).path;
                         if (!IsRawFile(selPath)) break; // Selected pane is not RAW, ignore
                         // Point context to selected pane, then delegate to IDM_RENDER_RAW
-                        g_compare.contextPane = g_compare.selectedPane;
+                        AppContext::GetInstance().Compare.contextPane = AppContext::GetInstance().Compare.selectedPane;
                         SendMessage(hwnd, WM_COMMAND, IDM_RENDER_RAW, 0);
                         RefreshCompareRawUI(hwnd);
                     }
                     break;
                 case ToolbarButtonID::CompareDelete:
                     if (IsCompareModeActive()) {
-                        g_compare.contextPane = g_compare.selectedPane;
+                        AppContext::GetInstance().Compare.contextPane = AppContext::GetInstance().Compare.selectedPane;
                         SendMessage(hwnd, WM_COMMAND, IDM_DELETE, 0);
                     }
                     break;
@@ -9374,7 +7768,7 @@ SKIP_EDGE_NAV:;
                         const bool zoomIn = (tbId == ToolbarButtonID::CompareZoomIn);
                         float stepPercent = g_toolbar.GetCompareZoomStepPercent();
                         float stepDelta = (stepPercent / 10.0f) * (zoomIn ? 1.0f : -1.0f);
-                        ApplyCompareZoomStep(hwnd, stepDelta, false);
+                        AppContext::GetInstance().CompareCtrl->ApplyZoomStep(hwnd, stepDelta, false);
                     } else if (IsOverlayModeActive()) {
                         const bool zoomIn = (tbId == ToolbarButtonID::CompareZoomIn);
                         SendMessage(hwnd, WM_KEYDOWN, zoomIn ? VK_ADD : VK_SUBTRACT, 0);
@@ -9382,15 +7776,15 @@ SKIP_EDGE_NAV:;
                     break;
                 case ToolbarButtonID::CompareSyncZoom:
                     if (IsCompareModeActive()) {
-                        g_compare.syncZoom = !g_compare.syncZoom;
-                        g_toolbar.SetCompareSyncStates(g_compare.syncZoom, g_compare.syncPan);
+                        AppContext::GetInstance().Compare.syncZoom = !AppContext::GetInstance().Compare.syncZoom;
+                        g_toolbar.SetCompareSyncStates(AppContext::GetInstance().Compare.syncZoom, AppContext::GetInstance().Compare.syncPan);
                         RequestRepaint(PaintLayer::Static);
                     }
                     break;
                 case ToolbarButtonID::CompareSyncPan:
                     if (IsCompareModeActive()) {
-                        g_compare.syncPan = !g_compare.syncPan;
-                        g_toolbar.SetCompareSyncStates(g_compare.syncZoom, g_compare.syncPan);
+                        AppContext::GetInstance().Compare.syncPan = !AppContext::GetInstance().Compare.syncPan;
+                        g_toolbar.SetCompareSyncStates(AppContext::GetInstance().Compare.syncZoom, AppContext::GetInstance().Compare.syncPan);
                         RequestRepaint(PaintLayer::Static);
                     }
                     break;
@@ -9461,7 +7855,7 @@ SKIP_EDGE_NAV:;
         GetPaneContext(PaneSlot::Primary).view.IsInteracting = false;  // End interaction mode
 
         // Edge Navigation Click
-        if (g_config.EdgeNavClick && !g_gallery.IsVisible() && !g_settingsOverlay.IsVisible() && !g_helpOverlay.IsVisible() && !g_dialog.IsVisible && !g_compare.draggingDivider && !GetPaneContext(PaneSlot::Primary).view.IsDragging) {
+        if (g_config.EdgeNavClick && !g_gallery.IsVisible() && !g_settingsOverlay.IsVisible() && !g_helpOverlay.IsVisible() && !AppContext::GetInstance().Dialog.IsVisible && !AppContext::GetInstance().Compare.draggingDivider && !GetPaneContext(PaneSlot::Primary).view.IsDragging) {
             // [Fix] Block edge nav if clicking on Info UI / HUD
             if (g_uiRenderer) {
                 auto hit = g_uiRenderer->HitTest((float)pt.x, (float)pt.y);
@@ -9477,20 +7871,20 @@ SKIP_EDGE_NAV:;
             if (!g_toolbar.IsWindowTooNarrow() && width > 50 && height > 100) {
                 if (IsCompareModeActive()) {
                     if (!g_config.DisableEdgeNavInCompare) {
-                        float splitX = (g_compare.mode == ViewMode::CompareWipe)
-                            ? ClampCompareRatio(g_compare.splitRatio) * (float)width
+                        float splitX = (AppContext::GetInstance().Compare.mode == ViewMode::CompareWipe)
+                            ? ClampCompareRatio(AppContext::GetInstance().Compare.splitRatio) * (float)width
                             : 0.5f * (float)width;
                         D2D1_RECT_F leftRect = D2D1::RectF(0.0f, 0.0f, splitX, (float)height);
                         D2D1_RECT_F rightRect = D2D1::RectF(splitX, 0.0f, (float)width, (float)height);
-                        ComparePane pane = HitTestComparePane(hwnd, pt);
+                        ComparePane pane = AppContext::GetInstance().CompareCtrl->HitTest(hwnd, pt);
                         const D2D1_RECT_F paneRect = (pane == ComparePane::Left) ? leftRect : rightRect;
                         int direction = (g_config.NavIndicator == 0)
                             ? HitTestNavButtonInPane(pt, paneRect)
                             : ComputeEdgeHoverForPane(pt, paneRect);
                         if (direction != 0) {
                             ReleaseCapture();
-                            g_compare.selectedPane = pane;
-                            g_compare.contextPane = pane;
+                            AppContext::GetInstance().Compare.selectedPane = pane;
+                            AppContext::GetInstance().Compare.contextPane = pane;
                             MarkCompareDirty();
                             RequestRepaint(PaintLayer::Image | PaintLayer::Static);
                             Navigate(hwnd, direction);
@@ -9551,9 +7945,9 @@ SKIP_EDGE_NAV:;
             float newTotalScale = CalculateTargetZoom(hwnd, delta, false);
             
             if (IsCompareModeActive()) {
-                ComparePane pane = HitTestComparePane(hwnd, pt);
-                g_compare.activePane = pane;
-                ApplyCompareZoomWithMultiplier(hwnd, pane, ComputeZoomStep(delta), &pt, g_compare.syncZoom);
+                ComparePane pane = AppContext::GetInstance().CompareCtrl->HitTest(hwnd, pt);
+                AppContext::GetInstance().Compare.activePane = pane;
+                ApplyCompareZoomWithMultiplier(hwnd, pane, ComputeZoomStep(delta), &pt, AppContext::GetInstance().Compare.syncZoom);
             } else {
                 PerformSmartZoom(hwnd, newTotalScale, &pt, false, true);
             }
@@ -9619,9 +8013,9 @@ SKIP_EDGE_NAV:;
 
             POINT mousePt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
             ScreenToClient(hwnd, &mousePt);
-            ComparePane pane = HitTestComparePane(hwnd, mousePt);
-            g_compare.activePane = pane;
-            ApplyCompareZoomWithMultiplier(hwnd, pane, ComputeZoomStep(delta), &mousePt, g_compare.syncZoom);
+            ComparePane pane = AppContext::GetInstance().CompareCtrl->HitTest(hwnd, mousePt);
+            AppContext::GetInstance().Compare.activePane = pane;
+            ApplyCompareZoomWithMultiplier(hwnd, pane, ComputeZoomStep(delta), &mousePt, AppContext::GetInstance().Compare.syncZoom);
             return 0;
         }
 
@@ -9664,18 +8058,18 @@ SKIP_EDGE_NAV:;
             POINT dropPt{};
             DragQueryPoint(hDrop, &dropPt);
             if (IsCompareModeActive()) {
-                ComparePane pane = HitTestComparePane(hwnd, dropPt);
+                ComparePane pane = AppContext::GetInstance().CompareCtrl->HitTest(hwnd, dropPt);
                 if (pane == ComparePane::Left) {
-                    LoadImageIntoCompareLeftSlot(hwnd, path, [](bool success){
+                    AppContext::GetInstance().CompareCtrl->LoadImageIntoLeftSlot(hwnd, path, [](bool success){
                         if (success) {
-                            g_compare.activePane = ComparePane::Left;
+                            AppContext::GetInstance().Compare.activePane = ComparePane::Left;
                             MarkCompareDirty();
                             RequestRepaint(PaintLayer::Image | PaintLayer::Static);
                         }
                     });
                 } else {
-                    g_compare.activePane = ComparePane::Right;
-                    g_compare.selectedPane = ComparePane::Right;
+                    AppContext::GetInstance().Compare.activePane = ComparePane::Right;
+                    AppContext::GetInstance().Compare.selectedPane = ComparePane::Right;
                     OpenPathOrDirectory(hwnd, path);
                 }
             } else {
@@ -9875,11 +8269,11 @@ SKIP_EDGE_NAV:;
         
         // File operations
         case 'O':
-            if (IsCompareModeActive()) g_compare.contextPane = g_compare.activePane;
+            if (IsCompareModeActive()) AppContext::GetInstance().Compare.contextPane = AppContext::GetInstance().Compare.activePane;
             SendMessage(hwnd, WM_COMMAND, IDM_OPEN, 0);
             break; // O or Ctrl+O: Open
         case 'E':
-            if (IsCompareModeActive()) g_compare.contextPane = g_compare.activePane;
+            if (IsCompareModeActive()) AppContext::GetInstance().Compare.contextPane = AppContext::GetInstance().Compare.activePane;
             SendMessage(hwnd, WM_COMMAND, IDM_EDIT, 0);
             break; // E: Edit
         case VK_F1: {
@@ -9889,31 +8283,31 @@ SKIP_EDGE_NAV:;
              return 0;
         }
         case VK_F2:
-            if (IsCompareModeActive()) g_compare.contextPane = g_compare.activePane;
+            if (IsCompareModeActive()) AppContext::GetInstance().Compare.contextPane = AppContext::GetInstance().Compare.activePane;
             SendMessage(hwnd, WM_COMMAND, IDM_RENAME, 0);
             break; // F2: Rename
         case VK_DELETE:
-            if (IsCompareModeActive()) g_compare.contextPane = g_compare.activePane;
+            if (IsCompareModeActive()) AppContext::GetInstance().Compare.contextPane = AppContext::GetInstance().Compare.activePane;
             SendMessage(hwnd, WM_COMMAND, IDM_DELETE, 0);
             break; // Del: Delete
         case 'P':
             if (ctrl) {
-                if (IsCompareModeActive()) g_compare.contextPane = g_compare.activePane;
+                if (IsCompareModeActive()) AppContext::GetInstance().Compare.contextPane = AppContext::GetInstance().Compare.activePane;
                 SendMessage(hwnd, WM_COMMAND, IDM_PRINT, 0);
             }
             break; // Ctrl+P: Print
         case 'C': // C: Toggle Compare Mode, Ctrl+C: Copy image, Ctrl+Alt+C: Copy path
             if (ctrl && alt) {
-                if (IsCompareModeActive()) g_compare.contextPane = g_compare.activePane;
+                if (IsCompareModeActive()) AppContext::GetInstance().Compare.contextPane = AppContext::GetInstance().Compare.activePane;
                 SendMessage(hwnd, WM_COMMAND, IDM_COPY_PATH, 0);
             } else if (ctrl) {
-                if (IsCompareModeActive()) g_compare.contextPane = g_compare.activePane;
+                if (IsCompareModeActive()) AppContext::GetInstance().Compare.contextPane = AppContext::GetInstance().Compare.activePane;
                 SendMessage(hwnd, WM_COMMAND, IDM_COPY_IMAGE, 0);
             } else {
                 if (IsCompareModeActive()) {
-                    ExitCompareMode(hwnd);
+                    AppContext::GetInstance().CompareCtrl->ExitMode(hwnd);
                 } else {
-                    EnterCompareMode(hwnd);
+                    AppContext::GetInstance().CompareCtrl->EnterMode(hwnd);
                 }
                 RequestRepaint(PaintLayer::All);
             }
@@ -10060,7 +8454,7 @@ SKIP_EDGE_NAV:;
 
             if (IsCompareModeActive()) {
                 float delta = isZoomIn ? 1.0f : -1.0f;
-                ApplyCompareZoomStep(hwnd, delta, isCtrl);
+                AppContext::GetInstance().CompareCtrl->ApplyZoomStep(hwnd, delta, isCtrl);
                 break;
             }
             
@@ -10090,7 +8484,7 @@ SKIP_EDGE_NAV:;
         // Exit
         case VK_ESCAPE: 
             if (IsCompareModeActive()) {
-                ExitCompareMode(hwnd);
+                AppContext::GetInstance().CompareCtrl->ExitMode(hwnd);
                 RequestRepaint(PaintLayer::All);
                 break;
             }
@@ -10138,9 +8532,9 @@ SKIP_EDGE_NAV:;
         }
 
         if (IsCompareModeActive()) {
-            g_compare.contextPane = HitTestComparePane(hwnd, ptClient);
-            g_compare.activePane = g_compare.contextPane;
-            g_compare.selectedPane = g_compare.contextPane;
+            AppContext::GetInstance().Compare.contextPane = AppContext::GetInstance().CompareCtrl->HitTest(hwnd, ptClient);
+            AppContext::GetInstance().Compare.activePane = AppContext::GetInstance().Compare.contextPane;
+            AppContext::GetInstance().Compare.selectedPane = AppContext::GetInstance().Compare.contextPane;
             MarkCompareDirty();
             RequestRepaint(PaintLayer::Image | PaintLayer::Static);
         }
@@ -10152,7 +8546,7 @@ SKIP_EDGE_NAV:;
         std::wstring targetPath = GetPaneContext(PaneSlot::Primary).path;
         std::wstring targetFmt = GetPaneContext(PaneSlot::Primary).metadata.Format;
 
-        if (IsCompareModeActive() && g_compare.contextPane == ComparePane::Left) {
+        if (IsCompareModeActive() && AppContext::GetInstance().Compare.contextPane == ComparePane::Left) {
             hasImage = GetPaneContext(PaneSlot::Left).valid;
             targetPath = GetPaneContext(PaneSlot::Left).path;
             targetFmt = GetPaneContext(PaneSlot::Left).metadata.Format;
@@ -10161,7 +8555,7 @@ SKIP_EDGE_NAV:;
         if (IsCompareModeActive()) {
             bool contextIsRaw = false;
             bool contextIsFullDecode = false;
-            if (GetComparePaneRawState(g_compare.contextPane, contextIsRaw, contextIsFullDecode) && contextIsRaw) {
+            if (AppContext::GetInstance().CompareCtrl->GetPaneRawState(AppContext::GetInstance().Compare.contextPane, contextIsRaw, contextIsFullDecode) && contextIsRaw) {
                 renderRaw = contextIsFullDecode;
             }
         }
@@ -10172,7 +8566,7 @@ SKIP_EDGE_NAV:;
         }
         
         bool isPixelArtMode = GetCurrentPixelArtState(hwnd);
-        const bool contextLeft = IsCompareModeActive() && g_compare.contextPane == ComparePane::Left;
+        const bool contextLeft = IsCompareModeActive() && AppContext::GetInstance().Compare.contextPane == ComparePane::Left;
         int menuCmsMode = contextLeft ? (GetPaneContext(PaneSlot::Left).CmsModeOverride != -1 ? GetPaneContext(PaneSlot::Left).CmsModeOverride : (g_config.ColorManagement ? 1 : 0)) : g_runtime.GetEffectiveCmsMode(g_config.ColorManagement);
         bool menuEnableSoftProofing = contextLeft ? GetPaneContext(PaneSlot::Left).EnableSoftProofing : g_runtime.EnableSoftProofing;
         std::wstring menuSoftProofPath = contextLeft ? GetPaneContext(PaneSlot::Left).SoftProofProfilePath : g_runtime.SoftProofProfilePath;
@@ -10236,12 +8630,12 @@ SKIP_EDGE_NAV:;
                 g_gallery.Close();
                 RestoreOverlayWindowState(hwnd);
                 if (!IsCompareModeActive()) {
-                    EnterCompareMode(hwnd);
+                    AppContext::GetInstance().CompareCtrl->EnterMode(hwnd);
                 }
                 if (IsCompareModeActive()) {
-                    LoadImageIntoCompareLeftSlot(hwnd, path, [](bool success){
+                    AppContext::GetInstance().CompareCtrl->LoadImageIntoLeftSlot(hwnd, path, [](bool success){
                         if (success) {
-                            g_compare.activePane = ComparePane::Left;
+                            AppContext::GetInstance().Compare.activePane = ComparePane::Left;
                             MarkCompareDirty();
                         }
                     });
@@ -10275,18 +8669,18 @@ SKIP_EDGE_NAV:;
             ofn.lpstrFilter = filterStr.c_str();
             ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
                 if (GetOpenFileNameW(&ofn)) {
-                    if (IsCompareModeActive() && g_compare.contextPane == ComparePane::Left) {
-                        LoadImageIntoCompareLeftSlot(hwnd, szFile, [](bool success){
+                    if (IsCompareModeActive() && AppContext::GetInstance().Compare.contextPane == ComparePane::Left) {
+                        AppContext::GetInstance().CompareCtrl->LoadImageIntoLeftSlot(hwnd, szFile, [](bool success){
                             if (success) {
-                                g_compare.activePane = ComparePane::Left;
+                                AppContext::GetInstance().Compare.activePane = ComparePane::Left;
                                 MarkCompareDirty();
                                 RequestRepaint(PaintLayer::Image | PaintLayer::Static);
                             }
                         });
                     } else {
                         if (IsCompareModeActive()) {
-                            g_compare.activePane = ComparePane::Right;
-                            g_compare.selectedPane = ComparePane::Right;
+                            AppContext::GetInstance().Compare.activePane = ComparePane::Right;
+                            AppContext::GetInstance().Compare.selectedPane = ComparePane::Right;
                         }
                         GetPaneContext(PaneSlot::Primary).editState.Reset();
                         GetPaneContext(PaneSlot::Primary).view.Reset();
@@ -10468,7 +8862,7 @@ SKIP_EDGE_NAV:;
         }
         case IDM_RENAME: {
             if (!CheckUnsavedChanges(hwnd)) break;
-            if (IsCompareModeActive() && g_compare.contextPane == ComparePane::Left && !GetPaneContext(PaneSlot::Left).path.empty()) {
+            if (IsCompareModeActive() && AppContext::GetInstance().Compare.contextPane == ComparePane::Left && !GetPaneContext(PaneSlot::Left).path.empty()) {
                 std::wstring currentFolder = L"";
                 std::wstring currentName = L"";
                 size_t lastSlash = GetPaneContext(PaneSlot::Left).path.find_last_of(L"\\/");
@@ -10479,8 +8873,8 @@ SKIP_EDGE_NAV:;
                     currentName = GetPaneContext(PaneSlot::Left).path;
                 }
 
-                CenterDialogOnComparePaneIfNeeded(hwnd, ComparePane::Left);
-                std::wstring newName = ShowQuickViewInputDialog(hwnd, AppStrings::Context_Rename, L"Enter new filename:", currentName);
+                AppContext::GetInstance().CompareCtrl->CenterDialogOnPaneIfNeeded(hwnd, ComparePane::Left);
+                std::wstring newName = AppContext::GetInstance().DialogCtrl->ShowInputDialog(hwnd, AppStrings::Context_Rename, L"Enter new filename:", currentName);
                 ClearDialogCenter();
                 if (!newName.empty()) {
                     bool newHasExt = (newName.find_last_of(L'.') != std::wstring::npos);
@@ -10495,7 +8889,7 @@ SKIP_EDGE_NAV:;
                 if (!newName.empty() && newName != currentName) {
                     std::wstring newPath = currentFolder + newName;
                     if (MoveFileW(GetPaneContext(PaneSlot::Left).path.c_str(), newPath.c_str())) {
-                        LoadImageIntoCompareLeftSlot(hwnd, newPath, [hwnd](bool success){
+                        AppContext::GetInstance().CompareCtrl->LoadImageIntoLeftSlot(hwnd, newPath, [hwnd](bool success){
                             if (success) {
                                 g_osd.Show(hwnd, L"Renamed (Left)", false);
                                 MarkCompareDirty();
@@ -10521,8 +8915,8 @@ SKIP_EDGE_NAV:;
                 }
                 
                 // Show Input Dialog
-                CenterDialogOnComparePaneIfNeeded(hwnd, ComparePane::Right);
-                std::wstring newName = ShowQuickViewInputDialog(hwnd, AppStrings::Context_Rename, L"Enter new filename:", currentName);
+                AppContext::GetInstance().CompareCtrl->CenterDialogOnPaneIfNeeded(hwnd, ComparePane::Right);
+                std::wstring newName = AppContext::GetInstance().DialogCtrl->ShowInputDialog(hwnd, AppStrings::Context_Rename, L"Enter new filename:", currentName);
                 ClearDialogCenter();
                 
                 // [Feature] Auto-append extension if missing
@@ -10565,7 +8959,7 @@ SKIP_EDGE_NAV:;
             break;
         }
         case IDM_DELETE: {
-            if (IsCompareModeActive() && g_compare.contextPane == ComparePane::Left && !GetPaneContext(PaneSlot::Left).path.empty()) {
+            if (IsCompareModeActive() && AppContext::GetInstance().Compare.contextPane == ComparePane::Left && !GetPaneContext(PaneSlot::Left).path.empty()) {
                 std::wstring recycleTarget = GetPaneContext(PaneSlot::Left).path;
                 size_t lastSlash = recycleTarget.find_last_of(L"\\/");
                 std::wstring filename = (lastSlash != std::wstring::npos) ? recycleTarget.substr(lastSlash + 1) : recycleTarget;
@@ -10581,10 +8975,10 @@ SKIP_EDGE_NAV:;
                     dlgButtons.emplace_back(DialogResult::Yes, L"Delete");
                     dlgButtons.emplace_back(DialogResult::Cancel, L"Cancel");
                     if (IsCompareModeActive()) {
-                        const D2D1_RECT_F vp = GetCompareViewport(hwnd, g_compare.contextPane);
+                        const D2D1_RECT_F vp = AppContext::GetInstance().CompareCtrl->GetViewport(hwnd, AppContext::GetInstance().Compare.contextPane);
                         SetDialogCenter((vp.left + vp.right) * 0.5f, (vp.top + vp.bottom) * 0.5f);
                     }
-                    DialogResult dlgResult = ShowQuickViewDialog(hwnd, filename.c_str(), dlgMessage.c_str(),
+                    DialogResult dlgResult = AppContext::GetInstance().DialogCtrl->ShowDialog(hwnd, filename.c_str(), dlgMessage.c_str(),
                                                                   D2D1::ColorF(0.85f, 0.25f, 0.25f), dlgButtons, false, L"", L"");
                     ClearDialogCenter();
                     confirmed = (dlgResult == DialogResult::Yes);
@@ -10604,22 +8998,22 @@ SKIP_EDGE_NAV:;
                         if (nextPath == recycleTarget) nextPath = leftNavigator.PeekPrevious();
 
                         if (!nextPath.empty()) {
-                            LoadImageIntoCompareLeftSlot(hwnd, nextPath, [hwnd](bool success) {
+                            AppContext::GetInstance().CompareCtrl->LoadImageIntoLeftSlot(hwnd, nextPath, [hwnd](bool success) {
                                 if (success) {
-                                    g_compare.activePane = ComparePane::Left;
-                                    g_compare.contextPane = ComparePane::Left;
-                                    g_compare.selectedPane = ComparePane::Left;
+                                    AppContext::GetInstance().Compare.activePane = ComparePane::Left;
+                                    AppContext::GetInstance().Compare.contextPane = ComparePane::Left;
+                                    AppContext::GetInstance().Compare.selectedPane = ComparePane::Left;
                                     MarkCompareDirty();
                                     RequestRepaint(PaintLayer::Image | PaintLayer::Static | PaintLayer::Dynamic);
                                 } else {
                                     GetPaneContext(PaneSlot::Left).Reset();
-                                    ExitCompareMode(hwnd);
+                                    AppContext::GetInstance().CompareCtrl->ExitMode(hwnd);
                                     RequestRepaint(PaintLayer::All);
                                 }
                             });
                         } else {
                             GetPaneContext(PaneSlot::Left).Reset();
-                            ExitCompareMode(hwnd);
+                            AppContext::GetInstance().CompareCtrl->ExitMode(hwnd);
                             RequestRepaint(PaintLayer::All);
                         }
                     }
@@ -10652,12 +9046,12 @@ SKIP_EDGE_NAV:;
                     std::vector<DialogButton> dlgButtons;
                     dlgButtons.emplace_back(DialogResult::Yes, L"Delete");
                     dlgButtons.emplace_back(DialogResult::Cancel, L"Cancel");
-                    if (IsCompareModeActive() && g_compare.contextPane == ComparePane::Right) {
-                        const D2D1_RECT_F vp = GetCompareViewport(hwnd, ComparePane::Right);
+                    if (IsCompareModeActive() && AppContext::GetInstance().Compare.contextPane == ComparePane::Right) {
+                        const D2D1_RECT_F vp = AppContext::GetInstance().CompareCtrl->GetViewport(hwnd, ComparePane::Right);
                         SetDialogCenter((vp.left + vp.right) * 0.5f, (vp.top + vp.bottom) * 0.5f);
                     }
 
-                    DialogResult dlgResult = ShowQuickViewDialog(hwnd, filename.c_str(), dlgMessage.c_str(),
+                    DialogResult dlgResult = AppContext::GetInstance().DialogCtrl->ShowDialog(hwnd, filename.c_str(), dlgMessage.c_str(),
                                                                  D2D1::ColorF(0.85f, 0.25f, 0.25f), dlgButtons, false, L"", L"");
                     ClearDialogCenter();
                     confirmed = (dlgResult == DialogResult::Yes);
@@ -10712,7 +9106,7 @@ SKIP_EDGE_NAV:;
                              // Empty folder?
                              GetPaneContext(PaneSlot::Primary).navigator.Initialize(L"", hwnd);
                              if (IsCompareModeActive()) {
-                                 ExitCompareMode(hwnd);
+                                 AppContext::GetInstance().CompareCtrl->ExitMode(hwnd);
                              }
                              RequestRepaint(PaintLayer::All);
                         }
@@ -10759,9 +9153,9 @@ SKIP_EDGE_NAV:;
 
         case IDM_COMPARE_MODE: {
             if (IsCompareModeActive()) {
-                ExitCompareMode(hwnd);
+                AppContext::GetInstance().CompareCtrl->ExitMode(hwnd);
             } else {
-                EnterCompareMode(hwnd);
+                AppContext::GetInstance().CompareCtrl->EnterMode(hwnd);
             }
             RequestRepaint(PaintLayer::All);
             break;
@@ -10840,9 +9234,9 @@ SKIP_EDGE_NAV:;
              
              if (!contextPath.empty()) {
                  if (contextLeft) {
-                     LoadImageIntoCompareLeftSlot(hwnd, contextPath, [](bool success){
+                     AppContext::GetInstance().CompareCtrl->LoadImageIntoLeftSlot(hwnd, contextPath, [](bool success){
                          if (success) {
-                             g_compare.activePane = ComparePane::Left;
+                             AppContext::GetInstance().Compare.activePane = ComparePane::Left;
                              MarkCompareDirty();
                              RequestRepaint(PaintLayer::Image | PaintLayer::Static);
                          }
@@ -11040,11 +9434,11 @@ SKIP_EDGE_NAV:;
                         { DialogResult::Cancel, L"Cancel" }
                     };
                     
-                    DialogResult result = ShowQuickViewDialog(hwnd, L"Fix Extension", msg, D2D1::ColorF(D2D1::ColorF::Orange), buttons);
+                    DialogResult result = AppContext::GetInstance().DialogCtrl->ShowDialog(hwnd, L"Fix Extension", msg, D2D1::ColorF(D2D1::ColorF::Orange), buttons);
                     if (result == DialogResult::Yes) {
                         if (contextLeft) {
                             if (MoveFileW(contextPath.c_str(), newPath.c_str())) {
-                                LoadImageIntoCompareLeftSlot(hwnd, newPath, [hwnd](bool success){
+                                AppContext::GetInstance().CompareCtrl->LoadImageIntoLeftSlot(hwnd, newPath, [hwnd](bool success){
                                     if (success) {
                                         g_osd.Show(hwnd, L"Extension Fixed (Left)", false);
                                         MarkCompareDirty();
@@ -11612,16 +10006,16 @@ void ProcessEngineEvents(HWND hwnd) {
                 SetWindowTextW(hwnd, titleBuf);
                 
                 if (IsCompareModeActive() && (GetPaneContext(PaneSlot::Primary).metadata.Width > 8192 || GetPaneContext(PaneSlot::Primary).metadata.Height > 8192)) {
-                    ExitCompareMode(hwnd);
+                    AppContext::GetInstance().CompareCtrl->ExitMode(hwnd);
                     g_osd.Show(hwnd, L"Compare mode exited: Titan image is not supported yet.", true);
                 }
 
 
                 if (IsCompareModeActive()) {
                     MarkCompareDirty();
-                    if (g_compare.pendingSnap && !isPreview) {
+                    if (AppContext::GetInstance().Compare.pendingSnap && !isPreview) {
                         SnapWindowToCompareImages(hwnd);
-                        g_compare.pendingSnap = false;
+                        AppContext::GetInstance().Compare.pendingSnap = false;
                     }
                 } else {
                     // Update DComp Visual (Base Preview for Titan, or full image for standard)
@@ -12596,37 +10990,7 @@ FireAndForget UpdateCompareLeftHistogramAsync(HWND hwnd, std::wstring path) {
     }
 }
 
-static FireAndForget LoadImageIntoCompareLeftSlot(HWND hwnd, std::wstring path, std::function<void(bool)> callback) {
-    const std::wstring localPath = path;
-    if (localPath.empty() || !g_imageEngine) {
-        if (callback) callback(false);
-        co_return;
-    }
 
-    g_leftPaneReadyCallback = callback;
-    
-    // Set left pane state to decoding/loading
-    g_isLeftPaneDecoding = true;
-    RequestRepaint(PaintLayer::Dynamic);
-    SetTimer(hwnd, 995, 16, nullptr); // Start UI Heartbeat timer for animating progress bar
-
-    uintmax_t fileSize = 0;
-    std::wstring archivePath;
-    size_t entryIndex = 0;
-    if (FileNavigator::ParseVirtualPath(localPath, archivePath, entryIndex)) {
-        // Virtual archive entry
-    } else {
-        std::error_code ec;
-        fileSize = std::filesystem::file_size(localPath, ec);
-    }
-
-    // Increment generation ID on Left slot to invalidate stale loads
-    auto& leftPane = GetPaneContext(PaneSlot::Left);
-    leftPane.Reset(); // This increments generationId
-    
-    g_imageEngine->NavigateTo(localPath, fileSize, 0, PaneSlot::Left, leftPane.generationId);
-    co_return;
-}
 
 FireAndForget LoadImageAsync(HWND hwnd, std::wstring path, bool showOSD, QuickView::BrowseDirection dir) {
     if (path.empty()) co_return;
@@ -12674,9 +11038,9 @@ void NavigateEdge(HWND hwnd, bool toLast) {
             GetPaneContext(PaneSlot::Primary).navigator.SetIndex(nextRightIndex);
         }
 
-        g_compare.activePane = ComparePane::Right;
-        g_compare.contextPane = ComparePane::Right;
-        g_compare.selectedPane = ComparePane::Right;
+        AppContext::GetInstance().Compare.activePane = ComparePane::Right;
+        AppContext::GetInstance().Compare.contextPane = ComparePane::Right;
+        AppContext::GetInstance().Compare.selectedPane = ComparePane::Right;
         GetPaneContext(PaneSlot::Primary).editState.Reset();
         if (!g_preserveViewStateOnNextLoad) {
             GetPaneContext(PaneSlot::Primary).view.Reset();
@@ -12685,7 +11049,7 @@ void NavigateEdge(HWND hwnd, bool toLast) {
         QuickView::BrowseDirection browseDir = toLast ? QuickView::BrowseDirection::FORWARD : QuickView::BrowseDirection::BACKWARD;
 
         if (!leftPath.empty()) {
-            LoadImageIntoCompareLeftSlot(hwnd, leftPath, [hwnd, rightPath, browseDir](bool success){
+            AppContext::GetInstance().CompareCtrl->LoadImageIntoLeftSlot(hwnd, leftPath, [hwnd, rightPath, browseDir](bool success){
                 if (success) {
                     MarkCompareDirty();
                 }
@@ -12702,7 +11066,7 @@ void NavigateEdge(HWND hwnd, bool toLast) {
         return;
     }
 
-    if (IsCompareModeActive() && g_compare.selectedPane == ComparePane::Left) {
+    if (IsCompareModeActive() && AppContext::GetInstance().Compare.selectedPane == ComparePane::Left) {
         auto& leftPane = GetPaneContext(PaneSlot::Left);
         if (!leftPane.valid || leftPane.path.empty()) return;
         if (leftPane.navigator.Count() <= 0 || leftPane.navigator.GetFile(leftPane.navigator.Index()) != leftPane.path) {
@@ -12713,10 +11077,10 @@ void NavigateEdge(HWND hwnd, bool toLast) {
         std::wstring path = toLast ? leftPane.navigator.Last() : leftPane.navigator.First();
 
         if (!path.empty()) {
-            LoadImageIntoCompareLeftSlot(hwnd, path, [](bool success){
+            AppContext::GetInstance().CompareCtrl->LoadImageIntoLeftSlot(hwnd, path, [](bool success){
                 if (success) {
-                    g_compare.activePane = ComparePane::Left;
-                    g_compare.contextPane = ComparePane::Left;
+                    AppContext::GetInstance().Compare.activePane = ComparePane::Left;
+                    AppContext::GetInstance().Compare.contextPane = ComparePane::Left;
                     MarkCompareDirty();
                     RequestRepaint(PaintLayer::Image | PaintLayer::Static);
                 }
@@ -12731,9 +11095,9 @@ void NavigateEdge(HWND hwnd, bool toLast) {
 
     if (IsCompareModeActive()) {
         if (!path.empty()) {
-            g_compare.activePane = ComparePane::Right;
-            g_compare.contextPane = ComparePane::Right;
-            g_compare.selectedPane = ComparePane::Right;
+            AppContext::GetInstance().Compare.activePane = ComparePane::Right;
+            AppContext::GetInstance().Compare.contextPane = ComparePane::Right;
+            AppContext::GetInstance().Compare.selectedPane = ComparePane::Right;
             if (!g_preserveViewStateOnNextLoad) {
                 GetPaneContext(PaneSlot::Primary).view.Reset();
             }
@@ -12801,9 +11165,9 @@ void Navigate(HWND hwnd, int direction) {
             GetPaneContext(PaneSlot::Primary).navigator.SetIndex(nextRightIndex);
         }
 
-        g_compare.activePane = ComparePane::Right;
-        g_compare.contextPane = ComparePane::Right;
-        g_compare.selectedPane = ComparePane::Right;
+        AppContext::GetInstance().Compare.activePane = ComparePane::Right;
+        AppContext::GetInstance().Compare.contextPane = ComparePane::Right;
+        AppContext::GetInstance().Compare.selectedPane = ComparePane::Right;
         GetPaneContext(PaneSlot::Primary).editState.Reset();
         if (!g_preserveViewStateOnNextLoad) {
             GetPaneContext(PaneSlot::Primary).view.Reset();
@@ -12812,7 +11176,7 @@ void Navigate(HWND hwnd, int direction) {
         QuickView::BrowseDirection browseDir = (direction > 0) ? QuickView::BrowseDirection::FORWARD : QuickView::BrowseDirection::BACKWARD;
 
         if (!leftPath.empty()) {
-            LoadImageIntoCompareLeftSlot(hwnd, leftPath, [hwnd, rightPath, browseDir](bool success){
+            AppContext::GetInstance().CompareCtrl->LoadImageIntoLeftSlot(hwnd, leftPath, [hwnd, rightPath, browseDir](bool success){
                 if (success) {
                     MarkCompareDirty();
                 }
@@ -12829,7 +11193,7 @@ void Navigate(HWND hwnd, int direction) {
         return;
     }
 
-    if (IsCompareModeActive() && g_compare.selectedPane == ComparePane::Left) {
+    if (IsCompareModeActive() && AppContext::GetInstance().Compare.selectedPane == ComparePane::Left) {
         auto& leftPane = GetPaneContext(PaneSlot::Left);
         if (!leftPane.valid || leftPane.path.empty()) return;
         if (leftPane.navigator.Count() <= 0 || leftPane.navigator.GetFile(leftPane.navigator.Index()) != leftPane.path) {
@@ -12842,11 +11206,11 @@ void Navigate(HWND hwnd, int direction) {
             : leftPane.navigator.Previous();
 
         if (!path.empty()) {
-            LoadImageIntoCompareLeftSlot(hwnd, path, [](bool success){
+            AppContext::GetInstance().CompareCtrl->LoadImageIntoLeftSlot(hwnd, path, [](bool success){
                 if (success) {
-                    g_compare.activePane = ComparePane::Left;
-                    g_compare.contextPane = ComparePane::Left;
-                    g_compare.selectedPane = ComparePane::Left;
+                    AppContext::GetInstance().Compare.activePane = ComparePane::Left;
+                    AppContext::GetInstance().Compare.contextPane = ComparePane::Left;
+                    AppContext::GetInstance().Compare.selectedPane = ComparePane::Left;
                     MarkCompareDirty();
                     RequestRepaint(PaintLayer::Image | PaintLayer::Static);
                 }
@@ -12864,9 +11228,9 @@ void Navigate(HWND hwnd, int direction) {
 
     if (IsCompareModeActive()) {
         if (!path.empty()) {
-            g_compare.activePane = ComparePane::Right;
-            g_compare.contextPane = ComparePane::Right;
-            g_compare.selectedPane = ComparePane::Right;
+            AppContext::GetInstance().Compare.activePane = ComparePane::Right;
+            AppContext::GetInstance().Compare.contextPane = ComparePane::Right;
+            AppContext::GetInstance().Compare.selectedPane = ComparePane::Right;
             GetPaneContext(PaneSlot::Primary).editState.Reset();
             if (!g_preserveViewStateOnNextLoad) {
                 GetPaneContext(PaneSlot::Primary).view.Reset();
@@ -12972,11 +11336,11 @@ void OnPaint(HWND hwnd) {
 
         if (IsCompareModeActive()) {
             SyncDCompState(hwnd, winPixelsW, winPixelsH);
-            if (g_compare.dirty) {
-                if (RenderCompareComposite(hwnd)) {
-                    g_compare.dirty = false;
+            if (AppContext::GetInstance().Compare.dirty) {
+                if (AppContext::GetInstance().CompareCtrl->RenderComposite(hwnd)) {
+                    AppContext::GetInstance().Compare.dirty = false;
                 } else {
-                    ExitCompareMode(hwnd);
+                    AppContext::GetInstance().CompareCtrl->ExitMode(hwnd);
                 }
             }
         } else {
@@ -13316,9 +11680,9 @@ void PerformSmartZoom(HWND hwnd, float newTotalScale, const POINT* centerPt, boo
     const float currentWinW = (float)rcCurrentClient.right;
     const float currentWinH = (float)rcCurrentClient.bottom;
     const float currentBaseFit = ComputeBaseFitScaleForVisual(vs, currentWinW, currentWinH);
-    const float sourceDisplayZoom = g_smoothZoom.Active ? g_smoothZoom.CurrentZoom : (currentBaseFit * GetPaneContext(PaneSlot::Primary).view.Zoom);
-    const float sourceDisplayPanX = g_smoothZoom.Active ? g_smoothZoom.CurrentPanX : GetPaneContext(PaneSlot::Primary).view.PanX;
-    const float sourceDisplayPanY = g_smoothZoom.Active ? g_smoothZoom.CurrentPanY : GetPaneContext(PaneSlot::Primary).view.PanY;
+    const float sourceDisplayZoom = AppContext::GetInstance().SmoothZoom.Active ? AppContext::GetInstance().SmoothZoom.CurrentZoom : (currentBaseFit * GetPaneContext(PaneSlot::Primary).view.Zoom);
+    const float sourceDisplayPanX = AppContext::GetInstance().SmoothZoom.Active ? AppContext::GetInstance().SmoothZoom.CurrentPanX : GetPaneContext(PaneSlot::Primary).view.PanX;
+    const float sourceDisplayPanY = AppContext::GetInstance().SmoothZoom.Active ? AppContext::GetInstance().SmoothZoom.CurrentPanY : GetPaneContext(PaneSlot::Primary).view.PanY;
     const bool useSmoothZoomAnimation = animateDisplay && !UseSvgViewportRendering(GetPaneContext(PaneSlot::Primary).resource);
     const POINT* effectiveAnchorPt = (centerPt && g_config.MouseAnchoredWindowZoom) ? centerPt : nullptr;
 
@@ -13367,7 +11731,7 @@ void PerformSmartZoom(HWND hwnd, float newTotalScale, const POINT* centerPt, boo
     
     if (willResizeWindow) {
          // --- Resize Window Path ---
-         float oldZoom = (g_smoothWindowZoom.active) ? g_smoothWindowZoom.targetZoom : GetPaneContext(PaneSlot::Primary).view.Zoom;
+         float oldZoom = (AppContext::GetInstance().SmoothWindowZoom.active) ? AppContext::GetInstance().SmoothWindowZoom.targetZoom : GetPaneContext(PaneSlot::Primary).view.Zoom;
          float startZoom = GetPaneContext(PaneSlot::Primary).view.Zoom;
          float startPanX = GetPaneContext(PaneSlot::Primary).view.PanX;
          float startPanY = GetPaneContext(PaneSlot::Primary).view.PanY;
@@ -13451,7 +11815,7 @@ void PerformSmartZoom(HWND hwnd, float newTotalScale, const POINT* centerPt, boo
              }
          }
          
-         float oldZoom = (g_smoothWindowZoom.active) ? g_smoothWindowZoom.targetZoom : GetPaneContext(PaneSlot::Primary).view.Zoom;
+         float oldZoom = (AppContext::GetInstance().SmoothWindowZoom.active) ? AppContext::GetInstance().SmoothWindowZoom.targetZoom : GetPaneContext(PaneSlot::Primary).view.Zoom;
          float newZoom = newTotalScale / fitScale;
          
          // Apply Zoom Ratio to Pan if Center Point Provided
@@ -13485,7 +11849,7 @@ void PerformSmartZoom(HWND hwnd, float newTotalScale, const POINT* centerPt, boo
               g_compEngine->Commit();
 
               if (useSmoothZoomAnimation) {
-                  ConfigureSmoothZoom(hwnd,
+                  AppContext::GetInstance().ZoomAnimCtrl->Configure(hwnd,
                                       sourceDisplayZoom,
                                       sourceDisplayPanX,
                                       sourceDisplayPanY,
@@ -13495,14 +11859,14 @@ void PerformSmartZoom(HWND hwnd, float newTotalScale, const POINT* centerPt, boo
                                       effectiveAnchorPt,
                                       false,
                                       nullptr);
-                  if (TickSmoothZoom(hwnd)) {
+                  if (AppContext::GetInstance().ZoomAnimCtrl->Tick(hwnd)) {
                       SetTimer(hwnd, IDT_SMOOTH_ZOOM, 16, nullptr);
                   } else {
                       KillTimer(hwnd, IDT_SMOOTH_ZOOM);
                   }
               } else {
                   KillTimer(hwnd, IDT_SMOOTH_ZOOM);
-                  SyncSmoothZoomToLogical(winW, winH, false);
+                  AppContext::GetInstance().ZoomAnimCtrl->SyncToLogical(winW, winH, false);
                   SyncDCompState(hwnd, winW, winH);
                   g_compEngine->Commit();
               }

@@ -1,14 +1,24 @@
-#include "CompareController.h"
 #include "pch.h"
+#include "CompareController.h"
 #include "DialogController.h"
 #include "QuickView.h"
 #include "PaneContext.h"
 #include "RenderEngine.h"
+#include "UIRenderer.h"
+#include "CompositionEngine.h"
+#include "SettingsOverlay.h"
 
 extern float g_uiScale;
+extern AppConfig g_config;
+extern std::unique_ptr<UIRenderer> g_uiRenderer;
+extern CompositionEngine* g_compEngine;
+extern bool IsLightThemeActive();
+
 extern void RequestRepaint(QuickView::PaintLayer layer);
 extern void AdjustWindowForOverlay(HWND hwnd, bool animate);
 extern void EnsureWindowSizeForDialog(HWND hwnd);
+
+static DialogLayout CalculateDialogLayoutInternal(D2D1_SIZE_F size, DialogState& dialog);
 
 LRESULT CALLBACK DialogEditSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     DialogState& dialog = AppContext::GetInstance().Dialog;
@@ -45,12 +55,194 @@ LRESULT CALLBACK DialogEditSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 
 DialogController::DialogController(AppContext& context) : m_context(context) {}
 
-bool DialogController::IsVisible() const {
+bool DialogController::IsActive() const {
     return m_context.Dialog.IsVisible;
 }
 
 void DialogController::MarkDirty() {
     RequestRepaint(QuickView::PaintLayer::Dynamic);
+}
+
+void DialogController::Render(ID2D1DeviceContext* context) {
+    if (!m_context.Dialog.IsVisible || !context || !m_hwnd) return;
+
+    RECT clientRect{};
+    GetClientRect(m_hwnd, &clientRect);
+    D2D1_SIZE_F size = D2D1::SizeF((float)(clientRect.right - clientRect.left), (float)(clientRect.bottom - clientRect.top));
+    DialogLayout layout = CalculateDialogLayoutInternal(size, m_context.Dialog);
+
+    // Overlay (background dimming)
+    ComPtr<ID2D1SolidColorBrush> pOverlayBrush;
+    bool isLight = IsLightThemeActive();
+    D2D1_COLOR_F dimmerClr = isLight ? D2D1::ColorF(0.95f, 0.95f, 0.97f, 0.4f) : D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.4f);
+    context->CreateSolidColorBrush(dimmerClr, &pOverlayBrush);
+    context->FillRectangle(D2D1::RectF(0, 0, size.width, size.height), pOverlayBrush.Get());
+
+    // Box Background (Geek Glass or Fallback)
+    bool useGlass = g_uiRenderer && g_uiRenderer->GetBackgroundCommandList();
+    if (useGlass) {
+        auto& geekGlass = g_uiRenderer->GetGlassEngine("Dialog_Main");
+        geekGlass.InitializeResources(context);
+        QuickView::UI::GeekGlass::GeekGlassConfig config;
+        config.panelBounds = layout.Box;
+        config.cornerRadius = 10.0f * g_uiScale;
+        config.shadowOpacity = g_config.GlassShadowOpacity;
+        config.blurStandardDeviation = g_config.GlassBlurSigma * g_uiScale;
+        config.opacity = g_config.GlassModalsOpacity / 100.0f;
+        config.tintProfile = g_config.GlassTintProfile;
+        config.customTintColor = D2D1::ColorF(g_config.GlassCustomTintR, g_config.GlassCustomTintG, g_config.GlassCustomTintB, g_config.GlassTintAlpha);
+        config.tintAlpha = g_config.GlassTintAlpha;
+        config.specularOpacity = g_config.GlassSpecularOpacity;
+        config.pBackgroundCommandList = g_uiRenderer->GetBackgroundCommandList();
+        config.backgroundTransform = g_compEngine ? g_compEngine->GetScreenTransform() : D2D1::Matrix3x2F::Identity();
+        geekGlass.DrawGeekGlassPanel(context, config);
+
+        // [Material Boost] Consistency for Dialog Density
+        float masterOpacity = g_config.GlassModalsOpacity / 100.0f;
+        ComPtr<ID2D1SolidColorBrush> materialBrush;
+        D2D1_COLOR_F fillerColor = isLight ? D2D1::ColorF(0.95f, 0.95f, 0.97f, 1.0f) : D2D1::ColorF(0.08f, 0.08f, 0.10f, 1.0f);
+        context->CreateSolidColorBrush(fillerColor, &materialBrush);
+        if (materialBrush) {
+            materialBrush->SetOpacity(masterOpacity);
+            context->FillRoundedRectangle(D2D1::RoundedRect(layout.Box, 10.0f * g_uiScale, 10.0f * g_uiScale), materialBrush.Get());
+        }
+
+        geekGlass.DrawGeekGlassToppings(context, config);
+    } else {
+        ComPtr<ID2D1SolidColorBrush> pBgBrush;
+        D2D1_COLOR_F bgClr = isLight ? D2D1::ColorF(0.95f, 0.95f, 0.97f, 1.0f) : D2D1::ColorF(0.18f, 0.18f, 0.18f, 1.0f);
+        context->CreateSolidColorBrush(D2D1::ColorF(bgClr.r, bgClr.g, bgClr.b, g_config.GlassModalsOpacity / 100.0f), &pBgBrush);
+        context->FillRoundedRectangle(D2D1::RoundedRect(layout.Box, 10.0f * g_uiScale, 10.0f * g_uiScale), pBgBrush.Get());
+    }
+
+    // Border
+    ComPtr<ID2D1SolidColorBrush> pBorderBrush;
+    context->CreateSolidColorBrush(m_context.Dialog.AccentColor, &pBorderBrush);
+    context->DrawRoundedRectangle(D2D1::RoundedRect(layout.Box, 10.0f * g_uiScale, 10.0f * g_uiScale), pBorderBrush.Get(), 2.0f * g_uiScale);
+
+    // Fonts
+    static ComPtr<IDWriteFactory> pDW;
+    static ComPtr<IDWriteTextFormat> fmtTitle;
+    static ComPtr<IDWriteTextFormat> fmtBody;
+    static ComPtr<IDWriteTextFormat> fmtBtn;
+    static ComPtr<IDWriteTextFormat> fmtBtnCenter;
+    static float s_lastUiScale = 0.0f;
+    if (s_lastUiScale != g_uiScale) {
+        s_lastUiScale = g_uiScale;
+        fmtTitle.Reset();
+        fmtBody.Reset();
+        fmtBtn.Reset();
+        fmtBtnCenter.Reset();
+    }
+
+    if (!pDW) DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(pDW.GetAddressOf()));
+    if (pDW) {
+        if (!fmtTitle) {
+            pDW->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 17.0f * g_uiScale, L"en-us", &fmtTitle);
+            if (fmtTitle) fmtTitle->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+        }
+        if (!fmtBody) pDW->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 12.0f * g_uiScale, L"en-us", &fmtBody);
+        if (!fmtBtn) pDW->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 13.0f * g_uiScale, L"en-us", &fmtBtn);
+        if (!fmtBtnCenter) {
+             pDW->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 13.0f * g_uiScale, L"en-us", &fmtBtnCenter);
+             if (fmtBtnCenter) fmtBtnCenter->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+             if (fmtBtnCenter) fmtBtnCenter->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+        }
+    }
+
+    // Theme-aware Text Brushes
+    D2D1_COLOR_F txtClr = isLight ? D2D1::ColorF(0.12f, 0.12f, 0.15f, 1.0f) : D2D1::ColorF(1.0f, 1.0f, 1.0f, 1.0f);
+    D2D1_COLOR_F txtDimClr = isLight ? D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.15f) : D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.15f);
+
+    ComPtr<ID2D1SolidColorBrush> pTextBrush, pGrayTextBrush;
+    context->CreateSolidColorBrush(txtClr, &pTextBrush);
+    context->CreateSolidColorBrush(txtDimClr, &pGrayTextBrush);
+
+    // Title
+    std::wstring displayTitle = m_context.Dialog.Title;
+    if (g_uiRenderer && fmtTitle) {
+        float availableWidth = (layout.Box.right - layout.Box.left) - 50.0f;
+        displayTitle = g_uiRenderer->MakeMiddleEllipsis(availableWidth, m_context.Dialog.Title, fmtTitle.Get());
+    }
+
+    float titleTop = layout.Box.top + 18;
+    float titleBottom = layout.Box.top + 48;
+    context->DrawText(displayTitle.c_str(), (UINT32)displayTitle.length(), fmtTitle.Get(), 
+        D2D1::RectF(layout.Box.left + 25, titleTop, layout.Box.right - 25, titleBottom), pTextBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_NONE);
+
+    // Message
+    float msgTop = titleBottom + 8;
+    float msgBottom = layout.Checkbox.top - 55.0f;
+    if (m_context.Dialog.HasInput) msgBottom = layout.Input.top - 10.0f;
+
+    context->DrawText(m_context.Dialog.Message.c_str(), (UINT32)m_context.Dialog.Message.length(), fmtBody.Get(), 
+        D2D1::RectF(layout.Box.left + 25, msgTop, layout.Box.right - 25, msgBottom), pTextBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_NONE);
+
+    // [Input Mode] Draw Input Field Background
+    if (m_context.Dialog.HasInput) {
+        ComPtr<ID2D1SolidColorBrush> pInputBg;
+        D2D1_COLOR_F inputBgClr = isLight ? D2D1::ColorF(1.0f, 1.0f, 1.0f, 1.0f) : D2D1::ColorF(0.12f, 0.12f, 0.12f, 1.0f);
+        context->CreateSolidColorBrush(inputBgClr, &pInputBg);
+        context->FillRoundedRectangle(D2D1::RoundedRect(layout.Input, 6.0f, 6.0f), pInputBg.Get());
+
+        // Border
+        ComPtr<ID2D1SolidColorBrush> pInputBorder;
+        D2D1_COLOR_F inputBordClr = isLight ? D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.2f) : D2D1::ColorF(0.35f, 0.35f, 0.35f, 1.0f);
+        context->CreateSolidColorBrush(inputBordClr, &pInputBorder);
+        D2D1_RECT_F borderRect = layout.Input;
+        context->DrawRoundedRectangle(D2D1::RoundedRect(borderRect, 6.0f, 6.0f), pInputBorder.Get(), 1.0f);
+
+        // Focus Highlight
+        if (m_context.Dialog.hEdit && GetFocus() == m_context.Dialog.hEdit) {
+             context->DrawRoundedRectangle(D2D1::RoundedRect(borderRect, 6.0f, 6.0f), pBorderBrush.Get(), 2.0f);
+        }
+    }
+
+    // Quality Info
+    if (!m_context.Dialog.QualityText.empty()) {
+        float qualityY = layout.Checkbox.top - 45.0f;
+        context->DrawText(m_context.Dialog.QualityText.c_str(), (UINT32)m_context.Dialog.QualityText.length(), fmtBody.Get(), 
+            D2D1::RectF(layout.Box.left + 30, qualityY, layout.Box.right - 30, qualityY + 25), pBorderBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_NONE);
+    }
+
+    // Checkbox
+    if (m_context.Dialog.HasCheckbox) {
+        context->DrawRectangle(layout.Checkbox, pTextBrush.Get(), 1.0f);
+        if (m_context.Dialog.IsChecked) {
+             context->FillRectangle(D2D1::RectF(layout.Checkbox.left+4, layout.Checkbox.top+4, layout.Checkbox.right-4, layout.Checkbox.bottom-4), pBorderBrush.Get());
+        }
+        context->DrawText(m_context.Dialog.CheckboxText.c_str(), (UINT32)m_context.Dialog.CheckboxText.length(), fmtBtn.Get(), 
+            D2D1::RectF(layout.Checkbox.right + 10, layout.Checkbox.top, layout.Box.right - 30, layout.Checkbox.bottom + 5), pTextBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_NONE);
+    }
+
+    // Buttons
+    for (size_t i = 0; i < m_context.Dialog.Buttons.size(); ++i) {
+        if (i >= layout.Buttons.size()) break;
+        D2D1_RECT_F btnRect = layout.Buttons[i];
+
+        bool isSelected = (static_cast<int>(i) == m_context.Dialog.SelectedButtonIndex);
+        if (isSelected) {
+            context->FillRoundedRectangle(D2D1::RoundedRect(btnRect, 4.0f, 4.0f), pBorderBrush.Get());
+        } else {
+             ComPtr<ID2D1SolidColorBrush> pBtnBgBrush;
+             D2D1_COLOR_F btnBgClr = isLight ? D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.1f) : D2D1::ColorF(0.3f, 0.3f, 0.3f, 1.0f);
+             context->CreateSolidColorBrush(btnBgClr, &pBtnBgBrush);
+             context->FillRoundedRectangle(D2D1::RoundedRect(btnRect, 4.0f, 4.0f), pBtnBgBrush.Get());
+
+             ComPtr<ID2D1SolidColorBrush> pBtnBorderBrush;
+             D2D1_COLOR_F btnBordClr = isLight ? D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.25f) : D2D1::ColorF(0.45f, 0.45f, 0.45f, 1.0f);
+             context->CreateSolidColorBrush(btnBordClr, &pBtnBorderBrush);
+             context->DrawRoundedRectangle(D2D1::RoundedRect(btnRect, 4.0f, 4.0f), pBtnBorderBrush.Get(), 1.0f);
+        }
+
+        std::wstring& text = m_context.Dialog.Buttons[i].Text;
+        D2D1_RECT_F textRect = D2D1::RectF(btnRect.left, btnRect.top - 2, btnRect.right, btnRect.bottom - 2);
+
+        ComPtr<ID2D1SolidColorBrush> whiteBrush;
+        context->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White), &whiteBrush);
+
+        context->DrawText(text.c_str(), (UINT32)text.length(), fmtBtnCenter.Get(), textRect, isSelected ? whiteBrush.Get() : pTextBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_NONE, DWRITE_MEASURING_MODE_NATURAL);
+    }
 }
 
 static DialogLayout CalculateDialogLayoutInternal(D2D1_SIZE_F size, DialogState& dialog) {
@@ -126,11 +318,11 @@ static void CreateDialogInputInternal(HWND parent, DialogState& dialog) {
             
         if (dialog.hEdit) {
           int fontHeight = (int)(22 * g_uiScale);
-          HFONT hFont = CreateFontW(
+          dialog.hFont = CreateFontW(
               fontHeight, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
               DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
               DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
-          SendMessage(dialog.hEdit, WM_SETFONT, (WPARAM)hFont, TRUE);
+          SendMessage(dialog.hEdit, WM_SETFONT, (WPARAM)dialog.hFont, TRUE);
           dialog.oldEditProc = (WNDPROC)SetWindowLongPtr(
               dialog.hEdit, GWLP_WNDPROC, (LONG_PTR)DialogEditSubclassProc);
           SetFocus(dialog.hEdit);
@@ -150,12 +342,17 @@ static void DestroyDialogInputInternal(DialogState& dialog) {
         DestroyWindow(dialog.hInputHost);
         dialog.hInputHost = nullptr;
     }
+    if (dialog.hFont) {
+        DeleteObject(dialog.hFont);
+        dialog.hFont = nullptr;
+    }
 }
 
 DialogResult DialogController::ShowDialog(HWND hwnd, const std::wstring& title, const std::wstring& messageContent,
                         D2D1_COLOR_F accentColor, const std::vector<DialogButton>& buttons,
                         bool hasCheckbox, const std::wstring& checkboxText, const std::wstring& qualityText)
 {
+    m_hwnd = hwnd;
     m_context.Dialog.IsVisible = true;
     m_context.Dialog.Title = title;
     m_context.Dialog.Message = messageContent;
@@ -201,7 +398,8 @@ DialogResult DialogController::ShowDialog(HWND hwnd, const std::wstring& title, 
 }
 
 std::optional<LRESULT> DialogController::HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
-    if (!IsVisible()) return std::nullopt;
+    m_hwnd = hwnd;
+    if (!IsActive()) return std::nullopt;
 
     switch (message) {
         case WM_KEYDOWN:
@@ -309,6 +507,7 @@ std::optional<LRESULT> DialogController::OnLButtonDown(HWND hwnd, int x, int y) 
 
 std::wstring DialogController::ShowInputDialog(HWND hwnd, const std::wstring& title, const std::wstring& message, const std::wstring& initialText) 
 {
+    m_hwnd = hwnd;
     m_context.Dialog.IsVisible = true;
     m_context.Dialog.Title = title;
     m_context.Dialog.Message = message;

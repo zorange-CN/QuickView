@@ -1,6 +1,7 @@
+#include "pch.h"
 #include "CompareController.h"
 #include "DialogController.h"
-#include "pch.h"
+#include "ZoomAnimation.h"
 #include "AppContext.h"
 
 void SmoothZoomState::Reset() {
@@ -33,10 +34,7 @@ AppContext& AppContext::GetInstance() {
 AppContext::AppContext() {
     CompareCtrl = std::make_unique<CompareController>(*this);
     DialogCtrl = std::make_unique<DialogController>(*this);
+    ZoomAnimCtrl = std::make_unique<SmoothZoomController>(*this);
 }
 
 AppContext::~AppContext() = default;
-
-// Define global metrics
-#include "DebugMetrics.h"
-DebugMetrics g_debugMetrics{};

@@ -7,12 +7,15 @@
 #include <vector>
 #include "AppContext.h"
 
-class DialogController {
+#include "IController.h"
+
+class DialogController : public IController {
 public:
     explicit DialogController(AppContext& context);
-    ~DialogController() = default;
+    ~DialogController() override = default;
 
-    std::optional<LRESULT> HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
+    std::optional<LRESULT> HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) override;
+    void Render(ID2D1DeviceContext* ctx) override;
 
     DialogResult ShowDialog(HWND hwnd, const std::wstring& title, const std::wstring& messageContent,
                             D2D1_COLOR_F accentColor, const std::vector<DialogButton>& buttons,
@@ -22,10 +25,11 @@ public:
 
     bool RenderComposite(HWND hwnd);
     void MarkDirty();
-    bool IsVisible() const;
+    bool IsActive() const override;
 
 private:
     AppContext& m_context;
+    HWND m_hwnd = nullptr;
 
     std::optional<LRESULT> OnLButtonDown(HWND hwnd, int x, int y);
     std::optional<LRESULT> OnLButtonUp(HWND hwnd, int x, int y);

@@ -1,4 +1,5 @@
 #include "CompareController.h"
+#include "DialogController.h"
 #include "UIRenderer.h"
 #include "AppStrings.h"
 #include "DebugMetrics.h"
@@ -29,8 +30,7 @@ extern ImageEngine* g_pImageEngine; // [v3.1] Accessor (renamed from g_imageEngi
 #include "FileNavigator.h"
 extern FileNavigator& g_navigator;
 
-// DrawDialog is still in main.cpp (modal dialog handling)
-extern void DrawDialog(ID2D1DeviceContext* context, const RECT& clientRect);
+// Dialog rendering is handled by DialogController
 
 extern RuntimeConfig g_runtime;
  // [Fix] Loading indicator for progress bar
@@ -752,8 +752,9 @@ void UIRenderer::RenderDynamicLayer(ID2D1DeviceContext* dc, HWND hwnd) {
     DrawGridTooltip(dc);
     
     // Modal Dialog (最顶层)
-    RECT clientRect = { 0, 0, (LONG)m_width, (LONG)m_height };
-    DrawDialog(dc, clientRect);
+    if (AppContext::GetInstance().DialogCtrl->IsActive()) {
+        AppContext::GetInstance().DialogCtrl->Render(dc);
+    }
 }
 
 // ============================================================================

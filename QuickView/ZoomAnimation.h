@@ -10,7 +10,16 @@ public:
     ~SmoothZoomController() = default;
 
     void Reset();
-    void Configure(HWND hwnd, float winW, float winH, float sourceZoom, float sourcePanX, float sourcePanY, float targetZoom, float targetPanX, float targetPanY, float dx, float dy, POINT resolvedAnchorScreenPt, bool animateWindow, RECT windowRc, RECT* targetWindowRect);
+    void Configure(HWND hwnd,
+                   float sourceZoom,
+                   float sourcePanX,
+                   float sourcePanY,
+                   float targetZoom,
+                   float targetPanX,
+                   float targetPanY,
+                   const POINT* anchorScreenPt,
+                   bool animateWindow,
+                   const RECT* targetWindowRect);
     void SyncToLogical(float winW, float winH, bool activate);
     bool Tick(HWND hwnd);
 
