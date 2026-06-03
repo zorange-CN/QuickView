@@ -1,3 +1,4 @@
+#include "CompareController.h"
 #include "UIRenderer.h"
 #include "AppStrings.h"
 #include "DebugMetrics.h"
@@ -32,7 +33,7 @@ extern FileNavigator& g_navigator;
 extern void DrawDialog(ID2D1DeviceContext* context, const RECT& clientRect);
 
 extern RuntimeConfig g_runtime;
-extern bool g_isLoading; // [Fix] Loading indicator for progress bar
+ // [Fix] Loading indicator for progress bar
 extern bool g_isLeftPaneDecoding; // [Fix] Left pane decoding status
 extern bool g_isNavigatingToTitan; // [Fix] Restrict decode progress bar to Titan images
 extern ViewState& g_viewState;  // [v3.2] For Nav Indicators
@@ -43,7 +44,6 @@ extern AppConfig g_config;
 extern int GetCurrentZoomPercent(); // [v3.2.3] For Info Panel Zoom Display
 extern bool GetCompareIndicatorState(int& outPane, float& outSplitRatio, bool& outIsWipe);
 extern bool GetCompareInfoSnapshot(CImageLoader::ImageMetadata& left, CImageLoader::ImageMetadata& right);
-extern bool IsCompareModeActive();
 extern bool GetAdaptiveUiPaneSnapshot(int paneIndex, AdaptiveUiPaneSnapshot& outSnapshot);
 
 static bool PointInRect(float x, float y, const D2D1_RECT_F& rect) {

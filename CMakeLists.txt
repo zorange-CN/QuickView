@@ -35,6 +35,11 @@ option(ENABLE_LTO  "Enable Link Time Optimization (ThinLTO)" OFF)
 # ============================================================================
 set(QUICKVIEW_SOURCES
     QuickView/main.cpp
+    QuickView/AppContext.cpp
+    QuickView/CompareController.cpp
+    QuickView/DialogController.cpp
+    QuickView/ZoomAnimation.cpp
+    QuickView/ColorMath.cpp
     QuickView/pch.cpp
     QuickView/AppStrings.cpp
     QuickView/GeekGlass.cpp
@@ -278,3 +283,15 @@ target_link_libraries(QuickView PRIVATE
     shell32.lib
     mscms.lib
 )
+
+# ============================================================================
+# Unit Tests
+# ============================================================================
+find_package(GTest CONFIG REQUIRED)
+enable_testing()
+
+add_executable(ColorMathTests tests/ColorMathTests.cpp QuickView/ColorMath.cpp QuickView/pch.cpp)
+target_link_libraries(ColorMathTests PRIVATE GTest::gtest_main GTest::gtest d2d1.lib dwrite.lib windowscodecs.lib dxgi.lib d3d11.lib shlwapi.lib shell32.lib mscms.lib)
+target_precompile_headers(ColorMathTests REUSE_FROM QuickView)
+target_include_directories(ColorMathTests PRIVATE QuickView)
+add_test(NAME ColorMathTests COMMAND ColorMathTests)

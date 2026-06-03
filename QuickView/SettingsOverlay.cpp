@@ -1,3 +1,4 @@
+#include "CompareController.h"
 #include "SettingsOverlay.h"
 #include "ThemeSystem.h"
 #include "HelpOverlay.h"
@@ -1599,8 +1600,7 @@ void SettingsOverlay::BuildMenu() {
     itemFsZoom.onChange = []() {
         SaveConfig();
         HWND hwnd = GetActiveWindow();
-        extern bool g_isFullScreen;
-        if (hwnd && (IsZoomed(hwnd) || g_isFullScreen)) {
+                if (hwnd && (IsZoomed(hwnd) || g_isFullScreen)) {
             // Forward declaration to let main.cpp handle this cleanly
             extern void ApplyFullScreenZoomMode(HWND hwnd);
             ApplyFullScreenZoomMode(hwnd);
