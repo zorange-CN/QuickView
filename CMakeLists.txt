@@ -4,7 +4,27 @@ cmake_minimum_required(VERSION 3.25)
 # Adaptive Build Tool Discovery (Handled by Toolchain)
 # ============================================================================
 
+# Force-define CXX features to bypass CMake's Clang 22 feature detection bug
 project(QuickView LANGUAGES C CXX RC)
+
+set(CMAKE_CXX_COMPILE_FEATURES "cxx_std_11;cxx_std_14;cxx_std_17;cxx_std_20;cxx_std_23;cxx_std_26" CACHE INTERNAL "" FORCE)
+set(CMAKE_CXX98_COMPILE_FEATURES "cxx_template_template_parameters" CACHE INTERNAL "" FORCE)
+set(CMAKE_CXX11_COMPILE_FEATURES "cxx_alias_templates;cxx_alignas;cxx_alignof;cxx_attributes;cxx_auto_type;cxx_constexpr;cxx_decltype;cxx_defaulted_functions;cxx_defaulted_move_initializers;cxx_delegating_constructors;cxx_deleted_functions;cxx_explicit_conversions;cxx_extended_friend_declarations;cxx_extern_templates;cxx_final;cxx_func_identifier;cxx_generalized_initializers;cxx_inheriting_constructors;cxx_inline_namespaces;cxx_lambdas;cxx_local_type_template_args;cxx_long_long_type;cxx_noexcept;cxx_nonstatic_member_init;cxx_nullptr;cxx_override;cxx_range_for;cxx_raw_string_literals;cxx_reference_qualified_functions;cxx_right_angle_brackets;cxx_rvalue_references;cxx_sizeof_member;cxx_static_assert;cxx_strong_enums;cxx_thread_local;cxx_trailing_return_types;cxx_unicode_literals;cxx_uniform_initialization;cxx_unrestricted_unions;cxx_user_literals;cxx_variadic_macros;cxx_variadic_templates" CACHE INTERNAL "" FORCE)
+set(CMAKE_CXX14_COMPILE_FEATURES "cxx_aggregate_default_initializers;cxx_attribute_deprecated;cxx_binary_literals;cxx_contextual_conversions;cxx_decltype_auto;cxx_digit_separators;cxx_generic_lambdas;cxx_lambda_init_captures;cxx_local_type_template_args;cxx_relaxed_constexpr;cxx_return_type_deduction;cxx_variable_templates" CACHE INTERNAL "" FORCE)
+set(CMAKE_CXX17_COMPILE_FEATURES "cxx_std_17" CACHE INTERNAL "" FORCE)
+set(CMAKE_CXX20_COMPILE_FEATURES "cxx_std_20" CACHE INTERNAL "" FORCE)
+set(CMAKE_CXX23_COMPILE_FEATURES "cxx_std_23" CACHE INTERNAL "" FORCE)
+set(CMAKE_CXX26_COMPILE_FEATURES "cxx_std_26" CACHE INTERNAL "" FORCE)
+
+# Set normal variables to override the compiler detection's empty normal variables
+set(CMAKE_CXX_COMPILE_FEATURES "${CMAKE_CXX_COMPILE_FEATURES}")
+set(CMAKE_CXX98_COMPILE_FEATURES "${CMAKE_CXX98_COMPILE_FEATURES}")
+set(CMAKE_CXX11_COMPILE_FEATURES "${CMAKE_CXX11_COMPILE_FEATURES}")
+set(CMAKE_CXX14_COMPILE_FEATURES "${CMAKE_CXX14_COMPILE_FEATURES}")
+set(CMAKE_CXX17_COMPILE_FEATURES "${CMAKE_CXX17_COMPILE_FEATURES}")
+set(CMAKE_CXX20_COMPILE_FEATURES "${CMAKE_CXX20_COMPILE_FEATURES}")
+set(CMAKE_CXX23_COMPILE_FEATURES "${CMAKE_CXX23_COMPILE_FEATURES}")
+set(CMAKE_CXX26_COMPILE_FEATURES "${CMAKE_CXX26_COMPILE_FEATURES}")
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -294,3 +314,5 @@ add_executable(ColorMathTests tests/ColorMathTests.cpp QuickView/ColorMath.cpp Q
 target_link_libraries(ColorMathTests PRIVATE GTest::gtest_main GTest::gtest d2d1.lib dwrite.lib windowscodecs.lib dxgi.lib d3d11.lib shlwapi.lib shell32.lib mscms.lib)
 target_include_directories(ColorMathTests PRIVATE QuickView)
 add_test(NAME ColorMathTests COMMAND ColorMathTests)
+
+# Force-define CXX features to bypass CMake's Clang 22 feature detection bug

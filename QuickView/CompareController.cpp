@@ -752,4 +752,161 @@ void CompareController::CenterDialogOnPaneIfNeeded(HWND hwnd, ComparePane pane) 
     m_context.Dialog.CustomCenter = D2D1::Point2F((vp.left + vp.right) * 0.5f, (vp.top + vp.bottom) * 0.5f);
 }
 
+bool CompareController::HitTestEdgeNav(HWND hwnd, POINT ptClient) const {
+    if (!IsActive()) return false;
+    RECT rcv{};
+    GetClientRect(hwnd, &rcv);
+    const float w = (float)(rcv.right - rcv.left);
+    const float h = (float)(rcv.bottom - rcv.top);
+    const float splitX = GetSplitRatio() * w;
+
+    const D2D1_RECT_F leftRect = D2D1::RectF(0.0f, 0.0f, splitX, h);
+    const D2D1_RECT_F rightRect = D2D1::RectF(splitX, 0.0f, w, h);
+    
+    const ComparePane pane = HitTest(hwnd, ptClient);
+    const D2D1_RECT_F paneRect = (pane == ComparePane::Left) ? leftRect : rightRect;
+    
+    extern int HitTestNavButtonInPane(POINT pt, const D2D1_RECT_F& rect);
+    return HitTestNavButtonInPane(ptClient, paneRect) != 0;
+}
+
+void CompareController::UpdateEdgeHoverStates(HWND hwnd, POINT ptClient) {
+    if (!IsActive()) return;
+    
+    if (m_context.Compare.draggingDivider || GetPaneContext(PaneSlot::Primary).view.IsDragging) {
+        if (GetPaneContext(PaneSlot::Primary).view.EdgeHoverLeft != 0 || GetPaneContext(PaneSlot::Primary).view.EdgeHoverRight != 0) {
+            GetPaneContext(PaneSlot::Primary).view.EdgeHoverLeft = 0;
+            GetPaneContext(PaneSlot::Primary).view.EdgeHoverRight = 0;
+            RequestRepaint(QuickView::PaintLayer::Static);
+        }
+        return;
+    }
+
+    RECT rc{};
+    GetClientRect(hwnd, &rc);
+    const float w = (float)(rc.right - rc.left);
+    const float h = (float)(rc.bottom - rc.top);
+
+    const int oldLeft = GetPaneContext(PaneSlot::Primary).view.EdgeHoverLeft;
+    const int oldRight = GetPaneContext(PaneSlot::Primary).view.EdgeHoverRight;
+    GetPaneContext(PaneSlot::Primary).view.EdgeHoverState = 0;
+    GetPaneContext(PaneSlot::Primary).view.CompareActive = true;
+
+    const float splitX = GetSplitRatio() * w;
+    GetPaneContext(PaneSlot::Primary).view.CompareSplitRatio = (w > 1.0f) ? (splitX / w) : 0.5f;
+
+    const D2D1_RECT_F leftRect = D2D1::RectF(0.0f, 0.0f, splitX, h);
+    const D2D1_RECT_F rightRect = D2D1::RectF(splitX, 0.0f, w, h);
+
+    extern int ComputeEdgeHoverForPane(POINT pt, const D2D1_RECT_F& rect);
+    GetPaneContext(PaneSlot::Primary).view.EdgeHoverLeft = ComputeEdgeHoverForPane(ptClient, leftRect);
+    GetPaneContext(PaneSlot::Primary).view.EdgeHoverRight = ComputeEdgeHoverForPane(ptClient, rightRect);
+
+    if (GetPaneContext(PaneSlot::Primary).view.EdgeHoverLeft != oldLeft || GetPaneContext(PaneSlot::Primary).view.EdgeHoverRight != oldRight) {
+        RequestRepaint(QuickView::PaintLayer::Static);
+    }
+}
+
+bool CompareController::HitTestEdgeZone(HWND hwnd, POINT ptClient) const {
+    if (!IsActive()) return false;
+    RECT rcCheck{};
+    GetClientRect(hwnd, &rcCheck);
+    const float w = (float)(rcCheck.right - rcCheck.left);
+    const float h = (float)(rcCheck.bottom - rcCheck.top);
+    const float splitX = GetSplitRatio() * w;
+
+    const D2D1_RECT_F leftRect = D2D1::RectF(0.0f, 0.0f, splitX, h);
+    const D2D1_RECT_F rightRect = D2D1::RectF(splitX, 0.0f, w, h);
+    
+    const ComparePane pane = HitTest(hwnd, ptClient);
+    const D2D1_RECT_F paneRect = (pane == ComparePane::Left) ? leftRect : rightRect;
+
+    extern int HitTestNavButtonInPane(POINT pt, const D2D1_RECT_F& rect);
+    extern int ComputeEdgeHoverForPane(POINT pt, const D2D1_RECT_F& rect);
+    if (g_config.NavIndicator == 0) {
+        return HitTestNavButtonInPane(ptClient, paneRect) != 0;
+    } else {
+        return ComputeEdgeHoverForPane(ptClient, paneRect) != 0;
+    }
+}
+
+int CompareController::HandleEdgeNavClick(HWND hwnd, POINT ptClient) {
+    if (!IsActive()) return 0;
+    RECT rc{};
+    GetClientRect(hwnd, &rc);
+    const float w = (float)(rc.right - rc.left);
+    const float h = (float)(rc.bottom - rc.top);
+    const float splitX = GetSplitRatio() * w;
+
+    const D2D1_RECT_F leftRect = D2D1::RectF(0.0f, 0.0f, splitX, h);
+    const D2D1_RECT_F rightRect = D2D1::RectF(splitX, 0.0f, w, h);
+    
+    const ComparePane pane = HitTest(hwnd, ptClient);
+    const D2D1_RECT_F paneRect = (pane == ComparePane::Left) ? leftRect : rightRect;
+
+    extern int HitTestNavButtonInPane(POINT pt, const D2D1_RECT_F& rect);
+    extern int ComputeEdgeHoverForPane(POINT pt, const D2D1_RECT_F& rect);
+    int direction = (g_config.NavIndicator == 0)
+        ? HitTestNavButtonInPane(ptClient, paneRect)
+        : ComputeEdgeHoverForPane(ptClient, paneRect);
+
+    if (direction != 0) {
+        ReleaseCapture();
+        m_context.Compare.selectedPane = pane;
+        m_context.Compare.contextPane = pane;
+        MarkDirty();
+        RequestRepaint(QuickView::PaintLayer::Image | QuickView::PaintLayer::Static);
+        return direction;
+    }
+    return 0;
+}
+
+int HitTestNavButtonInPane(POINT pt, const D2D1_RECT_F& paneRect) {
+    if (g_config.NavIndicator != 0) return 0;
+    const float w = paneRect.right - paneRect.left;
+    const float h = paneRect.bottom - paneRect.top;
+    if (w <= 50.0f || h <= 100.0f) return 0;
+    if (pt.x < paneRect.left || pt.x > paneRect.right || pt.y < paneRect.top || pt.y > paneRect.bottom) return 0;
+
+    const float centerY = paneRect.top + h * 0.5f;
+    // The hot area is larger than the visual button (16.0f) to make it easier to click.
+    const float radius = 24.0f * g_uiScale;
+    const float radiusSq = radius * radius;
+    const float margin = 32.0f * g_uiScale;
+
+    auto hitCircle = [&](float cx) -> bool {
+        const float dx = (float)pt.x - cx;
+        const float dy = (float)pt.y - centerY;
+        return (dx * dx + dy * dy) <= radiusSq;
+    };
+
+    const float leftX = paneRect.left + margin;
+    if (hitCircle(leftX)) return -1;
+    const float rightX = paneRect.right - margin;
+    if (hitCircle(rightX)) return 1;
+    return 0;
+}
+
+int ComputeEdgeHoverForPane(POINT pt, const D2D1_RECT_F& paneRect) {
+    const float w = paneRect.right - paneRect.left;
+    const float h = paneRect.bottom - paneRect.top;
+    if (w <= 50.0f || h <= 100.0f) return 0;
+    if (pt.x < paneRect.left || pt.x > paneRect.right || pt.y < paneRect.top || pt.y > paneRect.bottom) return 0;
+
+    const float edgeMargin = 64.0f * g_uiScale;
+    const bool inHRange = (pt.x < paneRect.left + edgeMargin) ||
+                          (pt.x > paneRect.right - edgeMargin);
+    bool inVRange = false;
+    if (g_config.NavIndicator == 0) {
+        inVRange = (pt.y > paneRect.top + h * 0.20f) && (pt.y < paneRect.bottom - h * 0.20f);
+    } else {
+        inVRange = (pt.y > paneRect.top + h * 0.30f) && (pt.y < paneRect.bottom - h * 0.30f);
+    }
+
+    if (inHRange && inVRange) {
+        return (pt.x < paneRect.left + edgeMargin) ? -1 : 1;
+    }
+    return 0;
+}
+
 

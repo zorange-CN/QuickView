@@ -9,6 +9,7 @@ x86/
 [Aa][Rr][Mm]64/
 bld/
 out/
+build/
 
 # Visual Studio
 .vs/

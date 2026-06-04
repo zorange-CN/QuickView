@@ -38,6 +38,11 @@ public:
     void CenterDialogOnPaneIfNeeded(HWND hwnd, ComparePane pane);
     void ApplyZoomStep(HWND hwnd, float delta, bool fineInterval);
 
+    bool HitTestEdgeNav(HWND hwnd, POINT ptClient) const;
+    void UpdateEdgeHoverStates(HWND hwnd, POINT ptClient);
+    bool HitTestEdgeZone(HWND hwnd, POINT ptClient) const;
+    int HandleEdgeNavClick(HWND hwnd, POINT ptClient);
+
 private:
     AppContext& m_context;
     HWND m_hwnd = nullptr;
@@ -59,3 +64,6 @@ inline void RefreshCompareRawUI(HWND hwnd) {
         AppContext::GetInstance().CompareCtrl->RefreshRawUI(hwnd);
     }
 }
+
+int HitTestNavButtonInPane(POINT pt, const D2D1_RECT_F& rect);
+int ComputeEdgeHoverForPane(POINT pt, const D2D1_RECT_F& rect);

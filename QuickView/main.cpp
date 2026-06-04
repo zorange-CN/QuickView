@@ -1338,53 +1338,7 @@ static D2D1_SIZE_F GetOrientedSize(const ImageResource& res, int exifOrientation
 
 
 
-static int ComputeEdgeHoverForPane(const POINT& pt, const D2D1_RECT_F& paneRect) {
-    const float w = paneRect.right - paneRect.left;
-    const float h = paneRect.bottom - paneRect.top;
-    if (w <= 50.0f || h <= 100.0f) return 0;
-    if (pt.x < paneRect.left || pt.x > paneRect.right || pt.y < paneRect.top || pt.y > paneRect.bottom) return 0;
 
-    const float edgeMargin = 64.0f * g_uiScale;
-    const bool inHRange = (pt.x < paneRect.left + edgeMargin) ||
-                          (pt.x > paneRect.right - edgeMargin);
-    bool inVRange = false;
-    if (g_config.NavIndicator == 0) {
-        inVRange = (pt.y > paneRect.top + h * 0.20f) && (pt.y < paneRect.bottom - h * 0.20f);
-    } else {
-        inVRange = (pt.y > paneRect.top + h * 0.30f) && (pt.y < paneRect.bottom - h * 0.30f);
-    }
-
-    if (inHRange && inVRange) {
-        return (pt.x < paneRect.left + edgeMargin) ? -1 : 1;
-    }
-    return 0;
-}
-
-static int HitTestNavButtonInPane(const POINT& pt, const D2D1_RECT_F& paneRect) {
-    if (g_config.NavIndicator != 0) return 0;
-    const float w = paneRect.right - paneRect.left;
-    const float h = paneRect.bottom - paneRect.top;
-    if (w <= 50.0f || h <= 100.0f) return 0;
-    if (pt.x < paneRect.left || pt.x > paneRect.right || pt.y < paneRect.top || pt.y > paneRect.bottom) return 0;
-
-    const float centerY = paneRect.top + h * 0.5f;
-    // The hot area is larger than the visual button (16.0f) to make it easier to click.
-    const float radius = 24.0f * g_uiScale;
-    const float radiusSq = radius * radius;
-    const float margin = 32.0f * g_uiScale;
-
-    auto hitCircle = [&](float cx) -> bool {
-        const float dx = (float)pt.x - cx;
-        const float dy = (float)pt.y - centerY;
-        return (dx * dx + dy * dy) <= radiusSq;
-    };
-
-    const float leftX = paneRect.left + margin;
-    if (hitCircle(leftX)) return -1;
-    const float rightX = paneRect.right - margin;
-    if (hitCircle(rightX)) return 1;
-    return 0;
-}
 
 
 
@@ -6521,14 +6475,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
                   int w = rcv.right - rcv.left;
                   int h = rcv.bottom - rcv.top;
                   if (IsCompareModeActive() && !g_config.DisableEdgeNavInCompare) {
-                      float splitX = (AppContext::GetInstance().Compare.mode == ViewMode::CompareWipe)
-                          ? ClampCompareRatio(AppContext::GetInstance().Compare.splitRatio) * (float)w
-                          : 0.5f * (float)w;
-                      D2D1_RECT_F leftRect = D2D1::RectF(0.0f, 0.0f, splitX, (float)h);
-                      D2D1_RECT_F rightRect = D2D1::RectF(splitX, 0.0f, (float)w, (float)h);
-                      ComparePane pane = AppContext::GetInstance().CompareCtrl->HitTest(hwnd, pt);
-                      const D2D1_RECT_F paneRect = (pane == ComparePane::Left) ? leftRect : rightRect;
-                      hoverEdge = (HitTestNavButtonInPane(pt, paneRect) != 0);
+                      hoverEdge = AppContext::GetInstance().CompareCtrl->HitTestEdgeNav(hwnd, pt);
                   } else if (!IsCompareModeActive()) {
                       D2D1_RECT_F fullRect = D2D1::RectF(0.0f, 0.0f, (float)w, (float)h);
                       hoverEdge = (HitTestNavButtonInPane(pt, fullRect) != 0);
@@ -6580,33 +6527,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
                 }
 
                 if (IsCompareModeActive()) {
-                    if (AppContext::GetInstance().Compare.draggingDivider || GetPaneContext(PaneSlot::Primary).view.IsDragging) {
-                        if (GetPaneContext(PaneSlot::Primary).view.EdgeHoverLeft != 0 || GetPaneContext(PaneSlot::Primary).view.EdgeHoverRight != 0) {
-                            GetPaneContext(PaneSlot::Primary).view.EdgeHoverLeft = 0;
-                            GetPaneContext(PaneSlot::Primary).view.EdgeHoverRight = 0;
-                            RequestRepaint(PaintLayer::Static);
-                        }
-                    } else {
-                        int oldLeft = GetPaneContext(PaneSlot::Primary).view.EdgeHoverLeft;
-                        int oldRight = GetPaneContext(PaneSlot::Primary).view.EdgeHoverRight;
-                        GetPaneContext(PaneSlot::Primary).view.EdgeHoverState = 0;
-                        GetPaneContext(PaneSlot::Primary).view.CompareActive = true;
-
-                        float splitX = (AppContext::GetInstance().Compare.mode == ViewMode::CompareWipe)
-                            ? ClampCompareRatio(AppContext::GetInstance().Compare.splitRatio) * (float)w
-                            : 0.5f * (float)w;
-                        GetPaneContext(PaneSlot::Primary).view.CompareSplitRatio = (w > 1) ? (splitX / (float)w) : 0.5f;
-
-                        const D2D1_RECT_F leftRect = D2D1::RectF(0.0f, 0.0f, splitX, (float)h);
-                        const D2D1_RECT_F rightRect = D2D1::RectF(splitX, 0.0f, (float)w, (float)h);
-
-                        GetPaneContext(PaneSlot::Primary).view.EdgeHoverLeft = ComputeEdgeHoverForPane(pt, leftRect);
-                        GetPaneContext(PaneSlot::Primary).view.EdgeHoverRight = ComputeEdgeHoverForPane(pt, rightRect);
-
-                        if (GetPaneContext(PaneSlot::Primary).view.EdgeHoverLeft != oldLeft || GetPaneContext(PaneSlot::Primary).view.EdgeHoverRight != oldRight) {
-                            RequestRepaint(PaintLayer::Static);
-                        }
-                    }
+                    AppContext::GetInstance().CompareCtrl->UpdateEdgeHoverStates(hwnd, pt);
                 } else {
                     GetPaneContext(PaneSlot::Primary).view.CompareActive = false;
                     GetPaneContext(PaneSlot::Primary).view.EdgeHoverLeft = 0;
@@ -6836,18 +6757,7 @@ SKIP_EDGE_NAV:;
             }
         }
 
-        if (IsCompareModeActive() && AppContext::GetInstance().Compare.draggingDivider) {
-            RECT rcSplit{};
-            GetClientRect(hwnd, &rcSplit);
-            const float w = (float)(rcSplit.right - rcSplit.left);
-            if (w > 1.0f) {
-                AppContext::GetInstance().Compare.splitRatio = ClampCompareRatio((float)pt.x / w);
-                GetPaneContext(PaneSlot::Primary).view.CompareSplitRatio = AppContext::GetInstance().Compare.splitRatio;
-                MarkCompareDirty();
-                RequestRepaint(PaintLayer::Image | PaintLayer::Static);
-            }
-            return 0;
-        }
+
          
          if (GetPaneContext(PaneSlot::Primary).view.IsDragging) {
              const float dx = (float)(pt.x - GetPaneContext(PaneSlot::Primary).view.LastMousePos.x);
@@ -7481,18 +7391,7 @@ SKIP_EDGE_NAV:;
         if (g_config.EdgeNavClick && !g_gallery.IsVisible() && !g_settingsOverlay.IsVisible() && !g_helpOverlay.IsVisible() && !AppContext::GetInstance().Dialog.IsVisible) {
             if (IsCompareModeActive()) {
                 if (!g_config.DisableEdgeNavInCompare) {
-                    float splitX = (AppContext::GetInstance().Compare.mode == ViewMode::CompareWipe)
-                        ? ClampCompareRatio(AppContext::GetInstance().Compare.splitRatio) * (float)w
-                        : 0.5f * (float)w;
-                    D2D1_RECT_F leftRect = D2D1::RectF(0.0f, 0.0f, splitX, (float)h);
-                    D2D1_RECT_F rightRect = D2D1::RectF(splitX, 0.0f, (float)w, (float)h);
-                    ComparePane pane = AppContext::GetInstance().CompareCtrl->HitTest(hwnd, pt);
-                    const D2D1_RECT_F paneRect = (pane == ComparePane::Left) ? leftRect : rightRect;
-                    if (g_config.NavIndicator == 0) {
-                        inEdgeZone = (HitTestNavButtonInPane(pt, paneRect) != 0);
-                    } else {
-                        inEdgeZone = (ComputeEdgeHoverForPane(pt, paneRect) != 0);
-                    }
+                    inEdgeZone = AppContext::GetInstance().CompareCtrl->HitTestEdgeZone(hwnd, pt);
                 }
             } else if (w > 50 && h > 100) {
                 if (g_config.NavIndicator == 0) {
@@ -7871,22 +7770,8 @@ SKIP_EDGE_NAV:;
             if (!g_toolbar.IsWindowTooNarrow() && width > 50 && height > 100) {
                 if (IsCompareModeActive()) {
                     if (!g_config.DisableEdgeNavInCompare) {
-                        float splitX = (AppContext::GetInstance().Compare.mode == ViewMode::CompareWipe)
-                            ? ClampCompareRatio(AppContext::GetInstance().Compare.splitRatio) * (float)width
-                            : 0.5f * (float)width;
-                        D2D1_RECT_F leftRect = D2D1::RectF(0.0f, 0.0f, splitX, (float)height);
-                        D2D1_RECT_F rightRect = D2D1::RectF(splitX, 0.0f, (float)width, (float)height);
-                        ComparePane pane = AppContext::GetInstance().CompareCtrl->HitTest(hwnd, pt);
-                        const D2D1_RECT_F paneRect = (pane == ComparePane::Left) ? leftRect : rightRect;
-                        int direction = (g_config.NavIndicator == 0)
-                            ? HitTestNavButtonInPane(pt, paneRect)
-                            : ComputeEdgeHoverForPane(pt, paneRect);
+                        int direction = AppContext::GetInstance().CompareCtrl->HandleEdgeNavClick(hwnd, pt);
                         if (direction != 0) {
-                            ReleaseCapture();
-                            AppContext::GetInstance().Compare.selectedPane = pane;
-                            AppContext::GetInstance().Compare.contextPane = pane;
-                            MarkCompareDirty();
-                            RequestRepaint(PaintLayer::Image | PaintLayer::Static);
                             Navigate(hwnd, direction);
                             return 0;
                         }
@@ -8090,6 +7975,10 @@ SKIP_EDGE_NAV:;
         GetPaneContext(PaneSlot::Primary).view.RightDragZoomStartComparePrimaryZoom = 1.0f;
         GetPaneContext(PaneSlot::Primary).view.RightDragZoomStartCompareSecondaryZoom = 1.0f;
         g_hasRightDragZoomStartViews = false;
+        GetPaneContext(PaneSlot::Primary).view.IsDragging = false;
+        GetPaneContext(PaneSlot::Primary).view.IsDraggingInfoPanel = false;
+        GetPaneContext(PaneSlot::Primary).view.IsMiddleDragWindow = false;
+        GetPaneContext(PaneSlot::Primary).view.IsInteracting = false;
         if (GetPaneContext(PaneSlot::Primary).view.IsPendingFullscreenExitDrag) {
             GetPaneContext(PaneSlot::Primary).view.IsPendingFullscreenExitDrag = false;
         }
