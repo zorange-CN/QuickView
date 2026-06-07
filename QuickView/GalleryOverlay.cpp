@@ -369,6 +369,7 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size, ID
     if (gridCols < 1) gridCols = 1;
     float gridCellW = (availWidth - (gridCols - 1) * GAP) / gridCols;
     float gridCellH = gridCellW;
+    m_cellHeight = gridCellH;
     
     int gridRows = (int)((count + gridCols - 1) / gridCols);
     m_maxScroll = std::max(0.0f, PADDING * 2 + gridRows * (gridCellH + GAP) - GAP - size.height);
@@ -395,8 +396,9 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size, ID
     pDC->PushAxisAlignedClip(panelRect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
     
     // Clip thumbnails to scrollable region (to avoid overlapping Pin button and arrows)
+    // Add 6.0px buffer on left/right to ensure selection DodgerBlue outline is not clipped
     float currentLeftMargin = filmLeftMargin + (PADDING - filmLeftMargin) * m_gridProgress;
-    D2D1_RECT_F thumbsClip = D2D1::RectF(currentLeftMargin, 0.0f, size.width - currentLeftMargin, galleryH);
+    D2D1_RECT_F thumbsClip = D2D1::RectF(currentLeftMargin - 6.0f, 0.0f, size.width - currentLeftMargin + 6.0f, galleryH);
     pDC->PushAxisAlignedClip(thumbsClip, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
     
     // Loop and draw visible items
@@ -892,9 +894,10 @@ bool GalleryOverlay::OnLButtonUp(int x, int y, int& outSelectedIndex) {
 }
 
 void GalleryOverlay::EnsureVisible(int index, const D2D1_SIZE_F& size) {
-    if (index < 0 || m_cellHeight <= 0.0f) return;
+    if (index < 0) return;
     
     if (m_mode == GalleryMode::FullGrid) {
+        if (m_cellHeight <= 0.0f) return;
         int row = index / m_cols;
         float itemTop = PADDING + row * (m_cellHeight + GAP);
         float itemBottom = itemTop + m_cellHeight;
