@@ -960,3 +960,20 @@ int GalleryOverlay::HitTest(float x, float y) {
     }
     return -1;
 }
+
+void GalleryOverlay::SetMouseInGallery(bool inGallery) {
+    if (m_mouseInGallery != inGallery) {
+        m_mouseInGallery = inGallery;
+        if (inGallery) {
+            m_dismissalTimer = 0.0f;
+        } else {
+            // Trigger a repaint to start the auto-dismissal timer loop in Update()
+            if (m_mode != GalleryMode::Hidden && !m_isPinned) {
+                RequestRepaint(QuickView::PaintLayer::Gallery);
+                if (g_mainHwnd) {
+                    ::PostMessageW(g_mainHwnd, WM_APP + 4, 0, 0); // WM_DEFERRED_REPAINT
+                }
+            }
+        }
+    }
+}

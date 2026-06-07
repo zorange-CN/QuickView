@@ -36,7 +36,7 @@ public:
     GalleryMode GetMode() const { return m_mode; }
     void SetMode(GalleryMode mode);
     
-    void SetMouseInGallery(bool inGallery) { m_mouseInGallery = inGallery; if (inGallery) m_dismissalTimer = 0.0f; }
+    void SetMouseInGallery(bool inGallery);
     void SetHoveringHotspot(bool hovering) { m_hoveringHotspot = hovering; if (!hovering) m_hoverDelayTimer = 0.0f; }
     
     float GetOpacity() const { return m_transitionProgress; }
