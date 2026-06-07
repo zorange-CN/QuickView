@@ -249,7 +249,8 @@ static float GetMinWindowWidth() {
         defaultMinW = std::max(defaultMinW, 500.0f * g_uiScale + 50.0f * g_uiScale);
     }
     if (g_gallery.IsVisible()) {
-        defaultMinW = std::max(defaultMinW, 660.0f * g_uiScale + 50.0f * g_uiScale);
+        float galleryMinW = (g_gallery.GetMode() == GalleryMode::FullGrid) ? 660.0f : 450.0f;
+        defaultMinW = std::max(defaultMinW, galleryMinW * g_uiScale + 50.0f * g_uiScale);
     }
     if (AppContext::GetInstance().Dialog.IsVisible) {
         defaultMinW = std::max(defaultMinW, 420.0f * g_uiScale + 24.0f * g_uiScale);
@@ -277,7 +278,8 @@ static float GetMinWindowHeight() {
         defaultMinH = std::max(defaultMinH, 600.0f * g_uiScale + 50.0f * g_uiScale);
     }
     if (g_gallery.IsVisible()) {
-        defaultMinH = std::max(defaultMinH, 720.0f * g_uiScale + 50.0f * g_uiScale);
+        float galleryMinH = (g_gallery.GetMode() == GalleryMode::FullGrid) ? 720.0f : 400.0f;
+        defaultMinH = std::max(defaultMinH, galleryMinH * g_uiScale + 50.0f * g_uiScale);
     }
     if (AppContext::GetInstance().Dialog.IsVisible) {
         float titleHeight = 35.0f;
@@ -3128,8 +3130,14 @@ static float GetCurrentTotalScale(HWND hwnd) {
     if (imageWidth <= 0 || imageHeight <= 0) return GetPaneContext(PaneSlot::Primary).view.Zoom;
 
     RECT rc; GetClientRect(hwnd, &rc);
-    float scaleW = (float)rc.right / imageWidth;
-    float scaleH = (float)rc.bottom / imageHeight;
+    float winW = (float)rc.right;
+    float winH = (float)rc.bottom;
+    float galleryH = (g_gallery.IsPinned() && g_gallery.IsVisible()) ? g_gallery.GetVisualHeight(winH) : 0.0f;
+    float effWinH = winH - galleryH;
+    if (effWinH < 1.0f) effWinH = 1.0f;
+
+    float scaleW = winW / imageWidth;
+    float scaleH = effWinH / imageHeight;
     float fitScale = (scaleW < scaleH) ? scaleW : scaleH;
 
     if (!GetPaneContext(PaneSlot::Primary).resource.isSvg) {
@@ -3157,8 +3165,14 @@ static float ClampTotalScale(HWND hwnd, float newTotalScale) {
     if (imageWidth <= 0 || imageHeight <= 0) return newTotalScale;
 
     RECT rc; GetClientRect(hwnd, &rc);
-    float scaleW = (float)rc.right / imageWidth;
-    float scaleH = (float)rc.bottom / imageHeight;
+    float winW = (float)rc.right;
+    float winH = (float)rc.bottom;
+    float galleryH = (g_gallery.IsPinned() && g_gallery.IsVisible()) ? g_gallery.GetVisualHeight(winH) : 0.0f;
+    float effWinH = winH - galleryH;
+    if (effWinH < 1.0f) effWinH = 1.0f;
+
+    float scaleW = winW / imageWidth;
+    float scaleH = effWinH / imageHeight;
     float fitScale = (scaleW < scaleH) ? scaleW : scaleH;
 
     if (!GetPaneContext(PaneSlot::Primary).resource.isSvg) {
@@ -11728,7 +11742,10 @@ void PerformSmartZoom(HWND hwnd, float newTotalScale, const POINT* centerPt, boo
     GetClientRect(hwnd, &rcCurrentClient);
     const float currentWinW = (float)rcCurrentClient.right;
     const float currentWinH = (float)rcCurrentClient.bottom;
-    const float currentBaseFit = ComputeBaseFitScaleForVisual(vs, currentWinW, currentWinH);
+    float currentGalleryH = (g_gallery.IsPinned() && g_gallery.IsVisible()) ? g_gallery.GetVisualHeight(currentWinH) : 0.0f;
+    float effCurrentWinH = currentWinH - currentGalleryH;
+    if (effCurrentWinH < 1.0f) effCurrentWinH = 1.0f;
+    const float currentBaseFit = ComputeBaseFitScaleForVisual(vs, currentWinW, effCurrentWinH);
     const float sourceDisplayZoom = AppContext::GetInstance().SmoothZoom.Active ? AppContext::GetInstance().SmoothZoom.CurrentZoom : (currentBaseFit * GetPaneContext(PaneSlot::Primary).view.Zoom);
     const float sourceDisplayPanX = AppContext::GetInstance().SmoothZoom.Active ? AppContext::GetInstance().SmoothZoom.CurrentPanX : GetPaneContext(PaneSlot::Primary).view.PanX;
     const float sourceDisplayPanY = AppContext::GetInstance().SmoothZoom.Active ? AppContext::GetInstance().SmoothZoom.CurrentPanY : GetPaneContext(PaneSlot::Primary).view.PanY;
@@ -11754,8 +11771,9 @@ void PerformSmartZoom(HWND hwnd, float newTotalScale, const POINT* centerPt, boo
          int maxH = (bounds.bottom - bounds.top);
          
          // Logic 1:1 Scale Target
+         float galleryH = (g_gallery.IsPinned() && g_gallery.IsVisible()) ? g_gallery.GetVisualHeight(currentWinH) : 0.0f;
          int targetW = (int)(vs.VisualSize.width * newTotalScale);
-         int targetH = (int)(vs.VisualSize.height * newTotalScale);
+         int targetH = (int)(vs.VisualSize.height * newTotalScale) + (int)galleryH;
          
          // 200px Minimum logic is now handled in 'Normal Resize' path below
          // to prevent accidental mode switches that cause UI deadlocks.
@@ -11770,7 +11788,7 @@ void PerformSmartZoom(HWND hwnd, float newTotalScale, const POINT* centerPt, boo
  
          
          if (finalWinW < (int)GetMinWindowWidth()) finalWinW = (int)GetMinWindowWidth();
-         if (finalWinH < (int)GetMinWindowWidth()) finalWinH = (int)GetMinWindowWidth();
+         if (finalWinH < (int)GetMinWindowHeight()) finalWinH = (int)GetMinWindowHeight();
          
          if (!centerPt) {
              if (!cappedW) GetPaneContext(PaneSlot::Primary).view.PanX = 0;
@@ -11785,7 +11803,10 @@ void PerformSmartZoom(HWND hwnd, float newTotalScale, const POINT* centerPt, boo
          float startPanX = GetPaneContext(PaneSlot::Primary).view.PanX;
          float startPanY = GetPaneContext(PaneSlot::Primary).view.PanY;
          
-         float baseFit_next = std::min((float)finalWinW / imgW, (float)finalWinH / imgH);
+         float galleryH = (g_gallery.IsPinned() && g_gallery.IsVisible()) ? g_gallery.GetVisualHeight((float)finalWinH) : 0.0f;
+         float effFinalWinH = (float)finalWinH - galleryH;
+         if (effFinalWinH < 1.0f) effFinalWinH = 1.0f;
+         float baseFit_next = std::min((float)finalWinW / imgW, effFinalWinH / imgH);
          // [SVG Lossless] Vector images shouldn't be capped.
          if (imgW < 200.0f && imgH < 200.0f && !GetPaneContext(PaneSlot::Primary).resource.isSvg) {
              if (baseFit_next > 1.0f) baseFit_next = 1.0f;
@@ -11810,7 +11831,7 @@ void PerformSmartZoom(HWND hwnd, float newTotalScale, const POINT* centerPt, boo
                  ScreenToClient(hwnd, &pt);
 
                  float dx = (float)pt.x - winW / 2.0f;
-                 float dy = (float)pt.y - winH / 2.0f;
+                 float dy = (float)pt.y - (winH / 2.0f + galleryH / 2.0f);
                  targetPanX = startPanX * zoomRatio + dx * (1.0f - zoomRatio);
                  targetPanY = startPanY * zoomRatio + dy * (1.0f - zoomRatio);
              } else {
@@ -11849,8 +11870,11 @@ void PerformSmartZoom(HWND hwnd, float newTotalScale, const POINT* centerPt, boo
          RECT rcNew; GetClientRect(hwnd, &rcNew);
          float winW = (float)rcNew.right;
          float winH = (float)rcNew.bottom;
+         float galleryH = (g_gallery.IsPinned() && g_gallery.IsVisible()) ? g_gallery.GetVisualHeight(winH) : 0.0f;
+         float effWinH = winH - galleryH;
+         if (effWinH < 1.0f) effWinH = 1.0f;
          
-         float fitScale = std::min(winW / imgW, winH / imgH);
+         float fitScale = std::min(winW / imgW, effWinH / imgH);
          // [SVG Lossless] Don't cap fitScale for SVG - vector content scales losslessly
          if (!GetPaneContext(PaneSlot::Primary).resource.isSvg) {
              if (g_runtime.LockWindowSize) {
@@ -11876,7 +11900,7 @@ void PerformSmartZoom(HWND hwnd, float newTotalScale, const POINT* centerPt, boo
              float mouseX = (float)pt.x;
              float mouseY = (float)pt.y;
              float winCenterX = winW / 2.0f;
-             float winCenterY = winH / 2.0f;
+             float winCenterY = winH / 2.0f + galleryH / 2.0f;
              
              float dx = mouseX - winCenterX;
              float dy = mouseY - winCenterY;
@@ -11915,7 +11939,7 @@ void PerformSmartZoom(HWND hwnd, float newTotalScale, const POINT* centerPt, boo
                   }
               } else {
                   KillTimer(hwnd, IDT_SMOOTH_ZOOM);
-                  AppContext::GetInstance().ZoomAnimCtrl->SyncToLogical(winW, winH, false);
+                  AppContext::GetInstance().ZoomAnimCtrl->SyncToLogical(winW, effWinH, false);
                   SyncDCompState(hwnd, winW, winH);
                   g_compEngine->Commit();
               }
