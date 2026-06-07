@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "GalleryOverlay.h"
+#include "Toolbar.h"
 #include "ThumbnailManager.h"
 #include "ImageTypes.h"
 #include "FileNavigator.h"
@@ -8,74 +9,13 @@
 #include <cmath>
 
 extern void RequestRepaint(QuickView::PaintLayer layerMask);
-
 extern AppConfig g_config;
 extern HWND g_mainHwnd;
+extern bool IsLightThemeActive();
+extern float g_uiScale;
+extern Toolbar g_toolbar;
+extern RuntimeConfig g_runtime;
 
-
-
-
-GalleryOverlay::GalleryOverlay() {}
-
-GalleryOverlay::~GalleryOverlay() {}
-
-void GalleryOverlay::Initialize(ThumbnailManager* pThumbMgr, FileNavigator* pNav) {
-    m_pThumbMgr = pThumbMgr;
-    m_pNav = pNav;
-}
-
-void GalleryOverlay::Open(int currentIndex) {
-    if (!m_pNav || m_pNav->Count() == 0) return;
-    
-    m_isVisible = true;
-    m_opacity = g_config.GlassUIAnimations ? 0.0f : 1.0f; // Hard cut if animations disabled
-    m_selectedIndex = currentIndex;
-    
-    // Reset state for fresh open
-    m_scrollTop = 0.0f;
-    m_hoverIndex = -1;
-    
-    // Layout will be calculated in first Render() call based on window size
-    // Smart Reveal scroll adjustment happens in Render() when m_opacity < 0.2f
-}
-
-void GalleryOverlay::Close(bool keepSelection) {
-    m_isVisible = false;
-    if (!keepSelection) {
-        m_selectedIndex = -1;  // Reset selection when cancelling
-    }
-    if (m_pThumbMgr) m_pThumbMgr->ClearQueue(); // Stop loading
-}
-
-void GalleryOverlay::Update(float deltaTime) {
-    if (m_isVisible && m_opacity < 1.0f && g_config.GlassUIAnimations) {
-        m_opacity += deltaTime * 5.0f; // 0.2s fade in
-        if (m_opacity > 1.0f) m_opacity = 1.0f;
-        
-        // [Fix] Keep the animation driving even if no mouse move
-        RequestRepaint(QuickView::PaintLayer::Gallery);
-        
-        // Force a new message into the queue to guarantee the loop continues during animation
-        if (g_mainHwnd) {
-            ::PostMessageW(g_mainHwnd, WM_APP + 4, 0, 0); // WM_DEFERRED_REPAINT
-        }
-    }
-}
-
-void GalleryOverlay::EnsureVisible(int index) {
-    if (index < 0 || m_cellHeight <= 0) return;
-    
-    int row = index / m_cols; (void)row;
-    // float itemTop = PADDING + row * (m_cellHeight + GAP);
-    
-    // Current Viewport
-    // float viewBottom = m_scrollTop + m_totalHeight; // Wait, m_totalHeight is content height. ViewHeight is screen height.
-    // We need screen height.
-    // Let's rely on Render to clamp. 
-    // Here we just adjust m_scrollTop.
-    // We need D2D size here? 
-    // Let's store last known viewport height.
-}
 
 // Helper to center crop
 static D2D1_RECT_F GetCenterCropRect(D2D1_SIZE_F imgSize, D2D1_RECT_F destRect) {
@@ -86,13 +26,11 @@ static D2D1_RECT_F GetCenterCropRect(D2D1_SIZE_F imgSize, D2D1_RECT_F destRect) 
     
     D2D1_RECT_F srcRect;
     if (imgRatio > destRatio) {
-        // Image is wider, crop sides
         float scale = imgSize.height / destH;
         float cropW = destW * scale;
         float offset = (imgSize.width - cropW) / 2.0f;
         srcRect = D2D1::RectF(offset, 0, offset + cropW, imgSize.height);
     } else {
-        // Image is taller, crop top/bottom
         float scale = imgSize.width / destW;
         float cropH = destH * scale;
         float offset = (imgSize.height - cropH) / 2.0f;
@@ -101,34 +39,315 @@ static D2D1_RECT_F GetCenterCropRect(D2D1_SIZE_F imgSize, D2D1_RECT_F destRect) 
     return srcRect;
 }
 
-void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size) {
-    if (!m_isVisible || !m_pThumbMgr || !m_pNav) return;
+GalleryOverlay::GalleryOverlay() {}
+
+GalleryOverlay::~GalleryOverlay() {}
+
+void GalleryOverlay::Initialize(ThumbnailManager* pThumbMgr, FileNavigator* pNav) {
+    m_pThumbMgr = pThumbMgr;
+    m_pNav = pNav;
+}
+
+void GalleryOverlay::Open(int currentIndex, GalleryMode targetMode) {
+    if (!m_pNav || m_pNav->Count() == 0) return;
     
-    // Init resources
-    bool isLight = IsLightThemeActive();
-    if (!m_brushBg) pDC->CreateSolidColorBrush(D2D1::ColorF(0.0f, 0.0f, 0.0f, 1.0f), &m_brushBg);
-    if (!m_brushSelection) pDC->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::DodgerBlue), &m_brushSelection); // Accent
-    if (!m_brushText) pDC->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White), &m_brushText);
-
-    D2D1_COLOR_F bgClr = isLight ? D2D1::ColorF(0.95f, 0.95f, 0.97f, 0.4f)
-                                 : D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.4f);
-    D2D1_COLOR_F txtClr = isLight ? D2D1::ColorF(0.12f, 0.12f, 0.15f, 1.0f)
-                                  : D2D1::ColorF(D2D1::ColorF::White);
-    D2D1_COLOR_F accClr = isLight ? D2D1::ColorF(0.0f, 0.45f, 0.9f, 1.0f)
-                                  : D2D1::ColorF(D2D1::ColorF::DodgerBlue);
-
-    m_brushBg->SetColor(bgClr);
-    m_brushSelection->SetColor(accClr);
-    m_brushText->SetColor(txtClr);
-
-    // Background (Controllable Dimmer)
-    if (g_config.EnableAmbientDimmer) {
-        D2D1_RECT_F screenRect = D2D1::RectF(0, 0, size.width, size.height);
-        m_brushBg->SetOpacity(m_opacity);
-        pDC->FillRectangle(screenRect, m_brushBg.Get());
+    m_mode = targetMode;
+    m_targetProgress = 1.0f;
+    m_targetGridProgress = (targetMode == GalleryMode::FullGrid) ? 1.0f : 0.0f;
+    m_selectedIndex = currentIndex;
+    
+    // Save and hide Info Panel
+    if (g_runtime.ShowInfoPanel) {
+        m_restoreInfoPanel = true;
+        g_runtime.ShowInfoPanel = false;
+        g_toolbar.SetExifState(false);
+        RequestRepaint(QuickView::PaintLayer::Static);
     }
     
-    // Init Text Resources (Lazy)
+    // Reset transient states
+    m_scrollTop = 0.0f;
+    m_scrollLeft = 0.0f;
+    m_hoverIndex = -1;
+    m_velocityX = 0.0f;
+    m_dragYOffset = 0.0f;
+    m_dismissalTimer = 0.0f;
+    m_hoverDelayTimer = 0.0f;
+    m_expandHoverTimer = 0.0f;
+    m_isLButtonDown = false;
+    m_dragMode = DragMode::None;
+    
+    RequestRepaint(QuickView::PaintLayer::Gallery);
+}
+
+void GalleryOverlay::Close(bool keepSelection) {
+    m_targetProgress = 0.0f;
+    m_targetGridProgress = 0.0f;
+    m_mode = GalleryMode::Hidden;
+    m_expandHoverTimer = 0.0f;
+    if (!keepSelection) {
+        m_selectedIndex = -1;
+    }
+    if (m_pThumbMgr) m_pThumbMgr->ClearQueue();
+    
+    // Restore Info Panel if it was hidden on Open
+    if (m_restoreInfoPanel) {
+        g_runtime.ShowInfoPanel = true;
+        m_restoreInfoPanel = false;
+        g_toolbar.SetExifState(true);
+        RequestRepaint(QuickView::PaintLayer::Static);
+    }
+    
+    RequestRepaint(QuickView::PaintLayer::Gallery);
+}
+
+void GalleryOverlay::SetMode(GalleryMode mode) {
+    if (m_mode == mode) return;
+    m_mode = mode;
+    m_targetGridProgress = (mode == GalleryMode::FullGrid) ? 1.0f : 0.0f;
+    m_expandHoverTimer = 0.0f;
+    m_bottomHintHover = false;
+    RequestRepaint(QuickView::PaintLayer::Gallery);
+}
+
+void GalleryOverlay::Update(float deltaTime, HWND hwnd) {
+    m_hwnd = hwnd;
+    bool repaintNeeded = false;
+    
+    // 1. Transition Progress interpolation (Hidden <-> Filmstrip)
+    if (fabsf(m_transitionProgress - m_targetProgress) > 0.001f) {
+        float speed = g_config.GlassUIAnimations ? 12.0f : 100.0f;
+        m_transitionProgress += (m_targetProgress - m_transitionProgress) * deltaTime * speed;
+        if (m_transitionProgress < 0.001f) m_transitionProgress = 0.0f;
+        if (m_transitionProgress > 0.999f) m_transitionProgress = 1.0f;
+        repaintNeeded = true;
+    }
+    
+    // 2. Grid Progress interpolation (Filmstrip <-> FullGrid)
+    if (fabsf(m_gridProgress - m_targetGridProgress) > 0.001f) {
+        float speed = g_config.GlassUIAnimations ? 10.0f : 100.0f;
+        m_gridProgress += (m_targetGridProgress - m_gridProgress) * deltaTime * speed;
+        if (m_gridProgress < 0.001f) m_gridProgress = 0.0f;
+        if (m_gridProgress > 0.999f) m_gridProgress = 1.0f;
+        repaintNeeded = true;
+    }
+    
+    // 3. Physical Inertia for Horizontal Scroll
+    if (!m_isLButtonDown && fabsf(m_velocityX) > 0.1f) {
+        m_scrollLeft -= m_velocityX * deltaTime;
+        m_velocityX *= powf(m_friction, deltaTime * 60.0f);
+        
+        if (m_scrollLeft < 0.0f) {
+            m_scrollLeft = 0.0f;
+            m_velocityX = 0.0f;
+        }
+        if (m_scrollLeft > m_maxScrollLeft) {
+            m_scrollLeft = m_maxScrollLeft;
+            m_velocityX = 0.0f;
+        }
+        repaintNeeded = true;
+    }
+    
+    // 4. Alpha Transitions for Arrows & Visual Cues
+    float targetLeftArrowAlpha = (m_arrowLeftHover && m_gridProgress < 0.2f) ? 1.0f : 0.0f;
+    if (fabsf(m_arrowLeftAlpha - targetLeftArrowAlpha) > 0.01f) {
+        m_arrowLeftAlpha += (targetLeftArrowAlpha - m_arrowLeftAlpha) * deltaTime * 12.0f;
+        repaintNeeded = true;
+    }
+    
+    float targetRightArrowAlpha = (m_arrowRightHover && m_gridProgress < 0.2f) ? 1.0f : 0.0f;
+    if (fabsf(m_arrowRightAlpha - targetRightArrowAlpha) > 0.01f) {
+        m_arrowRightAlpha += (targetRightArrowAlpha - m_arrowRightAlpha) * deltaTime * 12.0f;
+        repaintNeeded = true;
+    }
+    
+    float targetHintAlpha = m_bottomHintHover ? 1.0f : 0.35f;
+    if (fabsf(m_bottomHintAlpha - targetHintAlpha) > 0.01f) {
+        m_bottomHintAlpha += (targetHintAlpha - m_bottomHintAlpha) * deltaTime * 10.0f;
+        repaintNeeded = true;
+    }
+    
+    // 5. Grid columns zoom debounce
+    if (m_isZooming) {
+        m_zoomDebounceTimer -= deltaTime;
+        if (m_zoomDebounceTimer <= 0.0f) {
+            m_isZooming = false;
+        }
+        if (m_cols != m_targetCols) {
+            m_cols = m_targetCols;
+            repaintNeeded = true;
+        }
+    }
+    
+    // 6. Hover Hotspot Delay Timer (Trigger Mode 1)
+    if (g_config.GalleryTriggerMode == 1 && m_hoveringHotspot && m_mode == GalleryMode::Hidden) {
+        m_hoverDelayTimer += deltaTime;
+        if (m_hoverDelayTimer >= 0.18f) { // 180ms delay
+            Open(m_selectedIndex >= 0 ? m_selectedIndex : 0, GalleryMode::Filmstrip);
+            m_hoverDelayTimer = 0.0f;
+            m_hoveringHotspot = false;
+        }
+        repaintNeeded = true;
+    } else if (!m_hoveringHotspot && m_hoverDelayTimer > 0.0f) {
+        m_hoverDelayTimer -= deltaTime * 2.0f;
+        if (m_hoverDelayTimer < 0.0f) m_hoverDelayTimer = 0.0f;
+        repaintNeeded = true;
+    }
+    
+    // 6c. Hover Expand logic (Mode 0 & 1)
+    if ((g_config.GalleryTriggerMode == 0 || g_config.GalleryTriggerMode == 1) && 
+        m_mode == GalleryMode::Filmstrip && m_bottomHintHover && m_gridProgress < 0.01f) {
+        m_expandHoverTimer += deltaTime;
+        if (m_expandHoverTimer >= 0.40f) { // 400ms delay, giving user clear perception of pause/hover
+            SetMode(GalleryMode::FullGrid);
+            m_expandHoverTimer = 0.0f;
+            repaintNeeded = true;
+        }
+    } else {
+        m_expandHoverTimer = 0.0f;
+    }
+    
+    // 7. Auto Dismissal Delay Timer (300ms) with global physical cursor polling & tolerance
+    if (m_mode != GalleryMode::Hidden) {
+        float width = m_lastSize.width;
+        float height = m_lastSize.height;
+        if (width <= 0.0f) {
+            RECT rc;
+            GetClientRect(hwnd, &rc);
+            width = (float)(rc.right - rc.left);
+            height = (float)(rc.bottom - rc.top);
+        }
+        
+        float targetH = (m_mode == GalleryMode::FullGrid || m_targetGridProgress > 0.5f)
+            ? height
+            : (FILM_CELL_SIZE + 2.0f * PADDING);
+            
+        POINT screenPt;
+        if (GetCursorPos(&screenPt)) {
+            POINT clientPt = screenPt;
+            ScreenToClient(hwnd, &clientPt);
+            
+            RECT rcClient;
+            GetClientRect(hwnd, &rcClient);
+            bool inClient = (clientPt.x >= 0 && clientPt.x <= (rcClient.right - rcClient.left) &&
+                             clientPt.y >= 0 && clientPt.y <= (rcClient.bottom - rcClient.top));
+            
+            // Tolerance margins of 40px around all sides of the gallery bounds, only active if mouse is still in the client area
+            bool mouseInside = inClient && (clientPt.x >= -40 && clientPt.x <= (int)width + 40 &&
+                                            clientPt.y >= -40 && clientPt.y <= (int)targetH + 40);
+            if (mouseInside) {
+                m_mouseInGallery = true;
+                m_dismissalTimer = 0.0f;
+            } else {
+                m_mouseInGallery = false;
+            }
+        }
+        
+        if (!m_mouseInGallery && !m_isPinned) {
+            m_dismissalTimer += deltaTime;
+            if (m_dismissalTimer >= 0.3f) {
+                Close(true);
+                m_dismissalTimer = 0.0f;
+            }
+            repaintNeeded = true;
+        }
+
+        // Sync gallery selection index with the navigator's current index if it changed in the background
+        if (m_pNav) {
+            int navIdx = m_pNav->Index();
+            if (m_selectedIndex != navIdx) {
+                m_selectedIndex = navIdx;
+                EnsureVisible(m_selectedIndex, m_lastSize);
+                repaintNeeded = true;
+            }
+        }
+    }
+    
+    if (repaintNeeded) {
+        RequestRepaint(QuickView::PaintLayer::Gallery);
+        if (m_mode == GalleryMode::Hidden) {
+            RequestRepaint(QuickView::PaintLayer::Dynamic);
+        }
+        if (g_mainHwnd) {
+            ::PostMessageW(g_mainHwnd, WM_APP + 4, 0, 0); // WM_DEFERRED_REPAINT
+        }
+    }
+}
+
+float GalleryOverlay::GetVisualHeight(float winH) const {
+    float filmstripH = PADDING + FILM_CELL_SIZE + PADDING; // 24+140+24 = 188
+    float gridH = winH;
+    float currentH = filmstripH + (gridH - filmstripH) * m_gridProgress;
+    return currentH * m_transitionProgress;
+}
+
+bool GalleryOverlay::HitTestArea(int x, int y, float winW, float winH) const {
+    if (!IsVisible()) return false;
+    float targetH = (m_mode == GalleryMode::FullGrid || m_targetGridProgress > 0.5f)
+        ? winH
+        : (FILM_CELL_SIZE + 2.0f * PADDING);
+    // Outer bounds tolerance zone of 40px to prevent mistriggering auto-hide at edges
+    return (x >= -40 && x <= (int)winW + 40 && y >= -40 && y <= (int)targetH + 40);
+}
+
+void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size, ID2D1CommandList* pBgCmdList, const D2D1_MATRIX_3X2_F& bgTransform) {
+    if (!IsVisible() || !m_pThumbMgr || !m_pNav) return;
+    
+    bool sizeChanged = (m_lastSize.width != size.width || m_lastSize.height != size.height);
+    m_lastSize = size;
+    if (sizeChanged && m_selectedIndex >= 0) {
+        EnsureVisible(m_selectedIndex, size);
+    }
+    
+    float galleryH = GetVisualHeight(size.height);
+    if (galleryH <= 0.0f) return;
+    
+    D2D1_RECT_F panelRect = D2D1::RectF(0.0f, 0.0f, size.width, galleryH);
+    
+    // 1. D2D GeekGlass Background Rendering
+    m_geekGlass.InitializeResources(pDC);
+    QuickView::UI::GeekGlass::GeekGlassConfig glassConfig;
+    glassConfig.panelBounds = panelRect;
+    glassConfig.cornerRadius = 0.0f;
+    glassConfig.enableGeekGlass = g_config.EnableGeekGlass;
+    glassConfig.theme = IsLightThemeActive() ? QuickView::UI::GeekGlass::ThemeMode::Light : QuickView::UI::GeekGlass::ThemeMode::Dark;
+    glassConfig.tintProfile = g_config.GlassTintProfile;
+    glassConfig.customTintColor = D2D1::ColorF(g_config.GlassCustomTintR, g_config.GlassCustomTintG, g_config.GlassCustomTintB, g_config.GlassTintAlpha);
+    glassConfig.tintAlpha = g_config.GlassTintAlpha;
+    glassConfig.specularOpacity = g_config.GlassSpecularOpacity;
+    glassConfig.blurStandardDeviation = g_config.GlassBlurSigma * g_uiScale * m_transitionProgress;
+    glassConfig.opacity = (g_config.GlassPanelsOpacity / 100.0f) * m_transitionProgress;
+    glassConfig.strokeWeight = g_config.GetVectorStrokeWeight();
+    glassConfig.shadowOpacity = g_config.GlassShadowOpacity;
+    glassConfig.pBackgroundCommandList = pBgCmdList;
+    glassConfig.backgroundTransform = bgTransform;
+    
+    m_geekGlass.DrawGeekGlassPanel(pDC, glassConfig);
+    
+    // Setup brushes
+    if (!m_brushBg) pDC->CreateSolidColorBrush(D2D1::ColorF(0.0f, 0.0f, 0.0f, 1.0f), &m_brushBg);
+    if (!m_brushSelection) pDC->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::DodgerBlue), &m_brushSelection);
+    if (!m_brushText) pDC->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White), &m_brushText);
+    if (!m_brushOverlay) pDC->CreateSolidColorBrush(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.5f), &m_brushOverlay);
+    
+    bool isLight = IsLightThemeActive();
+    // Use the exact same colors as info panel
+    D2D1_COLOR_F bgClr = isLight ? D2D1::ColorF(0.95f, 0.95f, 0.97f, 1.0f) : D2D1::ColorF(0.08f, 0.08f, 0.10f, 1.0f);
+    D2D1_COLOR_F txtClr = isLight ? D2D1::ColorF(0.12f, 0.12f, 0.15f, 1.0f) : D2D1::ColorF(D2D1::ColorF::White);
+    D2D1_COLOR_F accClr = isLight ? D2D1::ColorF(0.0f, 0.45f, 0.9f, 1.0f) : D2D1::ColorF(D2D1::ColorF::DodgerBlue);
+    
+    m_brushSelection->SetColor(accClr);
+    m_brushText->SetColor(txtClr);
+    
+    // Material Boost Fill - only if GeekGlass is enabled (matches InfoPanel and Toolbar)
+    if (g_config.EnableGeekGlass) {
+        m_brushBg->SetColor(bgClr);
+        m_brushBg->SetOpacity(glassConfig.opacity);
+        pDC->FillRectangle(panelRect, m_brushBg.Get());
+        
+        m_geekGlass.DrawGeekGlassToppings(pDC, glassConfig);
+    }
+    
+    // 2. Text Format Initialization
     if (!m_dwriteFactory) {
         DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(m_dwriteFactory.GetAddressOf()));
     }
@@ -140,279 +359,601 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size) {
     size_t count = m_pNav->Count();
     if (count == 0) return;
     
-    // Layout Calculation
-    float availWidth = size.width - PADDING * 2;
-    // Calculate cols: Adaptive. Min 180px per col.
-    m_cols = std::max(1, (int)(availWidth / (THUMB_SIZE_MIN + GAP)));
-    
-    // Refine cell width to fill space
-    // availWidth = cols * w + (cols-1) * gap
-    m_cellWidth = (availWidth - (m_cols - 1) * GAP) / m_cols;
-    m_cellHeight = m_cellWidth * 0.75f; // 4:3 Aspect (User suggested 1:1 or 4:3. 4:3 is nice for photo)
-    // Actually user said "Square (1:1) or 4:3". Let's use 1:1 for "Geek" look (Square Grid)
-    m_cellHeight = m_cellWidth; 
-    
-    int rows = (int)((count + m_cols - 1) / m_cols);
-    m_totalHeight = PADDING * 2 + rows * (m_cellHeight + GAP) - GAP;
-    m_maxScroll = std::max(0.0f, m_totalHeight - size.height);
-    
-    // Smart Reveal (First Frame Logic)
-    static bool firstFrame = true; (void)firstFrame; // Use member if re-opening needs this. m_opacity < 0.1f implies just opened.
-    if (m_opacity < 0.2f && m_selectedIndex >= 0) { // Approx first few frames
-        int row = m_selectedIndex / m_cols;
-        float targetY = PADDING + row * (m_cellHeight + GAP);
-        // Center it
-        m_scrollTop = targetY - size.height / 2.0f + m_cellHeight / 2.0f;
-        // Clamp
-        if (m_scrollTop < 0) m_scrollTop = 0;
-        if (m_scrollTop > m_maxScroll) m_scrollTop = m_maxScroll;
-    }
-    
-    // Virtualization Range
-    // Safety check: ensure valid cell height for division
-    if (m_cellHeight <= 0) m_cellHeight = THUMB_SIZE_MIN;
-    float stride = m_cellHeight + GAP;
-    
-    // Visible Y range: m_scrollTop to m_scrollTop + size.height
-    int startRow = std::max(0, (int)((m_scrollTop - PADDING) / stride));
-    int endRow = std::min(rows - 1, (int)((m_scrollTop + size.height - PADDING) / stride) + 1);
-    
-    // Ensure valid range
-    if (startRow > endRow) startRow = 0;
-    if (endRow < 0) endRow = rows - 1;
-    
-    int startIdx = startRow * m_cols;
-    int endIdx = std::min((int)count - 1, (endRow + 1) * m_cols - 1);
-    
-    // Final safety: ensure loop can execute
-    if (startIdx > endIdx || endIdx < 0) {
-        startIdx = 0;
-        endIdx = (int)count - 1;
-    }
-    
-    int centerIdx = (startIdx + endIdx) / 2;
-    
-    // Notify Manager to clear old tasks
-    // Layout Calculated... prepare render
-    
-    // Notify Manager to clear old tasks
-    m_pThumbMgr->UpdateOptimizedPriority(startIdx, endIdx, centerIdx);
-    
-    // SAVE original transform (Contains DComp Atlas Offset!)
+    // Save state
     D2D1_MATRIX_3X2_F originalTransform;
     pDC->GetTransform(&originalTransform);
     
-    // Apply Scroll Translation ON TOP of original
-    D2D1_MATRIX_3X2_F scrollTransform = D2D1::Matrix3x2F::Translation(0, -m_scrollTop);
-    pDC->SetTransform(scrollTransform * originalTransform);
+    // 3. Layout calculation & Interpolation
+    float availWidth = size.width - PADDING * 2;
+    int gridCols = m_cols;
+    if (gridCols < 1) gridCols = 1;
+    float gridCellW = (availWidth - (gridCols - 1) * GAP) / gridCols;
+    float gridCellH = gridCellW;
     
-    m_brushBg->SetOpacity(m_opacity); 
-
-    // Loop Visible Items
-    for (int i = startIdx; i <= endIdx; ++i) {
-        int r = i / m_cols;
-        int c = i % m_cols;
+    int gridRows = (int)((count + gridCols - 1) / gridCols);
+    m_maxScroll = std::max(0.0f, PADDING * 2 + gridRows * (gridCellH + GAP) - GAP - size.height);
+    
+    float filmCellW = FILM_CELL_SIZE;
+    float filmCellH = FILM_CELL_SIZE;
+    float filmLeftMargin = 48.0f;
+    m_maxScrollLeft = std::max(0.0f, filmLeftMargin * 2.0f + count * (filmCellW + GAP) - GAP - size.width);
+    
+    // Keep scroll offsets in bounds
+    m_scrollTop = std::clamp(m_scrollTop, 0.0f, m_maxScroll);
+    m_scrollLeft = std::clamp(m_scrollLeft, 0.0f, m_maxScrollLeft);
+    
+    // Virtualization / visible range check (Frustum Culling)
+    int startIdx = 0;
+    int endIdx = (int)count - 1;
+    int centerIdx = (int)m_selectedIndex;
+    if (centerIdx < 0) centerIdx = 0;
+    
+    // Prioritize thumbnail loading around visible center index
+    m_pThumbMgr->UpdateOptimizedPriority(startIdx, endIdx, centerIdx);
+    
+    // Clip drawing area to the visual panel area
+    pDC->PushAxisAlignedClip(panelRect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+    
+    // Clip thumbnails to scrollable region (to avoid overlapping Pin button and arrows)
+    float currentLeftMargin = filmLeftMargin + (PADDING - filmLeftMargin) * m_gridProgress;
+    D2D1_RECT_F thumbsClip = D2D1::RectF(currentLeftMargin, 0.0f, size.width - currentLeftMargin, galleryH);
+    pDC->PushAxisAlignedClip(thumbsClip, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+    
+    // Loop and draw visible items
+    for (int i = 0; i < (int)count; ++i) {
+        // Filmstrip item coordinates
+        float fx = filmLeftMargin + i * (filmCellW + GAP) - m_scrollLeft;
+        float fy = PADDING;
         
-        float x = PADDING + c * (m_cellWidth + GAP);
-        float y = PADDING + r * (m_cellHeight + GAP);
-        D2D1_RECT_F cellRect = D2D1::RectF(x, y, x + m_cellWidth, y + m_cellHeight);
+        // Grid item coordinates
+        int col = i % gridCols;
+        int row = i / gridCols;
+        float gx = PADDING + col * (gridCellW + GAP);
+        float gy = PADDING + row * (gridCellH + GAP) - m_scrollTop;
         
-        // Selection Highlight
-        if (i == m_selectedIndex) {
-            D2D1_RECT_F highlight = D2D1::RectF(x-4, y-4, x+m_cellWidth+4, y+m_cellHeight+4);
-            pDC->FillRoundedRectangle(D2D1::RoundedRect(highlight, 4, 4), m_brushSelection.Get());
+        // Linear Interpolate coordinates based on grid progress
+        float cx = fx + (gx - fx) * m_gridProgress;
+        float cy = fy + (gy - fy) * m_gridProgress;
+        float cw = filmCellW + (gridCellW - filmCellW) * m_gridProgress;
+        float ch = filmCellH + (gridCellH - filmCellH) * m_gridProgress;
+        
+        // Frustum Culling check
+        if (cx + cw < 0.0f || cx > size.width || cy + ch < 0.0f || cy > galleryH) {
+            continue; // Skip out of bounds thumbnails
         }
         
-        // Get Thumbnail
-        if (i >= 0 && i < (int)m_pNav->Count()) {
-            ImageID imgId = m_pNav->GetImageID(i);
-            const std::wstring& path = m_pNav->GetFile(i);
-            auto bmp = m_pThumbMgr->GetThumbnail(imgId, path.c_str(), pDC);
+        D2D1_RECT_F cellRect = D2D1::RectF(cx, cy, cx + cw, cy + ch);
+        
+        // Fix #5: Hover scale effect (1.08x from center)
+        if (i == m_hoverIndex && i != m_selectedIndex) {
+            float expand = cw * 0.04f; // 8% total = 4% each side
+            cellRect.left -= expand;
+            cellRect.top -= expand;
+            cellRect.right += expand;
+            cellRect.bottom += expand;
+        }
+        
+        // Selection glow border (rounded, DodgerBlue)
+        if (i == m_selectedIndex) {
+            float glowExpand = 4.0f;
+            D2D1_RECT_F glowRect = D2D1::RectF(
+                cellRect.left - glowExpand, cellRect.top - glowExpand,
+                cellRect.right + glowExpand, cellRect.bottom + glowExpand);
+            m_brushSelection->SetOpacity(0.7f * m_transitionProgress);
+            pDC->DrawRoundedRectangle(D2D1::RoundedRect(glowRect, 6.0f, 6.0f), m_brushSelection.Get(), 2.5f);
+            m_brushSelection->SetOpacity(1.0f);
+        }
+        
+        // Draw thumbnail
+        ImageID imgId = m_pNav->GetImageID(i);
+        const std::wstring& path = m_pNav->GetFile(i);
+        auto bmp = m_pThumbMgr->GetThumbnail(imgId, path.c_str(), pDC);
+        
+        if (bmp) {
+            D2D1_SIZE_F bmpSize = bmp->GetSize();
+            D2D1_RECT_F src = GetCenterCropRect(bmpSize, cellRect);
+            pDC->DrawBitmap(bmp.Get(), cellRect, m_transitionProgress, D2D1_INTERPOLATION_MODE_LINEAR, src);
+        } else {
+            // Draw placeholder box
+            D2D1_COLOR_F phBase = isLight ? D2D1::ColorF(0.85f, 0.85f, 0.85f, 1.0f) : D2D1::ColorF(0.2f, 0.2f, 0.2f, 1.0f);
+            phBase.a *= m_transitionProgress;
             
-            if (bmp) {
-                D2D1_SIZE_F bmpSize = bmp->GetSize();
-                D2D1_RECT_F src = GetCenterCropRect(bmpSize, cellRect);
-                pDC->DrawBitmap(bmp.Get(), cellRect, m_opacity, D2D1_INTERPOLATION_MODE_LINEAR, src);
-            } else {
-                // Placeholder (Gray Box) call QueueRequest
-                D2D1_COLOR_F phBase =
-                    isLight ? D2D1::ColorF(0.85f, 0.85f, 0.85f, 1.0f)
-                            : D2D1::ColorF(0.2f, 0.2f, 0.2f, 1.0f);
-                D2D1_COLOR_F color = phBase;
-                color.a *= m_opacity;
-
-                ComPtr<ID2D1SolidColorBrush> phBrush;
-                pDC->CreateSolidColorBrush(color, &phBrush);
-                if (phBrush) pDC->FillRectangle(cellRect, phBrush.Get());
-                
-                // Queue! (Priority based on distance to center)
+            ComPtr<ID2D1SolidColorBrush> phBrush;
+            pDC->CreateSolidColorBrush(phBase, &phBrush);
+            if (phBrush) pDC->FillRectangle(cellRect, phBrush.Get());
+            
+            // Queue request only if NOT actively columns-zooming (performance LOD)
+            if (!m_isZooming) {
                 int prio = std::abs(i - centerIdx);
                 m_pThumbMgr->QueueRequest(imgId, path.c_str(), prio);
             }
         }
     }
     
-    // Draw Hover Tooltip (Top-most)
-    if (m_hoverIndex >= startIdx && m_hoverIndex <= endIdx) { // Visible check
-        int r = m_hoverIndex / m_cols;
-        int c = m_hoverIndex % m_cols;
-        float x = PADDING + c * (m_cellWidth + GAP);
-        float y = PADDING + r * (m_cellHeight + GAP);
+    // 4. Hover Tooltip Rendering
+    if (m_hoverIndex >= 0 && m_hoverIndex < (int)count) {
+        float fx = PADDING + m_hoverIndex * (filmCellW + GAP) - m_scrollLeft;
+        float fy = PADDING;
+        int col = m_hoverIndex % gridCols;
+        int row = m_hoverIndex / gridCols;
+        float gx = PADDING + col * (gridCellW + GAP);
+        float gy = PADDING + row * (gridCellH + GAP) - m_scrollTop;
         
-        ImageID imgId = m_pNav->GetImageID(m_hoverIndex);
-        ThumbnailManager::ImageInfo info = m_pThumbMgr->GetImageInfo(imgId);
-        std::wstring path = m_pNav->GetFile(m_hoverIndex);
-        size_t lastSlash = path.find_last_of(L"\\/");
-        std::wstring filename = (lastSlash != std::wstring::npos) ? path.substr(lastSlash + 1) : path;
+        float cx = fx + (gx - fx) * m_gridProgress;
+        float cy = fy + (gy - fy) * m_gridProgress;
+        float cw = filmCellW + (gridCellW - filmCellW) * m_gridProgress;
+        float ch = filmCellH + (gridCellH - filmCellH) * m_gridProgress;
         
-        std::wstring desc = filename + L"\n";
-        if (info.isValid) {
-            if (info.isFailed) {
-                desc += L"Failed to load";
+        if (cx + cw >= 0.0f && cx <= size.width && cy + ch >= 0.0f && cy <= galleryH) {
+            ImageID imgId = m_pNav->GetImageID(m_hoverIndex);
+            ThumbnailManager::ImageInfo info = m_pThumbMgr->GetImageInfo(imgId);
+            std::wstring path = m_pNav->GetFile(m_hoverIndex);
+            size_t lastSlash = path.find_last_of(L"\\/");
+            std::wstring filename = (lastSlash != std::wstring::npos) ? path.substr(lastSlash + 1) : path;
+            
+            std::wstring desc = filename + L"\n";
+            if (info.isValid) {
+                if (info.isFailed) desc += L"Failed to load";
+                else desc += std::to_wstring(info.origWidth) + L" x " + std::to_wstring(info.origHeight) + L"\n" + std::to_wstring(info.fileSize / 1024) + L" KB";
             } else {
-                desc += std::to_wstring(info.origWidth) + L" x " + std::to_wstring(info.origHeight) + L"\n";
-                desc += std::to_wstring(info.fileSize / 1024) + L" KB";
+                desc += L"Loading...";
             }
-        } else {
-            desc += L"Loading...";
+            
+            float tooltipW = 200.0f;
+            float tooltipH = 60.0f;
+            D2D1_RECT_F tooltipRect = D2D1::RectF(cx + 8, cy + 8, cx + 8 + tooltipW, cy + 8 + tooltipH);
+            
+            m_brushOverlay->SetOpacity(0.85f * m_transitionProgress);
+            pDC->FillRoundedRectangle(D2D1::RoundedRect(tooltipRect, 4, 4), m_brushOverlay.Get());
+            
+            // Draw 1.0px border to enhance popup hierarchy
+            ComPtr<ID2D1SolidColorBrush> borderBrush;
+            pDC->CreateSolidColorBrush(D2D1::ColorF(0.4f, 0.4f, 0.45f, m_transitionProgress), &borderBrush);
+            if (borderBrush) {
+                pDC->DrawRoundedRectangle(D2D1::RoundedRect(tooltipRect, 4, 4), borderBrush.Get(), 1.0f);
+            }
+            
+            // Ensure white text in both light and dark modes
+            D2D1_COLOR_F oldTextClr = m_brushText->GetColor();
+            m_brushText->SetColor(D2D1::ColorF(D2D1::ColorF::White));
+            m_brushText->SetOpacity(m_transitionProgress);
+            pDC->DrawText(desc.c_str(), (UINT32)desc.length(), m_textFormat.Get(),
+                D2D1::RectF(tooltipRect.left + 6, tooltipRect.top + 6, tooltipRect.right - 6, tooltipRect.bottom - 6),
+                m_brushText.Get());
+            m_brushText->SetColor(oldTextClr);
+        }
+    }
+    
+    pDC->PopAxisAlignedClip(); // Pop thumbsClip
+    
+    // 5. Left/Right Navigation Arrows Rendering (Only in Filmstrip Mode)
+    if (m_gridProgress < 0.2f) {
+        float arrowSize = 16.0f;
+        ComPtr<ID2D1SolidColorBrush> arrowBrush;
+        pDC->CreateSolidColorBrush(isLight ? D2D1::ColorF(0.0f, 0.0f, 0.0f) : D2D1::ColorF(1.0f, 1.0f, 1.0f), &arrowBrush);
+        
+        // Left Arrow
+        if (m_arrowLeftAlpha > 0.01f && arrowBrush) {
+            arrowBrush->SetOpacity(m_arrowLeftAlpha * m_transitionProgress);
+            float cx = 24.0f;
+            float cy = PADDING + filmCellH / 2.0f;
+            pDC->DrawLine(D2D1::Point2F(cx + arrowSize / 2.0f, cy - arrowSize), D2D1::Point2F(cx - arrowSize / 2.0f, cy), arrowBrush.Get(), 3.0f);
+            pDC->DrawLine(D2D1::Point2F(cx - arrowSize / 2.0f, cy), D2D1::Point2F(cx + arrowSize / 2.0f, cy + arrowSize), arrowBrush.Get(), 3.0f);
         }
         
-        // Measure text rough layout
-        float tooltipW = 200.0f;
-        float tooltipH = 60.0f; // Approx
-        
-        D2D1_RECT_F tooltipRect = D2D1::RectF(x + 10, y + 10, x + 10 + tooltipW, y + 10 + tooltipH);
-        
-        // Use bright opacity for tooltip
-        m_brushBg->SetOpacity(0.9f);
-        pDC->FillRoundedRectangle(D2D1::RoundedRect(tooltipRect, 4, 4), m_brushBg.Get());
-        
-        m_brushText->SetOpacity(1.0f); // Make sure text is visible
-        pDC->DrawText(desc.c_str(), (UINT32)desc.length(), m_textFormat.Get(), 
-            D2D1::RectF(tooltipRect.left + 5, tooltipRect.top + 5, tooltipRect.right - 5, tooltipRect.bottom - 5), 
-            m_brushText.Get());
+        // Right Arrow
+        if (m_arrowRightAlpha > 0.01f && arrowBrush) {
+            arrowBrush->SetOpacity(m_arrowRightAlpha * m_transitionProgress);
+            float cx = size.width - 24.0f;
+            float cy = PADDING + filmCellH / 2.0f;
+            pDC->DrawLine(D2D1::Point2F(cx - arrowSize / 2.0f, cy - arrowSize), D2D1::Point2F(cx + arrowSize / 2.0f, cy), arrowBrush.Get(), 3.0f);
+            pDC->DrawLine(D2D1::Point2F(cx + arrowSize / 2.0f, cy), D2D1::Point2F(cx - arrowSize / 2.0f, cy + arrowSize), arrowBrush.Get(), 3.0f);
+        }
     }
-
-    // RESTORE original transform (Important for subsequent draws if any, or just hygiene)
+    
+    // 6a. Pin button (top-left corner of filmstrip) - only visible in filmstrip mode
+    if (m_gridProgress < 0.2f) {
+        float pinSize = 16.0f;
+        float pinX = 16.0f;
+        float pinY = 16.0f;
+        D2D1_RECT_F pinRect = D2D1::RectF(pinX, pinY, pinX + pinSize, pinY + pinSize);
+        
+        ComPtr<ID2D1SolidColorBrush> pinBrush;
+        D2D1_COLOR_F pinClr = m_pinHover
+            ? (isLight ? D2D1::ColorF(0.0f, 0.45f, 0.9f, 0.95f) : D2D1::ColorF(D2D1::ColorF::DodgerBlue, 0.95f))
+            : (isLight ? D2D1::ColorF(0.2f, 0.2f, 0.2f, 0.5f) : D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.4f));
+        pDC->CreateSolidColorBrush(pinClr, &pinBrush);
+        if (pinBrush) {
+            float fadeAlpha = m_transitionProgress * (1.0f - m_gridProgress / 0.2f);
+            if (fadeAlpha < 0.0f) fadeAlpha = 0.0f;
+            pinBrush->SetOpacity(fadeAlpha);
+            const auto& icon = m_isPinned ? GeekIcons::UnpinVector : GeekIcons::PinVector;
+            QuickView::UI::GeekIconRenderer::DrawVectorIcon(pDC, icon, pinRect, pinBrush.Get());
+        }
+    }
+    
+    pDC->PopAxisAlignedClip(); // Pop panelRect
+    
+    // 6b. Bottom drag indicator / visual cue (handle strip)
+    // Draw OUTSIDE clip area so it renders below the filmstrip edge
+    {
+        float handleW = 48.0f;
+        float handleH = 3.0f;
+        float cx = size.width / 2.0f;
+        float cy = galleryH + 5.0f; // Below filmstrip edge
+        
+        ComPtr<ID2D1SolidColorBrush> shadowBrush;
+        pDC->CreateSolidColorBrush(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.35f), &shadowBrush);
+        
+        ComPtr<ID2D1SolidColorBrush> handleBrush;
+        D2D1_COLOR_F handleClr = m_bottomHintHover 
+            ? accClr 
+            : (isLight ? D2D1::ColorF(0.12f, 0.12f, 0.15f) : D2D1::ColorF(0.9f, 0.9f, 0.9f));
+            
+        pDC->CreateSolidColorBrush(handleClr, &handleBrush);
+        if (handleBrush && shadowBrush) {
+            float alpha = m_transitionProgress;
+            handleBrush->SetOpacity(alpha);
+            shadowBrush->SetOpacity(alpha);
+            
+            // 1. Draw Drop Shadow (offset 1.2px down/right)
+            if (m_gridProgress < 0.2f) {
+                float shadowOffset = 1.2f;
+                // Handle Shadow
+                D2D1_RECT_F handleShadowRect = D2D1::RectF(
+                    cx - handleW / 2.0f + 0.5f, cy - handleH / 2.0f + shadowOffset,
+                    cx + handleW / 2.0f + 0.5f, cy + handleH / 2.0f + shadowOffset);
+                pDC->FillRoundedRectangle(D2D1::RoundedRect(handleShadowRect, handleH / 2.0f, handleH / 2.0f), shadowBrush.Get());
+                
+                // Chevron Shadow
+                float chevronSize = 6.0f;
+                float chevronY = cy + 5.0f;
+                pDC->DrawLine(D2D1::Point2F(cx - chevronSize + 0.5f, chevronY - chevronSize / 2.0f + shadowOffset), D2D1::Point2F(cx + 0.5f, chevronY + chevronSize / 2.0f + shadowOffset), shadowBrush.Get(), 2.0f);
+                pDC->DrawLine(D2D1::Point2F(cx + 0.5f, chevronY + chevronSize / 2.0f + shadowOffset), D2D1::Point2F(cx + chevronSize + 0.5f, chevronY - chevronSize / 2.0f + shadowOffset), shadowBrush.Get(), 2.0f);
+            }
+            
+            // 2. Draw Foreground
+            if (m_gridProgress < 0.2f) {
+                D2D1_RECT_F handleRect = D2D1::RectF(cx - handleW / 2.0f, cy - handleH / 2.0f, cx + handleW / 2.0f, cy + handleH / 2.0f);
+                pDC->FillRoundedRectangle(D2D1::RoundedRect(handleRect, handleH / 2.0f, handleH / 2.0f), handleBrush.Get());
+                
+                // Chevron Foreground
+                float chevronSize = 6.0f;
+                float chevronY = cy + 5.0f;
+                pDC->DrawLine(D2D1::Point2F(cx - chevronSize, chevronY - chevronSize / 2.0f), D2D1::Point2F(cx, chevronY + chevronSize / 2.0f), handleBrush.Get(), 2.0f);
+                pDC->DrawLine(D2D1::Point2F(cx, chevronY + chevronSize / 2.0f), D2D1::Point2F(cx + chevronSize, chevronY - chevronSize / 2.0f), handleBrush.Get(), 2.0f);
+            }
+        }
+    }
+    
     pDC->SetTransform(originalTransform);
 }
 
-bool GalleryOverlay::OnMouseWheel(int delta) {
-    if (!m_isVisible) return false;
-    float scrollSpeed = 60.0f; // Pixels per detent
-    m_scrollTop -= (delta / 120.0f) * scrollSpeed * 3.0f; // 3x speed for "Smooth/Fast" feel
-    
-    if (m_scrollTop < 0) m_scrollTop = 0;
-    if (m_scrollTop > m_maxScroll) m_scrollTop = m_maxScroll;
-    return true;
-}
-
 bool GalleryOverlay::OnKeyDown(UINT key) {
-    if (!m_isVisible) return false;
+    if (!IsVisible()) return false;
     
     switch (key) {
-        case VK_ESCAPE: 
-        case 'T': 
-            Close();  // Cancel without selection
+        case VK_ESCAPE:
+        case 'T':
+            Close();
             return true;
             
         case VK_RETURN:
             if (m_selectedIndex >= 0) {
-                Close(true);  // Keep selection for loading
+                if (!m_isPinned) {
+                    Close(true);
+                } else if (m_mode == GalleryMode::FullGrid) {
+                    SetMode(GalleryMode::Filmstrip);
+                }
             }
             return true;
             
-        case VK_LEFT: m_selectedIndex = std::max(0, m_selectedIndex - 1); break;
-        case VK_RIGHT: m_selectedIndex = std::min((int)m_pNav->Count() - 1, m_selectedIndex + 1); break;
-        case VK_UP: m_selectedIndex = std::max(0, m_selectedIndex - m_cols); break;
-        case VK_DOWN: m_selectedIndex = std::min((int)m_pNav->Count() - 1, m_selectedIndex + m_cols); break;
-        
-        case VK_PRIOR: // PgUp
-             m_selectedIndex = std::max(0, m_selectedIndex - m_cols * 5); // Jump 5 rows
-             break;
-        case VK_NEXT: // PgDown
-             m_selectedIndex = std::min((int)m_pNav->Count() - 1, m_selectedIndex + m_cols * 5);
-             break;
-             
-        case VK_HOME: m_selectedIndex = 0; break;
-        case VK_END: m_selectedIndex = (int)m_pNav->Count() - 1; break;
+        case VK_LEFT:
+            if (m_isPinned && m_mode == GalleryMode::Filmstrip) return false;
+            m_selectedIndex = std::max(0, m_selectedIndex - 1);
+            break;
+        case VK_RIGHT:
+            if (m_isPinned && m_mode == GalleryMode::Filmstrip) return false;
+            m_selectedIndex = std::min((int)m_pNav->Count() - 1, m_selectedIndex + 1);
+            break;
+        case VK_UP:
+            if (m_mode == GalleryMode::FullGrid) {
+                m_selectedIndex = std::max(0, m_selectedIndex - m_cols);
+            }
+            break;
+        case VK_DOWN:
+            if (m_mode == GalleryMode::FullGrid) {
+                m_selectedIndex = std::min((int)m_pNav->Count() - 1, m_selectedIndex + m_cols);
+            }
+            break;
     }
     
-    // Auto-scroll to selection
-    if (m_selectedIndex >= 0) {
-        // int row = m_selectedIndex / m_cols;
-        // // float itemTop = PADDING + row * (m_cellHeight + GAP);
-        // float itemBottom = itemTop + m_cellHeight;
-        
-        // Assume screen height (need to track it or guess)
-        // Best effort: we need to persist viewHeight to do this logic here. 
-        // Let's assume OnMouseWheel/Render updates m_maxScroll logic using viewHeight, 
-        // but we don't have it here. We can just invalidate and let specific EnsureVisible logic defined in Render/Update handle it?
-        // Or better: In Render, if selected is out of view, scroll to it?
-        // Let's implement simple "Scroll To Selection" in Render if input changed selection.
+    RequestRepaint(QuickView::PaintLayer::Gallery);
+    return true;
+}
+
+bool GalleryOverlay::OnMouseWheel(int delta) {
+    if (!IsVisible()) return false;
+    
+    bool isCtrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+    
+    if (isCtrl && m_gridProgress > 0.5f) {
+        // Ctrl+Wheel: zoom grid columns
+        m_targetCols = std::clamp(m_targetCols + (delta > 0 ? -1 : 1), 3, 12);
+        m_isZooming = true;
+        m_zoomDebounceTimer = 0.15f; // 150ms debounce
+        return true;
+    }
+    
+    // Horizontal scroll in filmstrip / vertical scroll in grid
+    if (m_gridProgress < 0.5f) {
+        m_scrollLeft -= delta * 0.5f;
+        m_scrollLeft = std::clamp(m_scrollLeft, 0.0f, m_maxScrollLeft);
+    } else {
+        m_scrollTop -= delta * 0.5f;
+        m_scrollTop = std::clamp(m_scrollTop, 0.0f, m_maxScroll);
     }
     return true;
 }
 
 bool GalleryOverlay::OnLButtonDown(int x, int y) {
-    if (!m_isVisible) return false;
-    int idx = HitTest((float)x, (float)y + m_scrollTop); // Adjust for scroll
-    if (idx >= 0) {
-        m_selectedIndex = idx;
-        Close(true);  // Keep selection for loading
-        return true;
+    if (!IsVisible()) return false;
+    
+    float fx = (float)x;
+    float fy = (float)y;
+    float galleryH = GetVisualHeight(m_lastSize.height);
+    
+    // Outside gallery area — ignore (including bottom handle zone)
+    if (fy > galleryH + 16.0f) return false;
+    
+    // Check Pin button click (top-left corner) - only in filmstrip mode
+    if (m_gridProgress < 0.2f) {
+        float pinSize = 16.0f;
+        float pinX = 16.0f;
+        float pinY = 16.0f;
+        if (fx >= pinX && fx <= pinX + pinSize && fy >= pinY && fy <= pinY + pinSize) {
+            TogglePin();
+            RequestRepaint(QuickView::PaintLayer::Gallery);
+            return true;
+        }
     }
-    // Click outside = Close without selection
-    Close();  // Default resets m_selectedIndex
+    
+    // Check filmstrip left/right arrows
+    if (m_gridProgress < 0.2f) {
+        float arrowCy = PADDING + FILM_CELL_SIZE / 2.0f;
+        float arrowR = 30.0f;
+        
+        if (fx < 48.0f && fabsf(fy - arrowCy) < arrowR) {
+            m_scrollLeft = std::max(0.0f, m_scrollLeft - 300.0f);
+            return true;
+        }
+        if (fx > m_lastSize.width - 48.0f && fabsf(fy - arrowCy) < arrowR) {
+            m_scrollLeft = std::min(m_maxScrollLeft, m_scrollLeft + 300.0f);
+            return true;
+        }
+    }
+    
+    // Check bottom handle click → expand to FullGrid
+    {
+        float handleCx = m_lastSize.width / 2.0f;
+        float handleCy = galleryH + 5.0f; // Outside clip edge (matches cy = galleryH + 5.0f)
+        if (fabsf(fx - handleCx) < 40.0f && fabsf(fy - handleCy) < 12.0f && m_gridProgress < 0.2f) {
+            SetMode(GalleryMode::FullGrid);
+            return true;
+        }
+    }
+    
+    // Begin drag (axis undecided until slop threshold)
+    m_isLButtonDown = true;
+    m_dragMode = DragMode::None;
+    m_dragStartX = fx;
+    m_dragStartY = fy;
+    m_dragStartScrollLeft = m_scrollLeft;
+    m_dragStartScrollTop = m_scrollTop;
+    m_dragYOffset = 0.0f;
+    m_velocityX = 0.0f;
+    m_lastMousePos = { x, y };
+    m_lastMouseMoveTime = GetTickCount();
+    
     return true;
 }
 
 bool GalleryOverlay::OnMouseMove(int x, int y) {
-    if (!m_isVisible) return false;
-    int oldHover = m_hoverIndex;
-    m_hoverIndex = HitTest((float)x, (float)y + m_scrollTop);
-    return m_hoverIndex != oldHover;  // Only repaint if hover changed
+    if (!IsVisible()) return false;
+    
+    float fx = (float)x;
+    float fy = (float)y;
+    bool changed = false;
+    
+    // Update arrow hover states (filmstrip mode)
+    if (m_gridProgress < 0.2f) {
+        float arrowCy = PADDING + FILM_CELL_SIZE / 2.0f;
+        bool leftHover = (fx < 48.0f && fabsf(fy - arrowCy) < 30.0f);
+        bool rightHover = (fx > m_lastSize.width - 48.0f && fabsf(fy - arrowCy) < 30.0f);
+        if (leftHover != m_arrowLeftHover || rightHover != m_arrowRightHover) {
+            m_arrowLeftHover = leftHover;
+            m_arrowRightHover = rightHover;
+            changed = true;
+        }
+    }
+    
+    // Pin button hover - only in filmstrip mode
+    {
+        float pinSize = 16.0f;
+        float pinX = 16.0f;
+        float pinY = 16.0f;
+        bool pinHover = (m_gridProgress < 0.2f) && (fx >= pinX && fx <= pinX + pinSize && fy >= pinY && fy <= pinY + pinSize);
+        if (pinHover != m_pinHover) {
+            m_pinHover = pinHover;
+            changed = true;
+        }
+    }
+    
+    // Bottom hint hover (outside clip edge)
+    {
+        float galleryH = GetVisualHeight(m_lastSize.height);
+        float handleCx = m_lastSize.width / 2.0f;
+        float handleCy = galleryH + 5.0f; // Match new position
+        bool hintHover = (fabsf(fx - handleCx) < 40.0f && fabsf(fy - handleCy) < 12.0f);
+        if (hintHover != m_bottomHintHover) {
+            m_bottomHintHover = hintHover;
+            changed = true;
+        }
+    }
+    
+    // Drag handling with axis-locking slop
+    if (m_isLButtonDown) {
+        float dx = fx - m_dragStartX;
+        float dy = fy - m_dragStartY;
+        
+        // Axis locking: decide on first significant movement (8px slop)
+        if (m_dragMode == DragMode::None) {
+            float dist = sqrtf(dx * dx + dy * dy);
+            if (dist > 8.0f) {
+                m_dragMode = (fabsf(dx) > fabsf(dy)) ? DragMode::Horizontal : DragMode::Vertical;
+            }
+        }
+        
+        if (m_dragMode == DragMode::Horizontal) {
+            m_scrollLeft = m_dragStartScrollLeft - dx;
+            m_scrollLeft = std::clamp(m_scrollLeft, 0.0f, m_maxScrollLeft);
+            
+            // Track velocity for inertia
+            DWORD now = GetTickCount();
+            float dt = (now - m_lastMouseMoveTime) / 1000.0f;
+            if (dt > 0.001f && dt < 0.1f) {
+                float moveX = (float)(x - m_lastMousePos.x);
+                m_velocityX = moveX / dt;
+            }
+            changed = true;
+        } else if (m_dragMode == DragMode::Vertical) {
+            if (m_gridProgress < 0.5f) {
+                // Pull down to expand: track vertical offset
+                m_dragYOffset = std::max(0.0f, dy);
+                if (m_dragYOffset > 50.0f) {
+                    SetMode(GalleryMode::FullGrid);
+                    m_isLButtonDown = false;
+                    m_dragMode = DragMode::None;
+                }
+            } else {
+                // In grid mode: vertical scroll
+                m_scrollTop = m_dragStartScrollTop - dy;
+                m_scrollTop = std::clamp(m_scrollTop, 0.0f, m_maxScroll);
+            }
+            changed = true;
+        }
+        
+        m_lastMousePos = { x, y };
+        m_lastMouseMoveTime = GetTickCount();
+    } else {
+        // Hover hit test
+        int newHover = HitTest(fx, fy);
+        if (newHover != m_hoverIndex) {
+            m_hoverIndex = newHover;
+            changed = true;
+        }
+    }
+    
+    return changed;
+}
+
+bool GalleryOverlay::OnLButtonUp(int x, int y, int& outSelectedIndex) {
+    if (!IsVisible()) return false;
+    
+    bool wasDragging = m_isLButtonDown;
+    m_isLButtonDown = false;
+    
+    // Always reset dragging modes on release
+    m_dragYOffset = 0.0f;
+    m_dragMode = DragMode::None;
+    
+    if (!wasDragging) return false;
+    
+    float dx = (float)x - m_dragStartX;
+    float dy = (float)y - m_dragStartY;
+    float dist = sqrtf(dx * dx + dy * dy);
+    
+    // If no significant movement (< slop threshold) → treat as click-to-select
+    if (dist < 8.0f) {
+        int idx = HitTest((float)x, (float)y);
+        if (idx >= 0) {
+            m_selectedIndex = idx;
+            outSelectedIndex = idx;
+            if (!m_isPinned) {
+                Close(true);
+            } else if (m_mode == GalleryMode::FullGrid) {
+                SetMode(GalleryMode::Filmstrip);
+            }
+            return true; // Clicked and selected a cell
+        }
+    }
+    
+    return false; // Did not select a cell (it was a drag release)
+}
+
+void GalleryOverlay::EnsureVisible(int index, const D2D1_SIZE_F& size) {
+    if (index < 0 || m_cellHeight <= 0.0f) return;
+    
+    if (m_mode == GalleryMode::FullGrid) {
+        int row = index / m_cols;
+        float itemTop = PADDING + row * (m_cellHeight + GAP);
+        float itemBottom = itemTop + m_cellHeight;
+        
+        if (itemTop < m_scrollTop) {
+            m_scrollTop = itemTop;
+        } else if (itemBottom > m_scrollTop + size.height) {
+            m_scrollTop = itemBottom - size.height;
+        }
+    } else {
+        float cellW = FILM_CELL_SIZE;
+        float filmLeftMargin = 48.0f;
+        float itemLeft = filmLeftMargin + index * (cellW + GAP);
+        float itemRight = itemLeft + cellW;
+        
+        if (itemLeft < m_scrollLeft + filmLeftMargin) {
+            m_scrollLeft = itemLeft - filmLeftMargin;
+        } else if (itemRight > m_scrollLeft + size.width - filmLeftMargin) {
+            m_scrollLeft = itemRight - size.width + filmLeftMargin;
+        }
+    }
 }
 
 int GalleryOverlay::HitTestClient(int x, int y) {
-    if (!m_isVisible) return -1;
-    return HitTest((float)x, (float)y + m_scrollTop);
+    if (!IsVisible()) return -1;
+    return HitTest((float)x, (float)y);
 }
 
 int GalleryOverlay::HitTest(float x, float y) {
-    // Inverse of layout
-    // y = PADDING + r * (h + GAP)
-    // r = (y - PADDING) / (h + GAP)
-    if (x < PADDING || y < PADDING) return -1;
+    size_t count = m_pNav ? m_pNav->Count() : 0;
+    if (count == 0) return -1;
     
-    float rowF = (y - PADDING) / (m_cellHeight + GAP);
-    float colF = (x - PADDING) / (m_cellWidth + GAP);
+    float availWidth = m_lastSize.width - PADDING * 2;
+    int gridCols = m_cols;
+    if (gridCols < 1) gridCols = 1;
+    float gridCellW = (availWidth - (gridCols - 1) * GAP) / gridCols;
+    float gridCellH = gridCellW;
     
-    int r = (int)rowF;
-    int c = (int)colF;
+    float filmCellW = FILM_CELL_SIZE;
+    float filmCellH = FILM_CELL_SIZE;
+    float filmLeftMargin = 48.0f;
     
-    // Check gaps (fractional part)
-    // float rowFrac = rowF - r;
-    // float colFrac = colF - c;
-    
-    // If in gap (GAP is small, but strictly speaking)
-    // Just ignore gap precision for easier clicking? Or be strict.
-    // Strict is cleaner.
-    // GAP relative to total stride:
-    // Stride = Cell + GAP.
-    // If local pos within stride > Cell, it's gap.
-    
-    // Simpler check: Index
-    if (c >= m_cols) return -1;
-    
-    int index = r * m_cols + c;
-    if (index >= (int)m_pNav->Count()) return -1;
-    
-    // Check rect
-    float cellR = PADDING + c * (m_cellWidth + GAP) + m_cellWidth;
-    float cellB = PADDING + r * (m_cellHeight + GAP) + m_cellHeight;
-    
-    if (x > cellR || y > cellB) return -1; // In gap
-    
-    return index;
+    for (size_t i = 0; i < count; ++i) {
+        float fx = filmLeftMargin + i * (filmCellW + GAP) - m_scrollLeft;
+        float fy = PADDING;
+        
+        int col = i % gridCols;
+        int row = i / gridCols;
+        float gx = PADDING + col * (gridCellW + GAP);
+        float gy = PADDING + row * (gridCellH + GAP) - m_scrollTop;
+        
+        float cx = fx + (gx - fx) * m_gridProgress;
+        float cy = fy + (gy - fy) * m_gridProgress;
+        float cw = filmCellW + (gridCellW - filmCellW) * m_gridProgress;
+        float ch = filmCellH + (gridCellH - filmCellH) * m_gridProgress;
+        
+        if (x >= cx && x <= cx + cw && y >= cy && y <= cy + ch) {
+            return (int)i;
+        }
+    }
+    return -1;
 }

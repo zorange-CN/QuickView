@@ -234,7 +234,7 @@ Toolbar g_toolbar;  // Non-static for extern access from UIRenderer
 SettingsOverlay g_settingsOverlay;  // Non-static for extern access from UIRenderer
 HelpOverlay g_helpOverlay; // Non-static for extern access
 static UINT g_windowDpi = USER_DEFAULT_SCREEN_DPI;
-static float g_uiScale = 1.0f;
+float g_uiScale = 1.0f;
 
 static float GetMinWindowWidth() {
     float defaultMinW = 4.0f * 38.0f * g_uiScale; // window controls
@@ -2683,7 +2683,7 @@ static void ReloadGainMapImagesForDisplayChange(HWND hwnd) {
 static void ShowGallery(HWND hwnd) {
     if (!g_gallery.IsVisible()) SaveOverlayWindowState(hwnd);
 
-    g_gallery.Open(GetPaneContext(PaneSlot::Primary).navigator.Index());
+    g_gallery.Open(GetPaneContext(PaneSlot::Primary).navigator.Index(), GalleryMode::FullGrid);
     if (g_gallery.IsVisible()) {
         AdjustWindowForOverlay(hwnd, false);
     }
@@ -3766,6 +3766,7 @@ void SaveConfig() {
     WritePrivateProfileStringW(L"Controls", L"MiddleDragAction", std::to_wstring((int)g_config.MiddleDragAction).c_str(), iniPath.c_str());
     WritePrivateProfileStringW(L"Controls", L"MiddleClickAction", std::to_wstring((int)g_config.MiddleClickAction).c_str(), iniPath.c_str());
     WritePrivateProfileStringW(L"Controls", L"EdgeNavClick", g_config.EdgeNavClick ? L"1" : L"0", iniPath.c_str());
+    WritePrivateProfileStringW(L"Controls", L"GalleryTriggerMode", std::to_wstring(g_config.GalleryTriggerMode).c_str(), iniPath.c_str());
     // NavIndicator moved to View section
 
     // Image
@@ -4009,6 +4010,7 @@ void LoadConfig() {
     g_config.MiddleDragIndex = (g_config.MiddleDragAction == MouseAction::WindowDrag) ? 0 : 1;
     g_config.MiddleClickIndex = (g_config.MiddleClickAction == MouseAction::ExitApp) ? 1 : 0;
     g_config.EdgeNavClick = GetPrivateProfileIntW(L"Controls", L"EdgeNavClick", 1, iniPath.c_str()) != 0;
+    g_config.GalleryTriggerMode = GetPrivateProfileIntW(L"Controls", L"GalleryTriggerMode", 0, iniPath.c_str());
     // NavIndicator moved to View section
     
     // Image
@@ -4851,7 +4853,11 @@ void SyncDCompState([[maybe_unused]] HWND hwnd, float winW, float winH, bool ani
     if (GetPaneContext(PaneSlot::Primary).resource) {
         VisualState vs = GetVisualState();
         if (vs.VisualSize.width > 0 && vs.VisualSize.height > 0) {
-            float baseFit = ComputeBaseFitScaleForVisual(vs, winW, winH);
+            float galleryH = (g_gallery.IsPinned() && g_gallery.IsVisible()) ? g_gallery.GetVisualHeight(winH) : 0.0f;
+            float effWinH = winH - galleryH;
+            if (effWinH < 1.0f) effWinH = 1.0f;
+
+            float baseFit = ComputeBaseFitScaleForVisual(vs, winW, effWinH);
 
             float targetZoom = baseFit * GetPaneContext(PaneSlot::Primary).view.Zoom;
 
@@ -4869,26 +4875,25 @@ void SyncDCompState([[maybe_unused]] HWND hwnd, float winW, float winH, bool ani
                 targetZoom = baseFit * GetPaneContext(PaneSlot::Primary).view.Zoom;
             }
 
-            ClampPanForViewport(vs, winW, winH, targetZoom);
-
+            ClampPanForViewport(vs, winW, effWinH, targetZoom);
 
             float animationDurationMs = (animate && g_config.EnableSmoothScaling) ? 90.0f : 0.0f;
 
             float displayZoom = targetZoom;
             float displayPanX = GetPaneContext(PaneSlot::Primary).view.PanX;
             float displayPanY = GetPaneContext(PaneSlot::Primary).view.PanY;
-
+            
             const ImageID currentImageId = g_currentImageId.load(std::memory_order_acquire);
             if (AppContext::GetInstance().SmoothZoom.Active) {
                 const bool smoothInvalid =
                     AppContext::GetInstance().SmoothZoom.ImageId != currentImageId ||
                     (!AppContext::GetInstance().SmoothZoom.AnimateWindow &&
                      (fabsf(AppContext::GetInstance().SmoothZoom.LastWinW - winW) > 0.5f ||
-                      fabsf(AppContext::GetInstance().SmoothZoom.LastWinH - winH) > 0.5f)) ||
+                      fabsf(AppContext::GetInstance().SmoothZoom.LastWinH - effWinH) > 0.5f)) ||
                     GetPaneContext(PaneSlot::Primary).view.IsDragging ||
                     g_isInSizeMove;
                 if (smoothInvalid) {
-                    AppContext::GetInstance().ZoomAnimCtrl->SyncToLogical(winW, winH, false);
+                    AppContext::GetInstance().ZoomAnimCtrl->SyncToLogical(winW, effWinH, false);
                 }
             }
 
@@ -4897,27 +4902,29 @@ void SyncDCompState([[maybe_unused]] HWND hwnd, float winW, float winH, bool ani
                 displayPanX = AppContext::GetInstance().SmoothZoom.CurrentPanX;
                 displayPanY = AppContext::GetInstance().SmoothZoom.CurrentPanY;
             } else {
-                AppContext::GetInstance().ZoomAnimCtrl->SyncToLogical(winW, winH, false);
+                AppContext::GetInstance().ZoomAnimCtrl->SyncToLogical(winW, effWinH, false);
             }
-
+            
+            // Fix #6: Pin mode — shift main image down by half of gallery filmstrip height
+            displayPanY += galleryH / 2.0f;
 
             if (UseSvgViewportRendering(GetPaneContext(PaneSlot::Primary).resource)) {
                 VisualState surfaceVs{};
                 float currentScale = 1.0f;
                 // [Fix] Maintain aspect ratio and sync zoom during interactive resize by uniformly scaling the old surface.
                 if (g_lastSurfaceSize.width > 0.0f && g_lastSurfaceSize.height > 0.0f) {
-                    currentScale = std::min(winW / g_lastSurfaceSize.width, winH / g_lastSurfaceSize.height);
+                    currentScale = std::min(winW / g_lastSurfaceSize.width, effWinH / g_lastSurfaceSize.height);
                     surfaceVs.PhysicalSize.width = g_lastSurfaceSize.width * currentScale;
                     surfaceVs.PhysicalSize.height = g_lastSurfaceSize.height * currentScale;
                 } else {
-                    surfaceVs.PhysicalSize = D2D1::SizeF(winW, winH);
+                    surfaceVs.PhysicalSize = D2D1::SizeF(winW, effWinH);
                 }
                 surfaceVs.VisualSize = surfaceVs.PhysicalSize;
                 surfaceVs.TotalRotation = 0.0f;
                 surfaceVs.IsRotated90 = false;
                 surfaceVs.FlipX = 1.0f;
                 surfaceVs.FlipY = 1.0f;
-                g_compEngine->UpdateTransformMatrix(surfaceVs, winW, winH, 1.0f, 0.0f, 0.0f, animationDurationMs);
+                g_compEngine->UpdateTransformMatrix(surfaceVs, winW, winH, 1.0f, 0.0f, galleryH / 2.0f, animationDurationMs);
                 
                 // Use adaptive interpolation even during SVG viewport resizing to keep it smooth
                 DCOMPOSITION_BITMAP_INTERPOLATION_MODE interpMode = GetOptimalDCompInterpolationMode(currentScale, g_lastSurfaceSize.width, g_lastSurfaceSize.height);
@@ -6444,8 +6451,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
      // Mouse Interaction
      case WM_MOUSEMOVE: {
           g_currentCursor = LoadCursor(nullptr, IDC_ARROW);
+          POINT pt = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
+          RECT rcClient; GetClientRect(hwnd, &rcClient);
+          float winW = (float)(rcClient.right - rcClient.left);
+          float winH = (float)(rcClient.bottom - rcClient.top);
+          bool hasGallery = g_gallery.IsVisible() && g_gallery.HitTestArea(pt.x, pt.y, winW, winH);
+
           if (GetPaneContext(PaneSlot::Primary).view.IsDraggingInfoPanel) {
-              POINT pt = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
               int dx = pt.x - GetPaneContext(PaneSlot::Primary).view.InfoPanelDragAnchor.x;
               int dy = pt.y - GetPaneContext(PaneSlot::Primary).view.InfoPanelDragAnchor.y;
 
@@ -6455,11 +6467,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
                   g_runtime.InfoPanelY += dy / s;
 
                   // Keep it visible on screen (approx boundaries)
-                  RECT rc; GetClientRect(hwnd, &rc);
-                  float maxW = rc.right / s;
-                  float maxH = rc.bottom / s;
-                  g_runtime.InfoPanelX = std::max(0.0f, std::min(g_runtime.InfoPanelX, maxW - 50.0f));
-                  g_runtime.InfoPanelY = std::max(0.0f, std::min(g_runtime.InfoPanelY, maxH - 50.0f));
+                  g_runtime.InfoPanelX = std::max(0.0f, std::min(g_runtime.InfoPanelX, winW / s - 50.0f));
+                  g_runtime.InfoPanelY = std::max(0.0f, std::min(g_runtime.InfoPanelY, winH / s - 50.0f));
 
                   GetPaneContext(PaneSlot::Primary).view.InfoPanelDragAnchor = pt;
                   RequestRepaint(PaintLayer::Static);
@@ -6468,17 +6477,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
           }
           if (GetPaneContext(PaneSlot::Primary).view.IsDragging) {
               g_currentCursor = LoadCursor(nullptr, IDC_SIZEALL);
-          } else if (g_config.EdgeNavClick && !g_gallery.IsVisible() && !g_settingsOverlay.IsVisible() && !g_helpOverlay.IsVisible() && !AppContext::GetInstance().Dialog.IsVisible) {
-              POINT pt = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
+          } else if (g_config.EdgeNavClick && !hasGallery && !g_settingsOverlay.IsVisible() && !g_helpOverlay.IsVisible() && !AppContext::GetInstance().Dialog.IsVisible) {
               bool hoverEdge = false;
               if (g_config.NavIndicator == 0) {
-                  RECT rcv; GetClientRect(hwnd, &rcv);
-                  int w = rcv.right - rcv.left;
-                  int h = rcv.bottom - rcv.top;
                   if (IsCompareModeActive() && !g_config.DisableEdgeNavInCompare) {
                       hoverEdge = AppContext::GetInstance().CompareCtrl->HitTestEdgeNav(hwnd, pt);
                   } else if (!IsCompareModeActive()) {
-                      D2D1_RECT_F fullRect = D2D1::RectF(0.0f, 0.0f, (float)w, (float)h);
+                      D2D1_RECT_F fullRect = D2D1::RectF(0.0f, 0.0f, winW, winH);
                       hoverEdge = (HitTestNavButtonInPane(pt, fullRect) != 0);
                   }
               } else {
@@ -6496,15 +6501,82 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
              TrackMouseEvent(&tme);
              isTracking = true;
           }
-          POINT pt = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
+          int w = (int)winW;
+          int h = (int)winH;
+
+          // Synchronize mouse position and repaint neck zone for hotspot button
+          if (g_uiRenderer) {
+              POINT lastPt = g_uiRenderer->GetLastMousePos();
+              g_uiRenderer->UpdateHoverState(pt, -1);
+              
+              if (h >= 450 && w >= 600 && !g_gallery.IsVisible() && (g_config.GalleryTriggerMode == 1 || g_config.GalleryTriggerMode == 2)) {
+                  float cx = w / 2.0f;
+                  float neckH = 40.0f * g_uiScale;
+                  float neckW = 200.0f * g_uiScale;
+                  bool isInNeck = (pt.y >= 0 && pt.y < neckH && pt.x >= cx - neckW && pt.x <= cx + neckW);
+                  bool wasInNeck = (lastPt.y >= 0 && lastPt.y < neckH && lastPt.x >= cx - neckW && lastPt.x <= cx + neckW);
+                  
+                  if (isInNeck || wasInNeck) {
+                      RequestRepaint(PaintLayer::Dynamic);
+                  }
+                  
+                  // Set hand cursor if hovering hotspot button (18px icon with 6px comfort margin)
+                  float iconSize = 18.0f * g_uiScale;
+                  float iconY = 8.0f * g_uiScale;
+                  float clickHalfW = iconSize / 2.0f + 6.0f * g_uiScale;
+                  float clickMinY = iconY - 6.0f * g_uiScale;
+                  float clickMaxY = iconY + iconSize + 6.0f * g_uiScale;
+                  
+                  if (pt.y >= clickMinY && pt.y <= clickMaxY && pt.x >= cx - clickHalfW && pt.x <= cx + clickHalfW) {
+                      g_currentCursor = LoadCursor(nullptr, IDC_HAND);
+                  }
+              }
+          }
+
+          // Top Hover Gallery Trigger Detection
+          if (w >= 600 && h >= 450) {
+              float cx = w / 2.0f;
+              
+              bool inGalleryTriggerZone = false;
+              if (g_config.GalleryTriggerMode == 0) {
+                  // Mode 0: Wide auto hover zone (400px wide, 20px high)
+                  inGalleryTriggerZone = (pt.y >= 0 && pt.y < 20.0f * g_uiScale && pt.x >= cx - 200.0f * g_uiScale && pt.x <= cx + 200.0f * g_uiScale);
+              } else if (g_config.GalleryTriggerMode == 1) {
+                  // Mode 1: Hotspot Hover. Trigger ONLY when mouse is near the center button (60px wide, 40px high)
+                  inGalleryTriggerZone = (pt.y >= 0 && pt.y < 40.0f * g_uiScale && pt.x >= cx - 30.0f * g_uiScale && pt.x <= cx + 30.0f * g_uiScale);
+              }
+              
+              if (!g_gallery.IsVisible()) {
+                  if (g_config.GalleryTriggerMode == 0) {
+                      if (inGalleryTriggerZone) {
+                          SaveOverlayWindowState(hwnd);
+                          g_gallery.Open(GetPaneContext(PaneSlot::Primary).navigator.Index(), GalleryMode::Filmstrip);
+                      }
+                  } else if (g_config.GalleryTriggerMode == 1) {
+                      g_gallery.SetHoveringHotspot(inGalleryTriggerZone);
+                  }
+              } else {
+                  g_gallery.SetMouseInGallery(g_gallery.HitTestArea(pt.x, pt.y, (float)w, (float)h));
+              }
+          } else {
+              g_gallery.SetHoveringHotspot(false);
+              if (g_gallery.IsVisible()) {
+                  g_gallery.SetMouseInGallery(g_gallery.HitTestArea(pt.x, pt.y, (float)w, (float)h));
+              }
+          }
           
           SettingsAction action = g_settingsOverlay.OnMouseMove((float)pt.x, (float)pt.y);
           if (action == SettingsAction::RepaintAll) RequestRepaint(PaintLayer::All);
           else if (action == SettingsAction::RepaintStatic) RequestRepaint(PaintLayer::Static);
           
           if (g_gallery.IsVisible()) {
-              if (g_gallery.OnMouseMove((float)pt.x, (float)pt.y)) {
+              if (g_gallery.OnMouseMove(pt.x, pt.y)) {
                   RequestRepaint(PaintLayer::Gallery);  // Only if hover changed
+              }
+              // Change cursor to hand when hovering Pin button, navigation arrows or bottom expand handle
+              if (g_gallery.IsPinHovered() || g_gallery.IsBottomHintHovered() || 
+                  g_gallery.IsArrowLeftHovered() || g_gallery.IsArrowRightHovered()) {
+                  g_currentCursor = LoadCursor(nullptr, IDC_HAND);
               }
           }
           
@@ -6851,6 +6923,10 @@ SKIP_EDGE_NAV:;
             SetTimer(hwnd, 999, 16, nullptr);
         }
 
+        g_gallery.SetMouseInGallery(false);
+        g_gallery.SetHoveringHotspot(false);
+        g_gallery.OnMouseMove(-9999, -9999);
+
         isTracking = false;
         RequestRepaint(PaintLayer::Static); 
         return 0;
@@ -6859,7 +6935,11 @@ SKIP_EDGE_NAV:;
         
     case WM_LBUTTONDBLCLK: {
         POINT pt = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
-        if (g_gallery.IsVisible() || g_settingsOverlay.IsVisible() || g_helpOverlay.IsVisible() || AppContext::GetInstance().Dialog.IsVisible) return 0;
+        RECT rcClient; GetClientRect(hwnd, &rcClient);
+        float winW = (float)(rcClient.right - rcClient.left);
+        float winH = (float)(rcClient.bottom - rcClient.top);
+        bool insideGallery = g_gallery.IsVisible() && g_gallery.HitTestArea(pt.x, pt.y, winW, winH);
+        if (insideGallery || g_settingsOverlay.IsVisible() || g_helpOverlay.IsVisible() || AppContext::GetInstance().Dialog.IsVisible) return 0;
         if (g_toolbar.IsVisible() && g_toolbar.HitTest((float)pt.x, (float)pt.y)) {
             return 0;
         }
@@ -6966,13 +7046,16 @@ SKIP_EDGE_NAV:;
 
     case WM_RBUTTONDOWN: {
         POINT pt = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
+        RECT rcClient; GetClientRect(hwnd, &rcClient);
+        float winW = (float)(rcClient.right - rcClient.left);
+        float winH = (float)(rcClient.bottom - rcClient.top);
         GetPaneContext(PaneSlot::Primary).view.IsRightButtonDown = false;
         GetPaneContext(PaneSlot::Primary).view.IsRightButtonDragZoom = false;
 
         const bool canStartRightDragZoom =
             g_config.RightButtonDragZoom &&
             GetPaneContext(PaneSlot::Primary).resource &&
-            !g_gallery.IsVisible() &&
+            (!g_gallery.IsVisible() || !g_gallery.HitTestArea(pt.x, pt.y, winW, winH)) &&
             !g_settingsOverlay.IsVisible() &&
             !g_helpOverlay.IsVisible() &&
             !AppContext::GetInstance().Dialog.IsVisible &&
@@ -7239,27 +7322,57 @@ SKIP_EDGE_NAV:;
             return 0;
         }
         
-        if (g_gallery.IsVisible()) {
-            if (g_gallery.OnLButtonDown(pt.x, pt.y)) {
-                // Check if closed with selection
-                if (!g_gallery.IsVisible()) {
-                    SetCursor(LoadCursor(nullptr, IDC_ARROW)); // Fix sticky wait cursor
-                    RestoreOverlayWindowState(hwnd);
-                    int idx = g_gallery.GetSelectedIndex();
-                    if (idx >= 0 && idx < (int)GetPaneContext(PaneSlot::Primary).navigator.Count()) {
-                         std::wstring path = GetPaneContext(PaneSlot::Primary).navigator.GetFile(idx);
-                         // Only load if different from current image
-                         if (path != GetPaneContext(PaneSlot::Primary).path) {
-                             GetPaneContext(PaneSlot::Primary).navigator.Initialize(path, hwnd);
-                             LoadImageAsync(hwnd, GetPaneContext(PaneSlot::Primary).navigator.GetResolvedPath(path).c_str());
-                         }
+        // Click Hotspot to trigger Gallery (Trigger Mode 2)
+        if (!g_gallery.IsVisible() && g_config.GalleryTriggerMode == 2) {
+            RECT rcWnd; GetClientRect(hwnd, &rcWnd);
+            float winH = (float)(rcWnd.bottom - rcWnd.top);
+            float winW = (float)(rcWnd.right - rcWnd.left);
+            if (winH >= 450.0f && winW >= 600.0f) {
+                float cx = (rcWnd.right - rcWnd.left) / 2.0f;
+                
+                float iconSize = 18.0f * g_uiScale;
+                float iconY = 8.0f * g_uiScale;
+                float clickHalfW = iconSize / 2.0f + 6.0f * g_uiScale;
+                float clickMinY = iconY - 6.0f * g_uiScale;
+                float clickMaxY = iconY + iconSize + 6.0f * g_uiScale;
+                
+                if (pt.y >= clickMinY && pt.y <= clickMaxY && pt.x >= cx - clickHalfW && pt.x <= cx + clickHalfW) {
+                    if (!g_gallery.IsVisible()) {
+                        SaveOverlayWindowState(hwnd);
+                        g_gallery.Open(GetPaneContext(PaneSlot::Primary).navigator.Index(), GalleryMode::Filmstrip);
+                        RequestRepaint(PaintLayer::All);
                     }
-                    RequestRepaint(PaintLayer::All);
-                } else {
-                    RequestRepaint(PaintLayer::Gallery); // Only repaint Gallery, not Image!
+                    return 0;
                 }
             }
-            return 0;
+        }
+        
+        if (g_gallery.IsVisible()) {
+            RECT rcClient; GetClientRect(hwnd, &rcClient);
+            float winW = (float)(rcClient.right - rcClient.left);
+            float winH = (float)(rcClient.bottom - rcClient.top);
+            if (g_gallery.HitTestArea(pt.x, pt.y, winW, winH)) {
+                if (g_gallery.OnLButtonDown(pt.x, pt.y)) {
+                    // Check if closed with selection
+                    if (!g_gallery.IsVisible()) {
+                        SetCursor(LoadCursor(nullptr, IDC_ARROW)); // Fix sticky wait cursor
+                        RestoreOverlayWindowState(hwnd);
+                        int idx = g_gallery.GetSelectedIndex();
+                        if (idx >= 0 && idx < (int)GetPaneContext(PaneSlot::Primary).navigator.Count()) {
+                             std::wstring path = GetPaneContext(PaneSlot::Primary).navigator.GetFile(idx);
+                             // Only load if different from current image
+                             if (path != GetPaneContext(PaneSlot::Primary).path) {
+                                 GetPaneContext(PaneSlot::Primary).navigator.Initialize(path, hwnd);
+                                 LoadImageAsync(hwnd, GetPaneContext(PaneSlot::Primary).navigator.GetResolvedPath(path).c_str());
+                             }
+                        }
+                        RequestRepaint(PaintLayer::All);
+                    } else {
+                        RequestRepaint(PaintLayer::Gallery); // Only repaint Gallery, not Image!
+                    }
+                }
+                return 0;
+            }
         }
         
         bool hudVisible = IsCompareModeActive() && g_runtime.ShowCompareInfo;
@@ -7495,19 +7608,25 @@ SKIP_EDGE_NAV:;
         
         // Gallery Interaction (Fix: Handle Click)
         if (g_gallery.IsVisible()) {
-            if (g_gallery.OnLButtonDown((int)pt.x, (int)pt.y)) {
-                if (!g_gallery.IsVisible()) { // Closed
-                     SetCursor(LoadCursor(nullptr, IDC_ARROW)); // Restore cursor
-                     RestoreOverlayWindowState(hwnd);
-                     int idx = g_gallery.GetSelectedIndex();
-                     if (idx >= 0 && idx < (int)GetPaneContext(PaneSlot::Primary).navigator.Count()) {
-                         std::wstring path = GetPaneContext(PaneSlot::Primary).navigator.GetFile(idx);
-                         GetPaneContext(PaneSlot::Primary).navigator.Initialize(path, hwnd);
-                         LoadImageAsync(hwnd, GetPaneContext(PaneSlot::Primary).navigator.GetResolvedPath(path).c_str());
-                     }
-                     RequestRepaint(PaintLayer::All);
+            RECT rcClient; GetClientRect(hwnd, &rcClient);
+            float winW = (float)(rcClient.right - rcClient.left);
+            float winH = (float)(rcClient.bottom - rcClient.top);
+            if (g_gallery.HitTestArea(pt.x, pt.y, winW, winH) || g_gallery.IsMouseLButtonDown()) {
+                int selectedIdx = -1;
+                bool clicked = g_gallery.OnLButtonUp((int)pt.x, (int)pt.y, selectedIdx);
+                if (clicked && selectedIdx >= 0) {
+                    if (selectedIdx < (int)GetPaneContext(PaneSlot::Primary).navigator.Count()) {
+                        std::wstring path = GetPaneContext(PaneSlot::Primary).navigator.GetFile(selectedIdx);
+                        GetPaneContext(PaneSlot::Primary).navigator.Initialize(path, hwnd);
+                        LoadImageAsync(hwnd, GetPaneContext(PaneSlot::Primary).navigator.GetResolvedPath(path).c_str());
+                    }
+                    if (!g_gallery.IsPinned()) {
+                        SetCursor(LoadCursor(nullptr, IDC_ARROW)); // Restore cursor
+                        RestoreOverlayWindowState(hwnd);
+                    }
+                    RequestRepaint(PaintLayer::All);
                 } else {
-                     RequestRepaint(PaintLayer::Gallery);
+                    RequestRepaint(PaintLayer::Gallery);
                 }
                 return 0;
             }
@@ -7859,11 +7978,19 @@ SKIP_EDGE_NAV:;
         }
 
         if (g_gallery.IsVisible()) {
-             int delta = GET_WHEEL_DELTA_WPARAM(wParam);
-             if (g_gallery.OnMouseWheel(delta)) {
-                 RequestRepaint(PaintLayer::Gallery); // Optimization: Only repaint Gallery
+             POINT ptScreen = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+             POINT ptClient = ptScreen;
+             ScreenToClient(hwnd, &ptClient);
+             RECT rcClient; GetClientRect(hwnd, &rcClient);
+             float winW = (float)(rcClient.right - rcClient.left);
+             float winH = (float)(rcClient.bottom - rcClient.top);
+             if (g_gallery.HitTestArea(ptClient.x, ptClient.y, winW, winH)) {
+                  int delta = GET_WHEEL_DELTA_WPARAM(wParam);
+                  if (g_gallery.OnMouseWheel(delta)) {
+                      RequestRepaint(PaintLayer::Gallery); // Optimization: Only repaint Gallery
+                  }
+                  return 0;
              }
-             return 0;
         }
         
         float delta = GET_WHEEL_DELTA_WPARAM(wParam) / 120.0f;
@@ -8167,7 +8294,13 @@ SKIP_EDGE_NAV:;
             SendMessage(hwnd, WM_COMMAND, IDM_EDIT, 0);
             break; // E: Edit
         case VK_F1: {
-             if (!g_helpOverlay.IsVisible()) SaveOverlayWindowState(hwnd);
+             if (!g_helpOverlay.IsVisible()) {
+                 if (g_gallery.IsVisible()) {
+                     g_gallery.Close();
+                     RestoreOverlayWindowState(hwnd);
+                 }
+                 SaveOverlayWindowState(hwnd);
+             }
              g_helpOverlay.Toggle();
              RequestRepaint(PaintLayer::Static);
              return 0;
@@ -8223,6 +8356,10 @@ SKIP_EDGE_NAV:;
                 ToggleCompareHUD(hwnd, 0);
             } else {
                 if (!g_runtime.ShowInfoPanel) {
+                    if (g_gallery.IsVisible()) {
+                        g_gallery.Close();
+                        RestoreOverlayWindowState(hwnd);
+                    }
                     g_runtime.ShowInfoPanel = true;
                     g_runtime.InfoPanelExpanded = false;
                     g_toolbar.SetExifState(true);
@@ -8246,6 +8383,10 @@ SKIP_EDGE_NAV:;
             } else {
                 // Normal Mode: Toggle Info Panel
                 if (!g_runtime.ShowInfoPanel) {
+                    if (g_gallery.IsVisible()) {
+                        g_gallery.Close();
+                        RestoreOverlayWindowState(hwnd);
+                    }
                     g_runtime.ShowInfoPanel = true;
                     g_runtime.InfoPanelExpanded = true;
                     if (GetPaneContext(PaneSlot::Primary).metadata.HistR.empty() && !GetPaneContext(PaneSlot::Primary).path.empty()) {
@@ -8413,12 +8554,17 @@ SKIP_EDGE_NAV:;
         ClientToScreen(hwnd, &pt);
 
         if (g_gallery.IsVisible()) {
-            int idx = g_gallery.HitTestClient(ptClient.x, ptClient.y);
-            if (idx >= 0) {
-                g_galleryContextMenuIndex = idx;
-                ShowGalleryContextMenu(hwnd, pt);
+            RECT rcClient; GetClientRect(hwnd, &rcClient);
+            float winW = (float)(rcClient.right - rcClient.left);
+            float winH = (float)(rcClient.bottom - rcClient.top);
+            if (g_gallery.HitTestArea(ptClient.x, ptClient.y, winW, winH)) {
+                int idx = g_gallery.HitTestClient(ptClient.x, ptClient.y);
+                if (idx >= 0) {
+                    g_galleryContextMenuIndex = idx;
+                    ShowGalleryContextMenu(hwnd, pt);
+                }
+                return 0;
             }
-            return 0;
         }
 
         if (IsCompareModeActive()) {
@@ -9017,6 +9163,10 @@ SKIP_EDGE_NAV:;
             
             // When turning on, set expanded state based on ToolbarInfoDefault config
             if (g_runtime.ShowInfoPanel) {
+                if (g_gallery.IsVisible()) {
+                    g_gallery.Close();
+                    RestoreOverlayWindowState(hwnd);
+                }
                 g_runtime.InfoPanelExpanded = (g_config.ToolbarInfoDefault == 1); // 0=Lite, 1=Full
                 if (GetPaneContext(PaneSlot::Primary).metadata.HistR.empty() && !GetPaneContext(PaneSlot::Primary).path.empty()) {
                     UpdateHistogramAsync(hwnd, GetPaneContext(PaneSlot::Primary).path);
@@ -9363,6 +9513,10 @@ SKIP_EDGE_NAV:;
             if (g_settingsOverlay.IsVisible()) {
                 g_settingsOverlay.OpenTab(5);
             } else {
+                if (g_gallery.IsVisible()) {
+                    g_gallery.Close();
+                    RestoreOverlayWindowState(hwnd);
+                }
                 SaveOverlayWindowState(hwnd);
                 g_settingsOverlay.Toggle(); // Open
             }
@@ -9387,6 +9541,11 @@ SKIP_EDGE_NAV:;
 
 
 void OnResize(HWND hwnd, UINT width, UINT height) {
+    if ((height < 450 || width < 600) && g_gallery.IsVisible()) {
+        g_gallery.Close();
+        RestoreOverlayWindowState(hwnd);
+        RequestRepaint(PaintLayer::All);
+    }
     if (g_compEngine) {
         // [Fix] Atomic Update for Rotated Image Lag
         // 1. ResizeSurfaces: Updates UI layer backing stores (No Commit)

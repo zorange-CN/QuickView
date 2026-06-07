@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "CompositionEngine.h"
 #include "QuickViewETW.h"
+#include "GalleryOverlay.h"
 static constexpr const char* CURRENT_MODULE = "CompositionEngine";
 #include "DebugMetrics.h"
 #include <dxgi1_6.h>
@@ -1343,8 +1344,16 @@ HRESULT CompositionEngine::UpdateBackground(float width, float height, const D2D
         ComPtr<ID2D1SolidColorBrush> brush;
         m_backgroundLayer.context->CreateSolidColorBrush(overlayColor, &brush);
         
+        extern GalleryOverlay g_gallery;
+        float startY = 0.0f;
+        if (g_gallery.IsVisible()) {
+            startY = g_gallery.GetVisualHeight((float)h);
+        }
+        
         const float gridSize = 16.0f;
-        for (float y = 0; y < (float)h; y += gridSize) {
+        float alignedStartY = std::floor(startY / gridSize) * gridSize;
+        
+        for (float y = alignedStartY; y < (float)h; y += gridSize) {
             for (float x = 0; x < (float)w; x += gridSize) {
                 if (((int)(x / gridSize) + (int)(y / gridSize)) % 2 != 0) {
                     m_backgroundLayer.context->FillRectangle(D2D1::RectF(x, y, x + gridSize, y + gridSize), brush.Get());

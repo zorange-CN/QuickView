@@ -169,6 +169,9 @@ void Toolbar::UpdateLayout(float winW, float winH) {
   };
 
   auto isVisibleButton = [&](const ToolbarButton &btn) {
+    if (btn.id == ToolbarButtonID::Gallery && (winH < 450.0f || winW < 600.0f)) {
+      return false;
+    }
     if (m_overlayMode) {
       if (isOverlayButton(btn.id)) return true;
       if (btn.id == ToolbarButtonID::CompareZoomIn || btn.id == ToolbarButtonID::CompareZoomOut || btn.id == ToolbarButtonID::LockSize) return true;
@@ -452,6 +455,7 @@ void Toolbar::Render(ID2D1RenderTarget *pRT) {
         m_geekGlass.InitializeResources(dc.Get());
         
         QuickView::UI::GeekGlass::GeekGlassConfig config;
+        config.theme = IsLightThemeActive() ? QuickView::UI::GeekGlass::ThemeMode::Light : QuickView::UI::GeekGlass::ThemeMode::Dark;
         config.panelBounds = m_bgRect.rect;
         config.cornerRadius = m_bgRect.radiusX;
         config.enableGeekGlass = g_config.EnableGeekGlass;

@@ -84,6 +84,7 @@ void DialogController::Render(ID2D1DeviceContext* context) {
         auto& geekGlass = g_uiRenderer->GetGlassEngine("Dialog_Main");
         geekGlass.InitializeResources(context);
         QuickView::UI::GeekGlass::GeekGlassConfig config;
+        config.theme = IsLightThemeActive() ? QuickView::UI::GeekGlass::ThemeMode::Light : QuickView::UI::GeekGlass::ThemeMode::Dark;
         config.panelBounds = layout.Box;
         config.cornerRadius = 10.0f * g_uiScale;
         config.shadowOpacity = g_config.GlassShadowOpacity;

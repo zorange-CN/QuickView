@@ -142,6 +142,7 @@ public:
     HitTestResult HitTest(float x, float y);
     
     float GetUIScale() const { return m_uiScale; }
+    POINT GetLastMousePos() const { return m_lastMousePos; }
 
     // ===== Accessors for Hit Rects =====
     D2D1_RECT_F GetPanelToggleRect() const { return m_panelToggleRect; }

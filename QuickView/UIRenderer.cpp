@@ -522,7 +522,7 @@ bool UIRenderer::RenderAll(HWND hwnd, float deltaTime) {
     EnsureTextFormats();
     
     // [v6.0.8.2] Animation Updates (Must run even if layers aren't dirty yet to drive animation flags)
-    g_gallery.Update(deltaTime);
+    g_gallery.Update(deltaTime, hwnd);
 
     // Note: Dirty flags are now managed by RequestRepaint() system.
     // DO NOT add auto-dirty checks here - they can block initial rendering.
@@ -755,6 +755,56 @@ void UIRenderer::RenderDynamicLayer(ID2D1DeviceContext* dc, HWND hwnd) {
     if (AppContext::GetInstance().DialogCtrl->IsActive()) {
         AppContext::GetInstance().DialogCtrl->Render(dc);
     }
+
+    // Draw Top Gallery Hotspot: Vector Icon + Material Ripple (Fix #1)
+    if (!g_gallery.IsVisible() && (g_config.GalleryTriggerMode == 1 || g_config.GalleryTriggerMode == 2) && m_height >= 450 && m_width >= 600) {
+        float cx = m_width / 2.0f;
+        float neckH = 40.0f * m_uiScale;
+        float neckW = 200.0f * m_uiScale;
+        
+        bool isInNeck = (m_lastMousePos.y >= 0 && m_lastMousePos.y < neckH &&
+                         m_lastMousePos.x >= cx - neckW && m_lastMousePos.x <= cx + neckW);
+        
+        if (isInNeck) {
+            float iconSize = 18.0f * m_uiScale;
+            float iconY = 8.0f * m_uiScale;
+            D2D1_RECT_F iconRect = D2D1::RectF(cx - iconSize / 2.0f, iconY, cx + iconSize / 2.0f, iconY + iconSize);
+            
+            // Check if mouse is directly over the icon (hover button)
+            bool iconHovered = (m_lastMousePos.x >= iconRect.left - 4.0f && m_lastMousePos.x <= iconRect.right + 4.0f &&
+                                m_lastMousePos.y >= iconRect.top - 4.0f && m_lastMousePos.y <= iconRect.bottom + 4.0f);
+            
+            // Ripple effect (Mode 1: hover trigger with expanding ring) - always draws if progress > 0
+            if (g_config.GalleryTriggerMode == 1) {
+                float progress = g_gallery.GetHoverProgress();
+                if (progress > 0.0f) {
+                    float maxRadius = iconSize * 2.2f;
+                    float rippleRadius = maxRadius * progress;
+                    float ringAlpha = (1.0f - progress) * 0.6f;
+                    
+                    D2D1_ELLIPSE ring = D2D1::Ellipse(D2D1::Point2F(cx, iconY + iconSize / 2.0f), rippleRadius, rippleRadius);
+                    ComPtr<ID2D1SolidColorBrush> rippleBrush;
+                    dc->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::DodgerBlue, ringAlpha), &rippleBrush);
+                    if (rippleBrush) {
+                        // Outer expanding ring
+                        dc->DrawEllipse(ring, rippleBrush.Get(), 1.5f * m_uiScale);
+                        // Inner soft filled circle
+                        rippleBrush->SetColor(D2D1::ColorF(D2D1::ColorF::DodgerBlue, ringAlpha * 0.25f));
+                        dc->FillEllipse(ring, rippleBrush.Get());
+                    }
+                }
+            }
+            
+            // Icon color: semi-transparent white normally, DodgerBlue opaque when hovered
+            D2D1_COLOR_F iconClr = iconHovered
+                ? D2D1::ColorF(D2D1::ColorF::DodgerBlue, 1.0f)
+                : D2D1::ColorF(D2D1::ColorF::White, 0.55f);
+            
+            ComPtr<ID2D1SolidColorBrush> iconBrush;
+            dc->CreateSolidColorBrush(iconClr, &iconBrush);
+            QuickView::UI::GeekIconRenderer::DrawVectorIcon(dc, GeekIcons::GalleryVector, iconRect, iconBrush.Get());
+        }
+    }
 }
 
 // ============================================================================
@@ -764,7 +814,7 @@ void UIRenderer::RenderDynamicLayer(ID2D1DeviceContext* dc, HWND hwnd) {
 void UIRenderer::RenderGalleryLayer(ID2D1DeviceContext* dc) {
     if (g_gallery.IsVisible()) {
         D2D1_SIZE_F rtSize = D2D1::SizeF((float)m_width, (float)m_height);
-        g_gallery.Render(dc, rtSize);
+        g_gallery.Render(dc, rtSize, m_bgCommandList.Get(), m_compEngine ? m_compEngine->GetScreenTransform() : D2D1::Matrix3x2F::Identity());
     }
 }
 
@@ -1176,6 +1226,8 @@ void UIRenderer::DrawDecodingStatus(ID2D1DeviceContext* dc, HWND hwnd) {
 
 
 void UIRenderer::DrawWindowControls(ID2D1DeviceContext* dc, HWND hwnd) {
+    extern GalleryOverlay g_gallery;
+    if (g_gallery.IsVisible()) return;
     if (!m_showControls && m_winCtrlHover == -1) return;
     const float s = m_uiScale;
     float btnW = 38.0f * s;
@@ -1333,6 +1385,8 @@ void UIRenderer::DrawBorderIndicators(ID2D1DeviceContext* dc) {
 // Window Controls Hit Testing (Unified with DrawWindowControls)
 // ============================================================================
 WindowControlHit UIRenderer::HitTestWindowControls(float x, float y) {
+    extern GalleryOverlay g_gallery;
+    if (g_gallery.IsVisible()) return WindowControlHit::None;
     if (!m_showControls) return WindowControlHit::None;
     
     // Helper: Point in rect
@@ -2895,6 +2949,7 @@ void UIRenderer::DrawInfoPanel(ID2D1DeviceContext* dc) {
     
     // [Geek Glass] Panel Background Render
     QuickView::UI::GeekGlass::GeekGlassConfig glassConfig;
+    glassConfig.theme = IsLightThemeActive() ? QuickView::UI::GeekGlass::ThemeMode::Light : QuickView::UI::GeekGlass::ThemeMode::Dark;
     glassConfig.panelBounds = panelRect;
     glassConfig.cornerRadius = 8.0f * s;
     glassConfig.enableGeekGlass = g_config.EnableGeekGlass;

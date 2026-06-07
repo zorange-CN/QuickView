@@ -228,6 +228,7 @@ void HelpOverlay::Render(ID2D1RenderTarget* pRT, float winW, float winH) {
         m_geekGlass.InitializeResources(dc.Get());
         
         QuickView::UI::GeekGlass::GeekGlassConfig config;
+        config.theme = IsLightThemeActive() ? QuickView::UI::GeekGlass::ThemeMode::Light : QuickView::UI::GeekGlass::ThemeMode::Dark;
         config.panelBounds = m_finalRect;
         config.cornerRadius = 8.0f * s;
         config.enableGeekGlass = g_config.EnableGeekGlass;
