@@ -208,6 +208,15 @@ namespace AppStrings {
     extern const wchar_t* Settings_Tab_General;
     extern const wchar_t* Settings_Tab_About;
     
+    // Gallery Trigger Mode (Top Hover Gallery)
+    extern const wchar_t* Settings_Header_GalleryTrigger;
+    extern const wchar_t* Settings_Label_GalleryTriggerMode;
+    extern const wchar_t* Settings_Option_GalleryTriggerAuto;
+    extern const wchar_t* Settings_Option_GalleryTriggerDelay;
+    extern const wchar_t* Settings_Option_GalleryTriggerClick;
+    extern const wchar_t* Settings_Option_GalleryTriggerDisable;
+    extern const wchar_t* Settings_Tooltip_GalleryTrigger;
+    
     extern const wchar_t* Settings_Group_Foundation;
     extern const wchar_t* Settings_Group_Startup;
     extern const wchar_t* Settings_Group_Habits; // was "Habits"

@@ -462,6 +462,13 @@ const wchar_t *HUD_Tip_BPP_Ref = nullptr;
 const wchar_t *HUD_Label_High = nullptr;
 const wchar_t *HUD_Label_Low = nullptr;
 const wchar_t *HUD_Label_Ref = nullptr;
+const wchar_t *Settings_Header_GalleryTrigger = nullptr;
+const wchar_t *Settings_Label_GalleryTriggerMode = nullptr;
+const wchar_t *Settings_Option_GalleryTriggerAuto = nullptr;
+const wchar_t *Settings_Option_GalleryTriggerDelay = nullptr;
+const wchar_t *Settings_Option_GalleryTriggerClick = nullptr;
+const wchar_t *Settings_Option_GalleryTriggerDisable = nullptr;
+const wchar_t *Settings_Tooltip_GalleryTrigger = nullptr;
 
 // --- Static Constants ---
 const wchar_t *Settings_Text_Copyright = L"Copyright \u00A9 2025-%s Vivor Loong (Github@justnullname)";
@@ -926,6 +933,13 @@ struct LanguageTable {
     const wchar_t *HUD_Label_High;
     const wchar_t *HUD_Label_Low;
     const wchar_t *HUD_Label_Ref;
+    const wchar_t *Settings_Header_GalleryTrigger;
+    const wchar_t *Settings_Label_GalleryTriggerMode;
+    const wchar_t *Settings_Option_GalleryTriggerAuto;
+    const wchar_t *Settings_Option_GalleryTriggerDelay;
+    const wchar_t *Settings_Option_GalleryTriggerClick;
+    const wchar_t *Settings_Option_GalleryTriggerDisable;
+    const wchar_t *Settings_Tooltip_GalleryTrigger;
 };
 
 // ----------------------------------------------------------------
@@ -962,8 +976,7 @@ static const LanguageTable Table_EN = {
     L"Always save re-encoded", // Checkbox_AlwaysSaveLossy
     L"Cannot decode HEIC - Install HEVC Video Extension", // OSD_HEICCodecMissing
     L"Cannot decode HEIC", // Dialog_HEICTitle
-    L"Your system is missing the HEVC Video Extension.\nQuickView uses "
-      L"system hardware acceleration for best performance.", // Dialog_HEICContent
+    L"Your system is missing the HEVC Video Extension.\nQuickView uses " L"system hardware acceleration for best performance.", // Dialog_HEICContent
     L"Get Extension (Free)", // Dialog_HEICGetExtension
     L"Cancel", // Dialog_Cancel
     L"General", // Settings_Tab_General
@@ -979,10 +992,7 @@ static const LanguageTable Table_EN = {
     L"Descending", // Settings_Label_SortDescending
     L"Confirm Delete", // Settings_Label_ConfirmDel
     L"Portable Mode / Cleanup", // Settings_Label_Portable
-    L"Portable Mode / Registry Cleanup:\nWhen enabled, QuickView runs in "
-      L"portable mode. It will automatically clean up existing registry "
-      L"associations, disable automatic registry modification, and store "
-      L"configuration files in the application directory instead of AppData.", // Settings_Tooltip_Portable
+    L"Portable Mode / Registry Cleanup:\nWhen enabled, QuickView runs in " L"portable mode. It will automatically clean up existing registry " L"associations, disable automatic registry modification, and store " L"configuration files in the application directory instead of AppData.", // Settings_Tooltip_Portable
     L"Span Displays", // Settings_Label_SpanDisplays
     L"UI Scale", // Settings_Label_UIScale
     L"Restart required", // Settings_Status_RestartRequired
@@ -1094,9 +1104,7 @@ static const LanguageTable Table_EN = {
     L"Smart", // Settings_Option_MemSmart
     L"Aggressive", // Settings_Option_MemAggressive
     L"On-Demand", // Settings_Option_MemOnDemand
-    L"Smart: Automatically reclaim memory only when system RAM < 4GB.\n"
-      L"Aggressive: Keep memory reserved for absolute 0ns allocation speed.\n"
-      L"On-Demand: Always reclaim idle memory to save physical RAM.", // Settings_Tooltip_MemoryReclaim
+    L"Smart: Automatically reclaim memory only when system RAM < 4GB.\n" L"Aggressive: Keep memory reserved for absolute 0ns allocation speed.\n" L"On-Demand: Always reclaim idle memory to save physical RAM.", // Settings_Tooltip_MemoryReclaim
     L"Show update regions button in animation mode", // Settings_Label_ShowDirtyRect
     L"Show the update region debug button in animation mode to visualize which parts of the frame are being redrawn.", // Settings_Tooltip_ShowDirtyRect
     L"Copied!", // OSD_Copied
@@ -1232,11 +1240,7 @@ static const LanguageTable Table_EN = {
     L"Advanced Color (HDR)", // Settings_Label_AdvancedColor
     L"HDR Tone Mapping", // Settings_Label_HdrToneMapping
     L"Spline Knee Point", // Settings_Label_HdrSplineKnee
-    L"HDR Tone Mapping strategy:\nDetermines how HDR images are displayed when "
-      L"exceeding monitor capabilities.\nSpline: High-fidelity highlight "
-      L"roll-off using piecewise spline (Recommended).\nColorimetric: Strict "
-      L"luminance mapping; highlights exceeding the monitor limit are "
-      L"clipped.\nBT.2390 (EETF): ITU-R BT.2390 EETF curve for high-fidelity tone mapping.", // Settings_Tooltip_HdrToneMapping
+    L"HDR Tone Mapping strategy:\nDetermines how HDR images are displayed when " L"exceeding monitor capabilities.\nSpline: High-fidelity highlight " L"roll-off using piecewise spline (Recommended).\nColorimetric: Strict " L"luminance mapping; highlights exceeding the monitor limit are " L"clipped.\nBT.2390 (EETF): ITU-R BT.2390 EETF curve for high-fidelity tone mapping.", // Settings_Tooltip_HdrToneMapping
     L"0 = Auto (Calculated based on image luminance).\nThe value represents the ratio of the monitor's peak luminance. Brightness below this knee point maps 1:1, while brightness above is smoothly compressed using a spline curve.\n(Recommended: 0.4 - 0.75)", // Settings_Tooltip_HdrSplineKnee
     L"HDR Peak Brightness (Nits)", // Settings_Label_HdrPeakNitsOverride
     L"Set to 0 to use system detected brightness.", // Settings_Tooltip_HdrPeakNitsOverride
@@ -1362,18 +1366,13 @@ static const LanguageTable Table_EN = {
     L"Edit", // Help_Desc_Edit
     L"Tips & Glossary", // Help_Header_Tips
     L"Note: Shortcuts apply to the current window only. Settings are global.", // Help_Tip_ContextScope
-    L"Rotation: 'Edge Adapted' means minor cropping to align with codec "
-      L"blocks (lossless). 'Lossy' means re-encoding is required.", // Help_Tip_Rotation
-    L"Video Wall (Ctrl+F11): Spans all screens. If the close button is "
-      L"hidden, double-click anywhere to exit.", // Help_Tip_VideoWall
+    L"Rotation: 'Edge Adapted' means minor cropping to align with codec " L"blocks (lossless). 'Lossy' means re-encoding is required.", // Help_Tip_Rotation
+    L"Video Wall (Ctrl+F11): Spans all screens. If the close button is " L"hidden, double-click anywhere to exit.", // Help_Tip_VideoWall
     L"Tracing Mode / Film Mode: Once enabled, the image becomes semi-transparent, revealing underlying elements. You can adjust its size or transparency. Click the Mouse Passthrough toggle in the toolbar to enter Passthrough Mode, where all inputs except Shift+Esc are ignored, turning QuickView into a transparent overlay.", // Help_Tip_DesignerMode
     L"Gamut Warning: Detects out-of-gamut colors for the target display or soft proofing profile. Modes: Off, Soft Proofing only, or All (Default: Soft Proofing). Toggle via toolbar.", // Help_Tip_GamutDetection
-    L"RAW: Shows embedded preview by default for speed. Click the RAW button "
-      L"to fully decode (colors may vary).", // Help_Tip_Raw
-    L"JPEG Quality: Estimated value (e.g. Photoshop 100% ≈ 98%). May vary "
-      L"slightly from save settings due to encoder variance, which is normal.", // Help_Tip_JpegQ
-    L"Soft Proof Comparison: Entering Compare Mode while Soft Proofing is active "
-      L"will automatically compare the original vs. proofed image.", // Help_Tip_SoftProofCompare
+    L"RAW: Shows embedded preview by default for speed. Click the RAW button " L"to fully decode (colors may vary).", // Help_Tip_Raw
+    L"JPEG Quality: Estimated value (e.g. Photoshop 100% ≈ 98%). May vary " L"slightly from save settings due to encoder variance, which is normal.", // Help_Tip_JpegQ
+    L"Soft Proof Comparison: Entering Compare Mode while Soft Proofing is active " L"will automatically compare the original vs. proofed image.", // Help_Tip_SoftProofCompare
     L"New Version Available!", // Dialog_UpdateTitle
     L"v%s is ready.", // Dialog_UpdateContent
     L"Changelog", // Dialog_UpdateLogHeader
@@ -1381,10 +1380,7 @@ static const LanguageTable Table_EN = {
     L"Later", // Dialog_ButtonLater
     L"Star on GitHub", // Dialog_ButtonStar
     L"QuickView is built with love", // Dialog_Update_LoveTitle
-    L"I maintain QuickView in my spare time because I believe Windows "
-      L"deserves a faster, cleaner viewer. I don't have a marketing budget or "
-      L"a team. If you enjoy this update, the biggest contribution you can "
-      L"make is to Star us on GitHub or share it with a friend.", // Dialog_Update_LoveMessage
+    L"I maintain QuickView in my spare time because I believe Windows " L"deserves a faster, cleaner viewer. I don't have a marketing budget or " L"a team. If you enjoy this update, the biggest contribution you can " L"make is to Star us on GitHub or share it with a friend.", // Dialog_Update_LoveMessage
     L"Compare Mode", // Help_Item_Compare
     L"First / Last Image", // Help_Item_FirstLast
     L"PHYSICAL ATTRIBUTES", // HUD_Group_Physical
@@ -1405,6 +1401,13 @@ static const LanguageTable Table_EN = {
     L"High: ", // HUD_Label_High
     L"Low: ", // HUD_Label_Low
     L"Ref: ", // HUD_Label_Ref
+    L"Gallery Filmstrip (Top Hover)", // Settings_Header_GalleryTrigger
+    L"Trigger Mode", // Settings_Label_GalleryTriggerMode
+    L"Auto Hover", // Settings_Option_GalleryTriggerAuto
+    L"Hotspot Hover", // Settings_Option_GalleryTriggerDelay
+    L"Click Hotspot", // Settings_Option_GalleryTriggerClick
+    L"Disabled", // Settings_Option_GalleryTriggerDisable
+    L"This feature is automatically disabled when the window is smaller than 600x450.", // Settings_Tooltip_GalleryTrigger
 };
 
 // ----------------------------------------------------------------
@@ -1457,9 +1460,7 @@ static const LanguageTable Table_CN = {
     L"降序", // Settings_Label_SortDescending
     L"删除确认", // Settings_Label_ConfirmDel
     L"便携模式 / 清理", // Settings_Label_Portable
-    L"便携模式与注册表清理：\n开启后，QuickView "
-      L"将以便携方式运行。程序将自动清理已有的注册表关联，并禁用自动注册表修改功"
-      L"能。同时，配置文件将存放在程序所在目录而非 AppData 目录。", // Settings_Tooltip_Portable
+    L"便携模式与注册表清理：\n开启后，QuickView " L"将以便携方式运行。程序将自动清理已有的注册表关联，并禁用自动注册表修改功" L"能。同时，配置文件将存放在程序所在目录而非 AppData 目录。", // Settings_Tooltip_Portable
     L"跨屏模式 (电视墙)", // Settings_Label_SpanDisplays
     L"界面缩放", // Settings_Label_UIScale
     L"需要重启", // Settings_Status_RestartRequired
@@ -1571,9 +1572,7 @@ static const LanguageTable Table_CN = {
     L"智能", // Settings_Option_MemSmart
     L"激进", // Settings_Option_MemAggressive
     L"按需", // Settings_Option_MemOnDemand
-    L"智能 (推荐): 仅当系统可用内存 < 4GB 时，回收图片空闲内存。\n"
-      L"激进: 永不回收，保持 2GB 内存独占以换取绝对 0ns 的看图切换极速。\n"
-      L"按需: 图片切换时立刻回收空闲内存，保持最低物理内存占用。", // Settings_Tooltip_MemoryReclaim
+    L"智能 (推荐): 仅当系统可用内存 < 4GB 时，回收图片空闲内存。\n" L"激进: 永不回收，保持 2GB 内存独占以换取绝对 0ns 的看图切换极速。\n" L"按需: 图片切换时立刻回收空闲内存，保持最低物理内存占用。", // Settings_Tooltip_MemoryReclaim
     L"动画模式下显示重绘区域预览按钮", // Settings_Label_ShowDirtyRect
     L"在播放动画时显示用于调试重绘区域的工具按钮，以便可视化哪些部分正在更新。", // Settings_Tooltip_ShowDirtyRect
     L"已复制!", // OSD_Copied
@@ -1709,10 +1708,7 @@ static const LanguageTable Table_CN = {
     L"高级色彩与 HDR (scRGB)", // Settings_Label_AdvancedColor
     L"HDR 色调映射", // Settings_Label_HdrToneMapping
     L"Spline 拐点", // Settings_Label_HdrSplineKnee
-    L"HDR 降级策略 (Tone Mapping)：\n当 HDR 图片超出显示器极限时的映射方式。\n"
-      L"Spline 样条映射：采用分段样条曲线，实现高保真的高光细节还原（推荐）。\n"
-      L"色度模式：保持严格亮度映射，超出显示器极限的亮度将被直接裁剪。\n"
-      L"BT.2390 EETF：ITU-R BT.2390 标准高保真降级曲线。", // Settings_Tooltip_HdrToneMapping
+    L"HDR 降级策略 (Tone Mapping)：\n当 HDR 图片超出显示器极限时的映射方式。\n" L"Spline 样条映射：采用分段样条曲线，实现高保真的高光细节还原（推荐）。\n" L"色度模式：保持严格亮度映射，超出显示器极限的亮度将被直接裁剪。\n" L"BT.2390 EETF：ITU-R BT.2390 标准高保真降级曲线。", // Settings_Tooltip_HdrToneMapping
     L"0 = 自动模式（根据图片亮度自动计算）。\n数值表示显示器峰值亮度的比例。该拐点以下的亮度将进行 1:1 绝对映射，拐点以上的亮度将使用平滑曲线进行压缩映射。\n（推荐值：0.4 - 0.75）", // Settings_Tooltip_HdrSplineKnee
     L"HDR 峰值亮度 (Nits)", // Settings_Label_HdrPeakNitsOverride
     L"设为 0 表示通过系统自动检测亮度.", // Settings_Tooltip_HdrPeakNitsOverride
@@ -1838,19 +1834,12 @@ static const LanguageTable Table_CN = {
     L"编辑", // Help_Desc_Edit
     L"提示与术语", // Help_Header_Tips
     L"注意：快捷键仅对当前窗口生效，设置选项为全局永久生效。", // Help_Tip_ContextScope
-    L"旋转说明：'边缘适配' 指为匹配编码块边界进行的微量裁剪(无损)；'有损' "
-      L"指必须要进行重编码。", // Help_Tip_Rotation
-    L"跨屏模式 "
-      L"(Ctrl+F11)：合并所有显示器。若关闭按钮不可见(如L型布局)"
-      L"，双击任意处即可退出。", // Help_Tip_VideoWall
-    L"临摹模式/薄膜模式：开启后图像将变为半透明并露出底部元素，此时您可调整尺寸或透明度。"
-      L"点击工具栏中的鼠标穿透模式开关，可进入鼠标穿透模式，此时除了退出快捷键 Shift+Esc 外的任何按键和鼠标输入均被忽略，"
-      L"QuickView 将变为一层透明薄膜覆盖层。", // Help_Tip_DesignerMode
+    L"旋转说明：'边缘适配' 指为匹配编码块边界进行的微量裁剪(无损)；'有损' " L"指必须要进行重编码。", // Help_Tip_Rotation
+    L"跨屏模式 " L"(Ctrl+F11)：合并所有显示器。若关闭按钮不可见(如L型布局)" L"，双击任意处即可退出。", // Help_Tip_VideoWall
+    L"临摹模式/薄膜模式：开启后图像将变为半透明并露出底部元素，此时您可调整尺寸或透明度。" L"点击工具栏中的鼠标穿透模式开关，可进入鼠标穿透模式，此时除了退出快捷键 Shift+Esc 外的任何按键和鼠标输入均被忽略，" L"QuickView 将变为一层透明薄膜覆盖层。", // Help_Tip_DesignerMode
     L"色彩溢出检测：检测当前图片是否超出显示器或软打样配置的色域。模式：关闭、仅软打样（默认）、全部（包含屏幕）。可从工具栏手动开关。", // Help_Tip_GamutDetection
-    L"RAW 渲染：默认显示内嵌预览图以提升速度。点击 RAW "
-      L"按钮可进行完整解码(色彩可能不同)。", // Help_Tip_Raw
-    L"JPEG 质量：基于算法估算的质量值 (例如 Photoshop 100% ≈ 98%)。因"
-      L"编码器差异，测算结果可能与保存时的设置略有偏差，属正常现象。", // Help_Tip_JpegQ
+    L"RAW 渲染：默认显示内嵌预览图以提升速度。点击 RAW " L"按钮可进行完整解码(色彩可能不同)。", // Help_Tip_Raw
+    L"JPEG 质量：基于算法估算的质量值 (例如 Photoshop 100% ≈ 98%)。因" L"编码器差异，测算结果可能与保存时的设置略有偏差，属正常现象。", // Help_Tip_JpegQ
     L"软打样对比：软打样后进入对比模式，将自动进行打样前后对比。", // Help_Tip_SoftProofCompare
     L"发现新版本！", // Dialog_UpdateTitle
     L"v%s 已准备就緒", // Dialog_UpdateContent
@@ -1859,10 +1848,7 @@ static const LanguageTable Table_CN = {
     L"稍后", // Dialog_ButtonLater
     L"在 GitHub 点星", // Dialog_ButtonStar
     L"QuickView 源自热爱", // Dialog_Update_LoveTitle
-    L"我利用业余时间维护 QuickView，只因我相信 Windows "
-      L"值得拥有一个更快、更纯粹的看图工具。 "
-      L"我没有推广预算，也没有团队。如果您喜欢这次更新，在 GitHub "
-      L"上点一颗星或分享给朋友，就是对我最大的支持。", // Dialog_Update_LoveMessage
+    L"我利用业余时间维护 QuickView，只因我相信 Windows " L"值得拥有一个更快、更纯粹的看图工具。 " L"我没有推广预算，也没有团队。如果您喜欢这次更新，在 GitHub " L"上点一颗星或分享给朋友，就是对我最大的支持。", // Dialog_Update_LoveMessage
     L"对比模式", // Help_Item_Compare
     L"第一张 / 最后一张图片", // Help_Item_FirstLast
     L"物理属性", // HUD_Group_Physical
@@ -1883,6 +1869,13 @@ static const LanguageTable Table_CN = {
     L"高: ", // HUD_Label_High
     L"低: ", // HUD_Label_Low
     L"参考: ", // HUD_Label_Ref
+    L"图库胶片带 (顶部悬浮)", // Settings_Header_GalleryTrigger
+    L"触发模式", // Settings_Label_GalleryTriggerMode
+    L"自动悬停", // Settings_Option_GalleryTriggerAuto
+    L"热点停留", // Settings_Option_GalleryTriggerDelay
+    L"点击热点", // Settings_Option_GalleryTriggerClick
+    L"停用", // Settings_Option_GalleryTriggerDisable
+    L"该功能在窗口小于 600x450 时将自动禁用。", // Settings_Tooltip_GalleryTrigger
 };
 
 // ----------------------------------------------------------------
@@ -1919,8 +1912,7 @@ static const LanguageTable Table_TW = {
     L"總是儲存重新編碼結果", // Checkbox_AlwaysSaveLossy
     L"無法解碼 HEIC - 請安裝 HEVC 視訊延伸模組", // OSD_HEICCodecMissing
     L"無法解碼 HEIC", // Dialog_HEICTitle
-    L"系統缺少 HEVC 視訊延伸模組。\\nQuickView "
-      L"需要系統硬體加速以獲得最佳效能。", // Dialog_HEICContent
+    L"系統缺少 HEVC 視訊延伸模組。\\nQuickView " L"需要系統硬體加速以獲得最佳效能。", // Dialog_HEICContent
     L"取得延伸模組 (免費)", // Dialog_HEICGetExtension
     L"取消", // Dialog_Cancel
     L"一般", // Settings_Tab_General
@@ -1936,9 +1928,7 @@ static const LanguageTable Table_TW = {
     L"降冪", // Settings_Label_SortDescending
     L"刪除確認", // Settings_Label_ConfirmDel
     L"可攜式模式 / 清理", // Settings_Label_Portable
-    L"可攜式模式與登錄檔清理：\n開啟後，QuickView "
-      L"將以可攜式方式執行。程式将自動清理已有的登錄檔關聯，並禁用自動登錄檔修改功"
-      L"能。同時，設定檔將存放在程式所在目錄而非 AppData 目錄。", // Settings_Tooltip_Portable
+    L"可攜式模式與登錄檔清理：\n開啟後，QuickView " L"將以可攜式方式執行。程式将自動清理已有的登錄檔關聯，並禁用自動登錄檔修改功" L"能。同時，設定檔將存放在程式所在目錄而非 AppData 目錄。", // Settings_Tooltip_Portable
     L"跨屏模式 (電視牆)", // Settings_Label_SpanDisplays
     L"介面縮放", // Settings_Label_UIScale
     L"需要重新啟動", // Settings_Status_RestartRequired
@@ -2186,10 +2176,7 @@ static const LanguageTable Table_TW = {
     L"高級色彩與 HDR (scRGB)", // Settings_Label_AdvancedColor
     L"HDR 色調映射", // Settings_Label_HdrToneMapping
     L"Spline 拐點", // Settings_Label_HdrSplineKnee
-    L"HDR 降級策略 (Tone Mapping)：\n當 HDR 圖片超出顯示器極限時的對映方式。\n"
-      L"Spline 樣條對映：採用分段樣條曲線，實現高保真的高光細節還原（推薦）。\n"
-      L"色度模式：保持嚴格亮度對映，超出顯示器極限的亮度將被直接裁剪。\n"
-      L"BT.2390 EETF：ITU-R BT.2390 標準高保真降級曲線。", // Settings_Tooltip_HdrToneMapping
+    L"HDR 降級策略 (Tone Mapping)：\n當 HDR 圖片超出顯示器極限時的對映方式。\n" L"Spline 樣條對映：採用分段樣條曲線，實現高保真的高光細節還原（推薦）。\n" L"色度模式：保持嚴格亮度對映，超出顯示器極限的亮度將被直接裁剪。\n" L"BT.2390 EETF：ITU-R BT.2390 標準高保真降級曲線。", // Settings_Tooltip_HdrToneMapping
     L"0 = 自動模式（根據圖片亮度自動計算）。\n數值表示顯示器峰值亮度的比例。該拐點以下的亮度將進行 1:1 絕對映射，拐點以上的亮度將使用平滑曲線進行壓縮映射。\n（推薦值：0.4 - 0.75）", // Settings_Tooltip_HdrSplineKnee
     L"HDR 峰值亮度 (Nits)", // Settings_Label_HdrPeakNitsOverride
     L"設為 0 表示通過系統自動檢測亮度.", // Settings_Tooltip_HdrPeakNitsOverride
@@ -2315,22 +2302,12 @@ static const LanguageTable Table_TW = {
     L"編輯", // Help_Desc_Edit
     L"提示與術語", // Help_Header_Tips
     L"注意：快捷鍵或右鍵操作僅影響當前進程，設置中的配置為程序永久配置。", // Help_Tip_ContextScope
-    L"旋轉說明：/邊緣適配/有損 "
-      L"是由於某些圖片格式特性造成的無法完整無損操作。邊緣適配通常只損失邊緣N個"
-      L"像素，接近無損。", // Help_Tip_Rotation
-    L"電視牆模式 "
-      L"(Ctrl+F11)：將所有顯示器視為一塊屏幕。若關閉按鈕位於顯示區外 "
-      L"(如L型排布)，雙擊即可退出全屏。", // Help_Tip_VideoWall
-    L"臨摹模式/薄膜模式：開啟後圖像將變為半透明並露出底部元素，此時您可調整尺寸或透明度。"
-      L"點擊工具列中的滑鼠穿透模式開關，可進入滑鼠穿透模式，此時除了退出快捷鍵 Shift+Esc 外的任何按鍵和滑鼠輸入均被忽略，"
-      L"QuickView 將變為一層透明薄膜覆蓋層。", // Help_Tip_DesignerMode
+    L"旋轉說明：/邊緣適配/有損 " L"是由於某些圖片格式特性造成的無法完整無損操作。邊緣適配通常只損失邊緣N個" L"像素，接近無損。", // Help_Tip_Rotation
+    L"電視牆模式 " L"(Ctrl+F11)：將所有顯示器視為一塊屏幕。若關閉按鈕位於顯示區外 " L"(如L型排布)，雙擊即可退出全屏。", // Help_Tip_VideoWall
+    L"臨摹模式/薄膜模式：開啟後圖像將變為半透明並露出底部元素，此時您可調整尺寸或透明度。" L"點擊工具列中的滑鼠穿透模式開關，可進入滑鼠穿透模式，此時除了退出快捷鍵 Shift+Esc 外的任何按鍵和滑鼠輸入均被忽略，" L"QuickView 將變為一層透明薄膜覆蓋層。", // Help_Tip_DesignerMode
     L"色彩溢出檢測：檢測當前圖片是否超出顯示器或軟打樣配置的色域。模式：關閉、僅軟打樣（預設）、全部（包含螢幕）。可從工具列手動開關。", // Help_Tip_GamutDetection
-    L"RAW 按鈕：QuickView 默認顯示 RAW "
-      L"預覽圖。點擊此按鈕將使用默認參數完整渲染 RAW 文件 "
-      L"(結果可能與預覽不同)。", // Help_Tip_Raw
-    L"JPEG 壓縮率：信息面板顯示的 Q "
-      L"值是逆向推算值。因算法差異，可能與保存時的數值略有出入 (例如 PS 100% "
-      L"可能顯示為 98)，屬正常情況。", // Help_Tip_JpegQ
+    L"RAW 按鈕：QuickView 默認顯示 RAW " L"預覽圖。點擊此按鈕將使用默認參數完整渲染 RAW 文件 " L"(結果可能與預覽不同)。", // Help_Tip_Raw
+    L"JPEG 壓縮率：信息面板顯示的 Q " L"值是逆向推算值。因算法差異，可能與保存時的數值略有出入 (例如 PS 100% " L"可能顯示為 98)，屬正常情況。", // Help_Tip_JpegQ
     L"軟打樣對比：軟打樣後進入對比模式，將自動進行打樣前後對比。", // Help_Tip_SoftProofCompare
     L"發現新版本！", // Dialog_UpdateTitle
     L"v%s 已準備就緒", // Dialog_UpdateContent
@@ -2339,10 +2316,7 @@ static const LanguageTable Table_TW = {
     L"稍後", // Dialog_ButtonLater
     L"在 GitHub 點星", // Dialog_ButtonStar
     L"QuickView 源自熱愛", // Dialog_Update_LoveTitle
-    L"我利用業餘時間維護 QuickView，只因我相信 Windows "
-      L"值得擁有一個更快、更純粹的看圖工具。 "
-      L"我沒有推廣預算，也沒有團隊。如果您喜歡這次更新，在 GitHub "
-      L"上點一顆星或分享給朋友，就是對我最大的支持。", // Dialog_Update_LoveMessage
+    L"我利用業餘時間維護 QuickView，只因我相信 Windows " L"值得擁有一個更快、更純粹的看圖工具。 " L"我沒有推廣預算，也沒有團隊。如果您喜歡這次更新，在 GitHub " L"上點一顆星或分享給朋友，就是對我最大的支持。", // Dialog_Update_LoveMessage
     L"對比模式", // Help_Item_Compare
     L"第一張 / 最後一張圖片", // Help_Item_FirstLast
     L"物理屬性", // HUD_Group_Physical
@@ -2363,6 +2337,13 @@ static const LanguageTable Table_TW = {
     L"高: ", // HUD_Label_High
     L"低: ", // HUD_Label_Low
     L"參考: ", // HUD_Label_Ref
+    L"圖庫底片帶 (頂部懸浮)", // Settings_Header_GalleryTrigger
+    L"觸發模式", // Settings_Label_GalleryTriggerMode
+    L"自動懸停", // Settings_Option_GalleryTriggerAuto
+    L"熱點停留", // Settings_Option_GalleryTriggerDelay
+    L"點擊熱點", // Settings_Option_GalleryTriggerClick
+    L"停用", // Settings_Option_GalleryTriggerDisable
+    L"該功能在視窗小於 600x450 時將自動禁用。", // Settings_Tooltip_GalleryTrigger
 };
 
 // ----------------------------------------------------------------
@@ -2399,8 +2380,7 @@ static const LanguageTable Table_JA = {
     L"再エンコードを常に保存", // Checkbox_AlwaysSaveLossy
     L"HEICをデコードできません - HEVC拡張機能をインストールしてください", // OSD_HEICCodecMissing
     L"HEICをデコードできません", // Dialog_HEICTitle
-    L"システムにHEVC拡張機能がありません。\\nQuickViewは最高のパフォーマンス"
-      L"のためにハードウェアアクセラレーションを使用します。", // Dialog_HEICContent
+    L"システムにHEVC拡張機能がありません。\\nQuickViewは最高のパフォーマンス" L"のためにハードウェアアクセラレーションを使用します。", // Dialog_HEICContent
     L"拡張機能を取得 (無料)", // Dialog_HEICGetExtension
     L"キャンセル", // Dialog_Cancel
     L"一般", // Settings_Tab_General
@@ -2416,10 +2396,7 @@ static const LanguageTable Table_JA = {
     L"降順", // Settings_Label_SortDescending
     L"削除確認", // Settings_Label_ConfirmDel
     L"ポータブルモード / クリーンアップ", // Settings_Label_Portable
-    L"ポータブルモードとレジストリのクリーンアップ：\n有効にすると、QuickView "
-      L"はポータブルモードで動作します。既存のレジストリ関連付けを自動的にクリー"
-      L"ンアップし、レジストリの自動変更を無効にします。また、設定ファイルは AppData "
-      L"ではなくアプリケーションディレクトリに保存されます。", // Settings_Tooltip_Portable
+    L"ポータブルモードとレジストリのクリーンアップ：\n有効にすると、QuickView " L"はポータブルモードで動作します。既存のレジストリ関連付けを自動的にクリー" L"ンアップし、レジストリの自動変更を無効にします。また、設定ファイルは AppData " L"ではなくアプリケーションディレクトリに保存されます。", // Settings_Tooltip_Portable
     L"Span Displays (Video Wall)", // Settings_Label_SpanDisplays
     L"UI スケール", // Settings_Label_UIScale
     L"再起動が必要", // Settings_Status_RestartRequired
@@ -2667,10 +2644,7 @@ static const LanguageTable Table_JA = {
     L"高度な色とHDR (scRGB)", // Settings_Label_AdvancedColor
     L"HDR トーンマッピング", // Settings_Label_HdrToneMapping
     L"Spline Knee Point", // Settings_Label_HdrSplineKnee
-    L"HDR トーンマッピング戦略:\nモニターの限界を超えるHDR画像の表示方法を決定します。\n"
-      L"スプライン:区分スプライン曲線を使用した高忠実度のハイライトロールオフ（推奨）。\n"
-      L"測色: 厳密な輝度マッピング。モニターの限界を超えるハイライトはクリップされます。\n"
-      L"BT.2390 (EETF): ITU-R BT.2390 EETF 曲線による高忠実度なトーンマッピング。", // Settings_Tooltip_HdrToneMapping
+    L"HDR トーンマッピング戦略:\nモニターの限界を超えるHDR画像の表示方法を決定します。\n" L"スプライン:区分スプライン曲線を使用した高忠実度のハイライトロールオフ（推奨）。\n" L"測色: 厳密な輝度マッピング。モニターの限界を超えるハイライトはクリップされます。\n" L"BT.2390 (EETF): ITU-R BT.2390 EETF 曲線による高忠実度なトーンマッピング。", // Settings_Tooltip_HdrToneMapping
     L"0 = Auto (Calculated based on image luminance).\nThe value represents the ratio of the monitor's peak luminance. Brightness below this knee point maps 1:1, while brightness above is smoothly compressed using a spline curve.\n(Recommended: 0.4 - 0.75)", // Settings_Tooltip_HdrSplineKnee
     L"HDR ピーク輝度 (Nits)", // Settings_Label_HdrPeakNitsOverride
     L"システム検出輝度を使用する場合は0に設定します。", // Settings_Tooltip_HdrPeakNitsOverride
@@ -2795,18 +2769,13 @@ static const LanguageTable Table_JA = {
     L"Copy Image", // Help_Desc_Copy
     L"Edit", // Help_Desc_Edit
     L"Tips & Glossary", // Help_Header_Tips
-    L"Note: Shortcuts and context menu actions affect the current process "
-      L"only. Settings are permanent.", // Help_Tip_ContextScope
-    L"Rotation: 'Edge Adapted' means minor cropping to fit block boundaries "
-      L"(lossless data). 'Lossy' means full re-encoding.", // Help_Tip_Rotation
-    L"Video Wall (Ctrl+F11): Spans all monitors. If close button is hidden, "
-      L"double-click to exit.", // Help_Tip_VideoWall
+    L"Note: Shortcuts and context menu actions affect the current process " L"only. Settings are permanent.", // Help_Tip_ContextScope
+    L"Rotation: 'Edge Adapted' means minor cropping to fit block boundaries " L"(lossless data). 'Lossy' means full re-encoding.", // Help_Tip_Rotation
+    L"Video Wall (Ctrl+F11): Spans all monitors. If close button is hidden, " L"double-click to exit.", // Help_Tip_VideoWall
     L"トレースモード / フィルムモード：有効にすると画像が半透明になり、下の要素が表示されます。サイズや透明度を調整できます。ツールバーのマウスパススルー切り替えをクリックするとパススルーモードになり、Shift+Esc 以外のすべての入力が無視され、QuickView が透明なオーバーレイになります。", // Help_Tip_DesignerMode
     L"色域警告：ターゲットディスプレイまたはソフトプルーフプロファイルの色域外の色を検出します。モード：オフ、ソフトプルーフのみ、またはすべて（デフォルト：ソフトプルーフ）。ツールバーで切り替え可能。", // Help_Tip_GamutDetection
-    L"RAW Button: QuickView shows embedded preview by default. Click to "
-      L"fully decode (may look different due to rendering parameters).", // Help_Tip_Raw
-    L"JPEG Quality: Estimated Q value (reverse engineered). May differ "
-      L"slightly from save setting due to algorithm variations.", // Help_Tip_JpegQ
+    L"RAW Button: QuickView shows embedded preview by default. Click to " L"fully decode (may look different due to rendering parameters).", // Help_Tip_Raw
+    L"JPEG Quality: Estimated Q value (reverse engineered). May differ " L"slightly from save setting due to algorithm variations.", // Help_Tip_JpegQ
     L"校正設定の比較：校正中に比較モードに入ると、元画像と校正後の画像を自動的に比較します。", // Help_Tip_SoftProofCompare
     L"新しいバージョンが利用可能です！", // Dialog_UpdateTitle
     L"v%s is ready.", // Dialog_UpdateContent
@@ -2815,10 +2784,7 @@ static const LanguageTable Table_JA = {
     L"後で", // Dialog_ButtonLater
     L"GitHubでスター", // Dialog_ButtonStar
     L"QuickViewは情熱から生まれました", // Dialog_Update_LoveTitle
-    L"私は余暇を使ってQuickViewをメンテナンスしています。Windowsにはもっと高"
-      L"速でクリーンなビューアが必要だと信じているからです。予算もチームもあり"
-      L"ません。もしこの更新を気に入っていただけたら、GitHubでスターを付けるか"
-      L"、友人に共有していただけると最大の支援になります。", // Dialog_Update_LoveMessage
+    L"私は余暇を使ってQuickViewをメンテナンスしています。Windowsにはもっと高" L"速でクリーンなビューアが必要だと信じているからです。予算もチームもあり" L"ません。もしこの更新を気に入っていただけたら、GitHubでスターを付けるか" L"、友人に共有していただけると最大の支援になります。", // Dialog_Update_LoveMessage
     L"Compare Mode", // Help_Item_Compare
     L"最初 / 最後の画像", // Help_Item_FirstLast
     L"PHYSICAL ATTRIBUTES", // HUD_Group_Physical
@@ -2839,6 +2805,13 @@ static const LanguageTable Table_JA = {
     L"High: ", // HUD_Label_High
     L"Low: ", // HUD_Label_Low
     L"Ref: ", // HUD_Label_Ref
+    L"ギャラリーフィルムストリップ（上部ホバー）", // Settings_Header_GalleryTrigger
+    L"トリガーモード", // Settings_Label_GalleryTriggerMode
+    L"自動ホバー", // Settings_Option_GalleryTriggerAuto
+    L"ホットスポットホバー", // Settings_Option_GalleryTriggerDelay
+    L"ホットスポットクリック", // Settings_Option_GalleryTriggerClick
+    L"無効", // Settings_Option_GalleryTriggerDisable
+    L"ウィンドウが600x450より小さい場合、この機能は自動的に無効になります。", // Settings_Tooltip_GalleryTrigger
 };
 
 // ----------------------------------------------------------------
@@ -2875,8 +2848,7 @@ static const LanguageTable Table_RU = {
     L"Всегда сохранять перекодированное", // Checkbox_AlwaysSaveLossy
     L"Невозможно декодировать HEIC, установите расширение HEVC", // OSD_HEICCodecMissing
     L"Невозможно декодировать HEIC", // Dialog_HEICTitle
-    L"В системе отсутствует расширение HEVC.\\nQuickView использует "
-      L"аппаратное ускорение для лучшей производительности.", // Dialog_HEICContent
+    L"В системе отсутствует расширение HEVC.\\nQuickView использует " L"аппаратное ускорение для лучшей производительности.", // Dialog_HEICContent
     L"Получить расширение (бесплатно)", // Dialog_HEICGetExtension
     L"Отмена", // Dialog_Cancel
     L"Общие", // Settings_Tab_General
@@ -2892,10 +2864,7 @@ static const LanguageTable Table_RU = {
     L"По убыванию", // Settings_Label_SortDescending
     L"Подтверждение удаления", // Settings_Label_ConfirmDel
     L"Портативный режим / Очистка", // Settings_Label_Portable
-    L"Портативный режим и очистка реестра:\nПри включении QuickView работает в "
-      L"портативном режиме. Он автоматически очистит существующие ассоциации в "
-      L"реестре, отключит автоматическое изменение реестра и будет хранить файлы "
-      L"конфигурации в каталоге приложения вместо AppData.", // Settings_Tooltip_Portable
+    L"Портативный режим и очистка реестра:\nПри включении QuickView работает в " L"портативном режиме. Он автоматически очистит существующие ассоциации в " L"реестре, отключит автоматическое изменение реестра и будет хранить файлы " L"конфигурации в каталоге приложения вместо AppData.", // Settings_Tooltip_Portable
     L"Распределять по мониторам (видеостена)", // Settings_Label_SpanDisplays
     L"Масштаб интерфейса", // Settings_Label_UIScale
     L"Требуется перезапуск", // Settings_Status_RestartRequired
@@ -3143,11 +3112,7 @@ static const LanguageTable Table_RU = {
     L"Расширенный цвет (HDR)", // Settings_Label_AdvancedColor
     L"Тональная компрессия HDR", // Settings_Label_HdrToneMapping
     L"Spline Knee Point", // Settings_Label_HdrSplineKnee
-    L"Стратегия тональной компрессии HDR:\nОпределяет, как отображаются "
-      L"HDR-изображения, превышающие возможности монитора.\nSpline: "
-      L"Высокоточное сжатие светов с использованием сплайнов (Рекомендуется).\n"
-      L"Колориметрическая: Строгое отображение яркости; светлые участки, "
-      L"превышающие предел монитора, обрезаются.\nBT.2390 (EETF): Кривая ITU-R BT.2390 EETF для высокоточного отображения тонов.", // Settings_Tooltip_HdrToneMapping
+    L"Стратегия тональной компрессии HDR:\nОпределяет, как отображаются " L"HDR-изображения, превышающие возможности монитора.\nSpline: " L"Высокоточное сжатие светов с использованием сплайнов (Рекомендуется).\n" L"Колориметрическая: Строгое отображение яркости; светлые участки, " L"превышающие предел монитора, обрезаются.\nBT.2390 (EETF): Кривая ITU-R BT.2390 EETF для высокоточного отображения тонов.", // Settings_Tooltip_HdrToneMapping
     L"0 = Auto (Calculated based on image luminance).\nThe value represents the ratio of the monitor's peak luminance. Brightness below this knee point maps 1:1, while brightness above is smoothly compressed using a spline curve.\n(Recommended: 0.4 - 0.75)", // Settings_Tooltip_HdrSplineKnee
     L"Пиковая яркость HDR (ниты)", // Settings_Label_HdrPeakNitsOverride
     L"Установите 0 для системной яркости.", // Settings_Tooltip_HdrPeakNitsOverride
@@ -3273,17 +3238,12 @@ static const LanguageTable Table_RU = {
     L"Изменить", // Help_Desc_Edit
     L"Советы и термины", // Help_Header_Tips
     L"* Горячие клавиши и контекстное меню действуют только на текущий процесс. Настройки не изменяются.", // Help_Tip_ContextScope
-    L"Поворот: При оптимизации краёв они слегка обрезаются, чтобы вписать в границы блока "
-      L"(без потерь). В режиме с потерями выполняется полное перекодирование изображения.", // Help_Tip_Rotation
-    L"Видеостена (Ctrl+F11): Распределение картинки по всем мониторам. Если кнопка закрытия скрыта, "
-      L"для выхода дважды щёлкните мышью.", // Help_Tip_VideoWall
+    L"Поворот: При оптимизации краёв они слегка обрезаются, чтобы вписать в границы блока " L"(без потерь). В режиме с потерями выполняется полное перекодирование изображения.", // Help_Tip_Rotation
+    L"Видеостена (Ctrl+F11): Распределение картинки по всем мониторам. Если кнопка закрытия скрыта, " L"для выхода дважды щёлкните мышью.", // Help_Tip_VideoWall
     L"Режим кальки / Режим пленки: после включения изображение становится полупрозрачным, открывая нижележащие элементы. Вы можете настроить его размер или прозрачность. Нажмите переключатель прохождения мыши на панели инструментов, чтобы войти в режим прохождения, в котором все вводы, кроме Shift+Esc, игнорируются, превращая QuickView в прозрачный оверлей.", // Help_Tip_DesignerMode
     L"Предупреждение о цветовом охвате: Обнаружение цветов вне охвата для монитора или профиля цветопробы. Режимы: Выкл, только цветопроба или все (по умолчанию: цветопроба). Переключение через панель инструментов.", // Help_Tip_GamutDetection
-    L"Кнопка RAW: По умолчанию QuickView показывает встроенную картинку предпросмотра. Нажмите "
-      L"для полного декодирования (может выглядеть по-другому из-за параметров рендеринга).", // Help_Tip_Raw
-    L"Качество JPEG: Расчётное значение качества. Может слегка "
-      L"отличаться от настройки сохранения из-за различий в алгоритме "
-      L"(например, Photoshop 100% \u2248 98%).", // Help_Tip_JpegQ
+    L"Кнопка RAW: По умолчанию QuickView показывает встроенную картинку предпросмотра. Нажмите " L"для полного декодирования (может выглядеть по-другому из-за параметров рендеринга).", // Help_Tip_Raw
+    L"Качество JPEG: Расчётное значение качества. Может слегка " L"отличаться от настройки сохранения из-за различий в алгоритме " L"(например, Photoshop 100% \u2248 98%).", // Help_Tip_JpegQ
     L"Сравнение цветопробы: вход в режим сравнения при включенной цветопробе автоматически сравнит оригинал и пробу.", // Help_Tip_SoftProofCompare
     L"Доступна новая версия!", // Dialog_UpdateTitle
     L"Доступна версия %s.", // Dialog_UpdateContent
@@ -3292,10 +3252,7 @@ static const LanguageTable Table_RU = {
     L"Позже", // Dialog_ButtonLater
     L"Звезда на GitHub", // Dialog_ButtonStar
     L"QuickView создан с любовью", // Dialog_Update_LoveTitle
-    L"Я разрабатываю QuickView в свободное время, потому что считаю, что "
-      L"в Windows должен быть более быстрый и чистый просмотрщик. Если вам "
-      L"нравится эта программа, пожалуйста, поставьте звезду на "
-      L"GitHub или расскажите о QuickView другу.", // Dialog_Update_LoveMessage
+    L"Я разрабатываю QuickView в свободное время, потому что считаю, что " L"в Windows должен быть более быстрый и чистый просмотрщик. Если вам " L"нравится эта программа, пожалуйста, поставьте звезду на " L"GitHub или расскажите о QuickView другу.", // Dialog_Update_LoveMessage
     L"Режим сравнения", // Help_Item_Compare
     L"Первое/последнее изображение", // Help_Item_FirstLast
     L"ФИЗИЧЕСКИЕ АТРИБУТЫ", // HUD_Group_Physical
@@ -3316,6 +3273,13 @@ static const LanguageTable Table_RU = {
     L"Высокая: ", // HUD_Label_High
     L"Низкая: ", // HUD_Label_Low
     L"Эталон: ", // HUD_Label_Ref
+    L"Пленка галереи (при наведении сверху)", // Settings_Header_GalleryTrigger
+    L"Режим триггера", // Settings_Label_GalleryTriggerMode
+    L"Авто-наведение", // Settings_Option_GalleryTriggerAuto
+    L"Наведение на точку", // Settings_Option_GalleryTriggerDelay
+    L"Клик по точке", // Settings_Option_GalleryTriggerClick
+    L"Отключено", // Settings_Option_GalleryTriggerDisable
+    L"Эта функция автоматически отключается, если размер окна меньше 600x450.", // Settings_Tooltip_GalleryTrigger
 };
 
 // ----------------------------------------------------------------
@@ -3352,8 +3316,7 @@ static const LanguageTable Table_DE = {
     L"Immer neu kodiert speichern", // Checkbox_AlwaysSaveLossy
     L"HEIC kann nicht dekodiert werden - HEVC-Erweiterung installieren", // OSD_HEICCodecMissing
     L"HEIC kann nicht dekodiert werden", // Dialog_HEICTitle
-    L"Ihr System hat keine HEVC-Erweiterung.\\nQuickView nutzt "
-      L"Hardware-Beschleunigung für beste Leistung.", // Dialog_HEICContent
+    L"Ihr System hat keine HEVC-Erweiterung.\\nQuickView nutzt " L"Hardware-Beschleunigung für beste Leistung.", // Dialog_HEICContent
     L"Erweiterung holen (kostenlos)", // Dialog_HEICGetExtension
     L"Abbrechen", // Dialog_Cancel
     L"Allgemein", // Settings_Tab_General
@@ -3369,10 +3332,7 @@ static const LanguageTable Table_DE = {
     L"Absteigend", // Settings_Label_SortDescending
     L"Löschen bestätigen", // Settings_Label_ConfirmDel
     L"Portabler Modus / Bereinigung", // Settings_Label_Portable
-    L"Portabler Modus und Registry-Bereinigung:\nWenn aktiviert, wird QuickView im "
-      L"portablen Modus ausgeführt. Es bereinigt automatisch vorhandene "
-      L"Registry-Verknüpfungen, deaktiviert automatische Registry-Änderungen und "
-      L"speichert Konfigurationsdateien im Anwendungsverzeichnis anstatt in AppData.", // Settings_Tooltip_Portable
+    L"Portabler Modus und Registry-Bereinigung:\nWenn aktiviert, wird QuickView im " L"portablen Modus ausgeführt. Es bereinigt automatisch vorhandene " L"Registry-Verknüpfungen, deaktiviert automatische Registry-Änderungen und " L"speichert Konfigurationsdateien im Anwendungsverzeichnis anstatt in AppData.", // Settings_Tooltip_Portable
     L"Span Displays (Video Wall)", // Settings_Label_SpanDisplays
     L"UI-Skalierung", // Settings_Label_UIScale
     L"Neustart erforderlich", // Settings_Status_RestartRequired
@@ -3620,11 +3580,7 @@ static const LanguageTable Table_DE = {
     L"Erweiterte Farbe (HDR)", // Settings_Label_AdvancedColor
     L"HDR-Tonzuordnung", // Settings_Label_HdrToneMapping
     L"Spline Knee Point", // Settings_Label_HdrSplineKnee
-    L"HDR Tonzuordnungsstrategie:\nLegt fest, wie HDR-Bilder angezeigt werden, "
-      L"wenn sie die Fähigkeiten des Monitors überschreiten.\nSpline: "
-      L"Hochpräzises Highlight-Roll-off mittels stückweiser Splines "
-      L"(Empfohlen).\nFarbmetrisch: Strikte Luminanzzuordnung; Highlights, die "
-      L"das Monitorlimit überschreiten, werden abgeschnitten.\nBT.2390 (EETF): ITU-R BT.2390 EETF-Kurve für hochpräzise Tonzuordnung.", // Settings_Tooltip_HdrToneMapping
+    L"HDR Tonzuordnungsstrategie:\nLegt fest, wie HDR-Bilder angezeigt werden, " L"wenn sie die Fähigkeiten des Monitors überschreiten.\nSpline: " L"Hochpräzises Highlight-Roll-off mittels stückweiser Splines " L"(Empfohlen).\nFarbmetrisch: Strikte Luminanzzuordnung; Highlights, die " L"das Monitorlimit überschreiten, werden abgeschnitten.\nBT.2390 (EETF): ITU-R BT.2390 EETF-Kurve für hochpräzise Tonzuordnung.", // Settings_Tooltip_HdrToneMapping
     L"0 = Auto (Calculated based on image luminance).\nThe value represents the ratio of the monitor's peak luminance. Brightness below this knee point maps 1:1, while brightness above is smoothly compressed using a spline curve.\n(Recommended: 0.4 - 0.75)", // Settings_Tooltip_HdrSplineKnee
     L"HDR Spitzenhelligkeit (Nits)", // Settings_Label_HdrPeakNitsOverride
     L"Auf 0 setzen, um erkannte Helligkeit zu verwenden.", // Settings_Tooltip_HdrPeakNitsOverride
@@ -3749,18 +3705,13 @@ static const LanguageTable Table_DE = {
     L"Copy Image", // Help_Desc_Copy
     L"Edit", // Help_Desc_Edit
     L"Tips & Glossary", // Help_Header_Tips
-    L"Note: Shortcuts and context menu actions affect the current process "
-      L"only. Settings are permanent.", // Help_Tip_ContextScope
-    L"Rotation: 'Edge Adapted' means minor cropping to fit block boundaries "
-      L"(lossless data). 'Lossy' means full re-encoding.", // Help_Tip_Rotation
-    L"Video Wall (Ctrl+F11): Spans all monitors. If close button is hidden, "
-      L"double-click to exit.", // Help_Tip_VideoWall
+    L"Note: Shortcuts and context menu actions affect the current process " L"only. Settings are permanent.", // Help_Tip_ContextScope
+    L"Rotation: 'Edge Adapted' means minor cropping to fit block boundaries " L"(lossless data). 'Lossy' means full re-encoding.", // Help_Tip_Rotation
+    L"Video Wall (Ctrl+F11): Spans all monitors. If close button is hidden, " L"double-click to exit.", // Help_Tip_VideoWall
     L"Pausmodus / Folienmodus: Sobald aktiviert, wird das Bild halbtransparent und gibt den Blick auf darunter liegende Elemente frei. Sie können die Größe oder Transparenz anpassen. Klicken Sie auf den Maus-Durchlass-Umschalter in der Symbolleiste, um in den Durchlassmodus zu gelangen, in dem alle Eingaben außer Umschalt+Esc ignoriert werden, wodurch QuickView zu einer transparenten Überlagerung wird.", // Help_Tip_DesignerMode
     L"Farbraumwarnung: Erkennt Farben außerhalb des Farbumfangs für den Zielmonitor oder das Softproof-Profil. Modi: Aus, nur Softproof oder Alle (Standard: Softproof). Umschaltbar über die Symbolleiste.", // Help_Tip_GamutDetection
-    L"RAW Button: QuickView shows embedded preview by default. Click to "
-      L"fully decode (may look different due to rendering parameters).", // Help_Tip_Raw
-    L"JPEG Quality: Estimated Q value (reverse engineered). May differ "
-      L"slightly from save setting due to algorithm variations.", // Help_Tip_JpegQ
+    L"RAW Button: QuickView shows embedded preview by default. Click to " L"fully decode (may look different due to rendering parameters).", // Help_Tip_Raw
+    L"JPEG Quality: Estimated Q value (reverse engineered). May differ " L"slightly from save setting due to algorithm variations.", // Help_Tip_JpegQ
     L"Softproof-Vergleich: Wenn der Vergleichsmodus bei aktiviertem Softproof aufgerufen wird, werden Original und Proof-Bild automatisch verglichen.", // Help_Tip_SoftProofCompare
     L"Neue Version verfügbar!", // Dialog_UpdateTitle
     L"v%s is ready.", // Dialog_UpdateContent
@@ -3769,10 +3720,7 @@ static const LanguageTable Table_DE = {
     L"Später", // Dialog_ButtonLater
     L"Stern auf GitHub", // Dialog_ButtonStar
     L"QuickView wird mit Liebe entwickelt", // Dialog_Update_LoveTitle
-    L"Ich pflege QuickView in meiner Freizeit, weil ich glaube, dass Windows "
-      L"einen schnelleren und saubereren Viewer verdient. Wenn Ihnen dieses "
-      L"Update gefällt, ist der größte Beitrag, uns auf GitHub einen Stern zu "
-      L"geben.", // Dialog_Update_LoveMessage
+    L"Ich pflege QuickView in meiner Freizeit, weil ich glaube, dass Windows " L"einen schnelleren und saubereren Viewer verdient. Wenn Ihnen dieses " L"Update gefällt, ist der größte Beitrag, uns auf GitHub einen Stern zu " L"geben.", // Dialog_Update_LoveMessage
     L"Compare Mode", // Help_Item_Compare
     L"Erstes / Letztes Bild", // Help_Item_FirstLast
     L"PHYSICAL ATTRIBUTES", // HUD_Group_Physical
@@ -3793,6 +3741,13 @@ static const LanguageTable Table_DE = {
     L"High: ", // HUD_Label_High
     L"Low: ", // HUD_Label_Low
     L"Ref: ", // HUD_Label_Ref
+    L"Galerie-Filmstreifen (Hover oben)", // Settings_Header_GalleryTrigger
+    L"Trigger-Modus", // Settings_Label_GalleryTriggerMode
+    L"Automatischer Hover", // Settings_Option_GalleryTriggerAuto
+    L"Hotspot-Hover", // Settings_Option_GalleryTriggerDelay
+    L"Hotspot-Klick", // Settings_Option_GalleryTriggerClick
+    L"Deaktiviert", // Settings_Option_GalleryTriggerDisable
+    L"Diese Funktion wird automatisch deaktiviert, wenn das Fenster kleiner als 600x450 ist.", // Settings_Tooltip_GalleryTrigger
 };
 
 // ----------------------------------------------------------------
@@ -3829,8 +3784,7 @@ static const LanguageTable Table_ES = {
     L"Siempre guardar recodificado", // Checkbox_AlwaysSaveLossy
     L"No se puede decodificar HEIC - Instale la extensión HEVC", // OSD_HEICCodecMissing
     L"No se puede decodificar HEIC", // Dialog_HEICTitle
-    L"Su sistema no tiene la extensión HEVC.\\nQuickView usa aceleración de "
-      L"hardware para mejor rendimiento.", // Dialog_HEICContent
+    L"Su sistema no tiene la extensión HEVC.\\nQuickView usa aceleración de " L"hardware para mejor rendimiento.", // Dialog_HEICContent
     L"Obtener extensión (gratis)", // Dialog_HEICGetExtension
     L"Cancelar", // Dialog_Cancel
     L"General", // Settings_Tab_General
@@ -3846,11 +3800,7 @@ static const LanguageTable Table_ES = {
     L"Descendente", // Settings_Label_SortDescending
     L"Confirmar eliminación", // Settings_Label_ConfirmDel
     L"Modo portátil / Limpieza", // Settings_Label_Portable
-    L"Modo portátil y limpieza del registro:\nCuando está habilitado, QuickView se "
-      L"ejecuta en modo portátil. Limpiará automáticamente las asociaciones de "
-      L"registro existentes, deshabilitará la modificación automática del registro y "
-      L"almacenará los archivos de configuración en el directorio de la aplicación en "
-      L"lugar de AppData.", // Settings_Tooltip_Portable
+    L"Modo portátil y limpieza del registro:\nCuando está habilitado, QuickView se " L"ejecuta en modo portátil. Limpiará automáticamente las asociaciones de " L"registro existentes, deshabilitará la modificación automática del registro y " L"almacenará los archivos de configuración en el directorio de la aplicación en " L"lugar de AppData.", // Settings_Tooltip_Portable
     L"Span Displays (Video Wall)", // Settings_Label_SpanDisplays
     L"Escala de interfaz", // Settings_Label_UIScale
     L"Reinicio requerido", // Settings_Status_RestartRequired
@@ -4098,11 +4048,7 @@ static const LanguageTable Table_ES = {
     L"Color avanzado (HDR)", // Settings_Label_AdvancedColor
     L"Mapeo de tonos HDR", // Settings_Label_HdrToneMapping
     L"Spline Knee Point", // Settings_Label_HdrSplineKnee
-    L"Estrategia de mapeo de tonos (Tone Mapping) de HDR:\nDetermina cómo se "
-      L"muestran las imágenes HDR cuando exceden las capacidades del monitor.\n"
-      L"Spline: Roll-off de luces de alta fidelidad mediante splines por tramos "
-      L"(Recomendado).\nColorimétrico: Mapeo de luminancia estricto; las luces "
-      L"que exceden el límite del monitor se recortan.\nBT.2390 (EETF): Curva ITU-R BT.2390 EETF para mapeo de tonos de alta fidelidad.", // Settings_Tooltip_HdrToneMapping
+    L"Estrategia de mapeo de tonos (Tone Mapping) de HDR:\nDetermina cómo se " L"muestran las imágenes HDR cuando exceden las capacidades del monitor.\n" L"Spline: Roll-off de luces de alta fidelidad mediante splines por tramos " L"(Recomendado).\nColorimétrico: Mapeo de luminancia estricto; las luces " L"que exceden el límite del monitor se recortan.\nBT.2390 (EETF): Curva ITU-R BT.2390 EETF para mapeo de tonos de alta fidelidad.", // Settings_Tooltip_HdrToneMapping
     L"0 = Auto (Calculated based on image luminance).\nThe value represents the ratio of the monitor's peak luminance. Brightness below this knee point maps 1:1, while brightness above is smoothly compressed using a spline curve.\n(Recommended: 0.4 - 0.75)", // Settings_Tooltip_HdrSplineKnee
     L"Brillo Máximo HDR (Nits)", // Settings_Label_HdrPeakNitsOverride
     L"Ajustar en 0 para usar el brillo detectado por el sistema.", // Settings_Tooltip_HdrPeakNitsOverride
@@ -4227,18 +4173,13 @@ static const LanguageTable Table_ES = {
     L"Copy Image", // Help_Desc_Copy
     L"Edit", // Help_Desc_Edit
     L"Tips & Glossary", // Help_Header_Tips
-    L"Note: Shortcuts and context menu actions affect the current process "
-      L"only. Settings are permanent.", // Help_Tip_ContextScope
-    L"Rotation: 'Edge Adapted' means minor cropping to fit block boundaries "
-      L"(lossless data). 'Lossy' means full re-encoding.", // Help_Tip_Rotation
-    L"Video Wall (Ctrl+F11): Spans all monitors. If close button is hidden, "
-      L"double-click to exit.", // Help_Tip_VideoWall
+    L"Note: Shortcuts and context menu actions affect the current process " L"only. Settings are permanent.", // Help_Tip_ContextScope
+    L"Rotation: 'Edge Adapted' means minor cropping to fit block boundaries " L"(lossless data). 'Lossy' means full re-encoding.", // Help_Tip_Rotation
+    L"Video Wall (Ctrl+F11): Spans all monitors. If close button is hidden, " L"double-click to exit.", // Help_Tip_VideoWall
     L"Modo Calco / Modo Película: Una vez activado, la imagen se vuelve semitransparente, revelando los elementos subyacentes. Puede ajustar su tamaño o transparencia. Haga clic en el interruptor de Paso de Mouse en la barra de herramientas para entrar en el Modo de Paso, donde se ignoran todas las entradas excepto Mayús+Esc, convirtiendo QuickView en una superposición transparente.", // Help_Tip_DesignerMode
     L"Aviso de gama: detecta colores fuera de gama para la pantalla de destino o el perfil de prueba. Modos: Desactivado, solo prueba en pantalla o todo (predeterminado: prueba en pantalla). Alternar mediante la barra de herramientas.", // Help_Tip_GamutDetection
-    L"RAW Button: QuickView shows embedded preview by default. Click to "
-      L"fully decode (may look different due to rendering parameters).", // Help_Tip_Raw
-    L"JPEG Quality: Estimated Q value (reverse engineered). May differ "
-      L"slightly from save setting due to algorithm variations.", // Help_Tip_JpegQ
+    L"RAW Button: QuickView shows embedded preview by default. Click to " L"fully decode (may look different due to rendering parameters).", // Help_Tip_Raw
+    L"JPEG Quality: Estimated Q value (reverse engineered). May differ " L"slightly from save setting due to algorithm variations.", // Help_Tip_JpegQ
     L"Comparación de pruebas: entrar en el modo de comparación mientras la prueba de color está activa comparará automáticamente la imagen original frente a la de prueba.", // Help_Tip_SoftProofCompare
     L"¡Nueva versión disponible!", // Dialog_UpdateTitle
     L"v%s está listo.", // Dialog_UpdateContent
@@ -4247,9 +4188,7 @@ static const LanguageTable Table_ES = {
     L"Más tarde", // Dialog_ButtonLater
     L"Estrella en GitHub", // Dialog_ButtonStar
     L"QuickView está hecho con amor", // Dialog_Update_LoveTitle
-    L"Yo mantengo QuickView en mi tiempo libre porque creo que Windows "
-      L"merece un visor más rápido y limpio. Si disfrutas de esta "
-      L"actualización, la mayor contribución es darnos una estrella en GitHub.", // Dialog_Update_LoveMessage
+    L"Yo mantengo QuickView en mi tiempo libre porque creo que Windows " L"merece un visor más rápido y limpio. Si disfrutas de esta " L"actualización, la mayor contribución es darnos una estrella en GitHub.", // Dialog_Update_LoveMessage
     L"Compare Mode", // Help_Item_Compare
     L"Primera / Última imagen", // Help_Item_FirstLast
     L"PHYSICAL ATTRIBUTES", // HUD_Group_Physical
@@ -4270,6 +4209,13 @@ static const LanguageTable Table_ES = {
     L"High: ", // HUD_Label_High
     L"Low: ", // HUD_Label_Low
     L"Ref: ", // HUD_Label_Ref
+    L"Tira de imágenes de galería (Hover superior)", // Settings_Header_GalleryTrigger
+    L"Modo de activación", // Settings_Label_GalleryTriggerMode
+    L"Hover automático", // Settings_Option_GalleryTriggerAuto
+    L"Hover en punto caliente", // Settings_Option_GalleryTriggerDelay
+    L"Clic en punto caliente", // Settings_Option_GalleryTriggerClick
+    L"Deshabilitado", // Settings_Option_GalleryTriggerDisable
+    L"Esta función se desactiva automáticamente cuando la ventana es menor de 600x450.", // Settings_Tooltip_GalleryTrigger
 };
 
 // ----------------------------------------------------------------
@@ -4306,8 +4252,7 @@ static const LanguageTable Table_FR = {
     L"Always save re-encoded", // Checkbox_AlwaysSaveLossy
     L"Cannot decode HEIC - Install HEVC Video Extension", // OSD_HEICCodecMissing
     L"Cannot decode HEIC", // Dialog_HEICTitle
-    L"Your system is missing the HEVC Video Extension.\nQuickView uses "
-      L"system hardware acceleration for best performance.", // Dialog_HEICContent
+    L"Your system is missing the HEVC Video Extension.\nQuickView uses " L"system hardware acceleration for best performance.", // Dialog_HEICContent
     L"Get Extension (Free)", // Dialog_HEICGetExtension
     L"Cancel", // Dialog_Cancel
     L"General", // Settings_Tab_General
@@ -4323,10 +4268,7 @@ static const LanguageTable Table_FR = {
     L"Descending", // Settings_Label_SortDescending
     L"Confirm Delete", // Settings_Label_ConfirmDel
     L"Portable Mode / Cleanup", // Settings_Label_Portable
-    L"Portable Mode / Registry Cleanup:\nWhen enabled, QuickView runs in "
-      L"portable mode. It will automatically clean up existing registry "
-      L"associations, disable automatic registry modification, and store "
-      L"configuration files in the application directory instead of AppData.", // Settings_Tooltip_Portable
+    L"Portable Mode / Registry Cleanup:\nWhen enabled, QuickView runs in " L"portable mode. It will automatically clean up existing registry " L"associations, disable automatic registry modification, and store " L"configuration files in the application directory instead of AppData.", // Settings_Tooltip_Portable
     L"Span Displays", // Settings_Label_SpanDisplays
     L"UI Scale", // Settings_Label_UIScale
     L"Restart required", // Settings_Status_RestartRequired
@@ -4574,12 +4516,7 @@ static const LanguageTable Table_FR = {
     L"Couleurs avancées (HDR)", // Settings_Label_AdvancedColor
     L"Mappage de tons HDR", // Settings_Label_HdrToneMapping
     L"Spline Knee Point", // Settings_Label_HdrSplineKnee
-    L"Stratégie de mappage de tons HDR (Tone Mapping) :\nDétermine comment les "
-      L"images HDR sont affichées lorsqu'elles dépassent les capacités du "
-      L"moniteur.\nSpline : Atténuation des hautes lumières haute fidélité "
-      L"utilisant une spline par morceaux (Recommandé).\nColorimétrique : "
-      L"Mappage de luminance strict ; les hautes lumières dépassant la limite "
-      L"du moniteur sont tronquées.\nBT.2390 (EETF) : Courbe ITU-R BT.2390 EETF pour un mappage de tons haute fidélité.", // Settings_Tooltip_HdrToneMapping
+    L"Stratégie de mappage de tons HDR (Tone Mapping) :\nDétermine comment les " L"images HDR sont affichées lorsqu'elles dépassent les capacités du " L"moniteur.\nSpline : Atténuation des hautes lumières haute fidélité " L"utilisant une spline par morceaux (Recommandé).\nColorimétrique : " L"Mappage de luminance strict ; les hautes lumières dépassant la limite " L"du moniteur sont tronquées.\nBT.2390 (EETF) : Courbe ITU-R BT.2390 EETF pour un mappage de tons haute fidélité.", // Settings_Tooltip_HdrToneMapping
     L"0 = Auto (Calculated based on image luminance).\nThe value represents the ratio of the monitor's peak luminance. Brightness below this knee point maps 1:1, while brightness above is smoothly compressed using a spline curve.\n(Recommended: 0.4 - 0.75)", // Settings_Tooltip_HdrSplineKnee
     L"Luminosité maximale HDR (Nits)", // Settings_Label_HdrPeakNitsOverride
     L"Réglez sur 0 pour utiliser la luminosité détectée par le système.", // Settings_Tooltip_HdrPeakNitsOverride
@@ -4705,16 +4642,12 @@ static const LanguageTable Table_FR = {
     L"Edit", // Help_Desc_Edit
     L"Tips & Glossary", // Help_Header_Tips
     L"Note: Shortcuts apply to the current window only. Settings are global.", // Help_Tip_ContextScope
-    L"Rotation: 'Edge Adapted' means minor cropping to align with codec "
-      L"blocks (lossless). 'Lossy' means re-encoding is required.", // Help_Tip_Rotation
-    L"Video Wall (Ctrl+F11): Spans all screens. If the close button is "
-      L"hidden, double-click anywhere to exit.", // Help_Tip_VideoWall
+    L"Rotation: 'Edge Adapted' means minor cropping to align with codec " L"blocks (lossless). 'Lossy' means re-encoding is required.", // Help_Tip_Rotation
+    L"Video Wall (Ctrl+F11): Spans all screens. If the close button is " L"hidden, double-click anywhere to exit.", // Help_Tip_VideoWall
     L"Mode Calque / Mode Pellicule : Une fois activé, l'image devient semi-transparente, révélant les éléments sous-jacents. Vous pouvez ajuster sa taille ou sa transparence. Cliquez sur le commutateur de passage de la souris dans la barre d'outils pour passer en mode passage, où toutes les entrées sauf Shift+Esc sont ignorées, transformant QuickView en une superposition transparente.", // Help_Tip_DesignerMode
     L"Alerte de gamme : détecte les couleurs hors gamme pour l'écran cible ou le profil d'épreuvage. Modes : Désactivé, épreuvage écran uniquement, ou tout (par défaut : épreuvage écran). Basculement via la barre d'outils.", // Help_Tip_GamutDetection
-    L"RAW: Shows embedded preview by default for speed. Click the RAW button "
-      L"to fully decode (colors may vary).", // Help_Tip_Raw
-    L"JPEG Quality: Estimated value (e.g. Photoshop 100% ≈ 98%). May vary "
-      L"slightly from save settings due to encoder variance, which is normal.", // Help_Tip_JpegQ
+    L"RAW: Shows embedded preview by default for speed. Click the RAW button " L"to fully decode (colors may vary).", // Help_Tip_Raw
+    L"JPEG Quality: Estimated value (e.g. Photoshop 100% ≈ 98%). May vary " L"slightly from save settings due to encoder variance, which is normal.", // Help_Tip_JpegQ
     L"Comparaison d'épreuves : entrer en mode comparaison alors que le mode épreuvage est actif comparera automatiquement l'image originale et l'image épreuve.", // Help_Tip_SoftProofCompare
     L"New Version Available!", // Dialog_UpdateTitle
     L"v%s is ready.", // Dialog_UpdateContent
@@ -4723,10 +4656,7 @@ static const LanguageTable Table_FR = {
     L"Later", // Dialog_ButtonLater
     L"Star on GitHub", // Dialog_ButtonStar
     L"QuickView is built with love", // Dialog_Update_LoveTitle
-    L"I maintain QuickView in my spare time because I believe Windows "
-      L"deserves a faster, cleaner viewer. I don't have a marketing budget or "
-      L"a team. If you enjoy this update, the biggest contribution you can "
-      L"make is to Star us on GitHub or share it with a friend.", // Dialog_Update_LoveMessage
+    L"I maintain QuickView in my spare time because I believe Windows " L"deserves a faster, cleaner viewer. I don't have a marketing budget or " L"a team. If you enjoy this update, the biggest contribution you can " L"make is to Star us on GitHub or share it with a friend.", // Dialog_Update_LoveMessage
     L"Compare Mode", // Help_Item_Compare
     L"First / Last Image", // Help_Item_FirstLast
     L"PHYSICAL ATTRIBUTES", // HUD_Group_Physical
@@ -4747,6 +4677,13 @@ static const LanguageTable Table_FR = {
     L"High: ", // HUD_Label_High
     L"Low: ", // HUD_Label_Low
     L"Ref: ", // HUD_Label_Ref
+    L"Film fixe de la galerie (Survol supérieur)", // Settings_Header_GalleryTrigger
+    L"Mode de déclenchement", // Settings_Label_GalleryTriggerMode
+    L"Survol automatique", // Settings_Option_GalleryTriggerAuto
+    L"Survol du point chaud", // Settings_Option_GalleryTriggerDelay
+    L"Clic sur le point chaud", // Settings_Option_GalleryTriggerClick
+    L"Désactivé", // Settings_Option_GalleryTriggerDisable
+    L"Cette fonctionnalité est automatiquement désactivée lorsque la fenêtre est plus petite que 600x450.", // Settings_Tooltip_GalleryTrigger
 };
 
 // ----------------------------------------------------------------
@@ -5208,6 +5145,13 @@ void Apply(const LanguageTable& t) {
   HUD_Label_High = t.HUD_Label_High;
   HUD_Label_Low = t.HUD_Label_Low;
   HUD_Label_Ref = t.HUD_Label_Ref;
+  Settings_Header_GalleryTrigger = t.Settings_Header_GalleryTrigger;
+  Settings_Label_GalleryTriggerMode = t.Settings_Label_GalleryTriggerMode;
+  Settings_Option_GalleryTriggerAuto = t.Settings_Option_GalleryTriggerAuto;
+  Settings_Option_GalleryTriggerDelay = t.Settings_Option_GalleryTriggerDelay;
+  Settings_Option_GalleryTriggerClick = t.Settings_Option_GalleryTriggerClick;
+  Settings_Option_GalleryTriggerDisable = t.Settings_Option_GalleryTriggerDisable;
+  Settings_Tooltip_GalleryTrigger = t.Settings_Tooltip_GalleryTrigger;
 }
 
 void Init() { SetLanguage(Language::Auto); }

@@ -1690,15 +1690,15 @@ void SettingsOverlay::BuildMenu() {
 
     // Gallery Trigger Mode (Top Hover Gallery)
     {
-        const bool isChinese = (g_config.Language == 2 || g_config.Language == 3 || (g_config.Language == 0 && (PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_CHINESE)));
-        const wchar_t* galleryHeader = isChinese ? L"图库胶片带 (顶部悬浮)" : L"Gallery Filmstrip (Top Hover)";
-        const wchar_t* galleryLabel = isChinese ? L"触发模式" : L"Trigger Mode";
-        const wchar_t* optHover = isChinese ? L"自动悬停" : L"Auto Hover";
-        const wchar_t* optDelay = isChinese ? L"热点停留" : L"Hotspot Hover";
-        const wchar_t* optClick = isChinese ? L"点击热点" : L"Click Hotspot";
-
-        tabControl.items.push_back({ galleryHeader, OptionType::Header });
-        SettingsItem itemGalleryTrigger = { galleryLabel, OptionType::Segment, nullptr, nullptr, &g_config.GalleryTriggerMode, nullptr, 0, 0, { optHover, optDelay, optClick } };
+        tabControl.items.push_back({ AppStrings::Settings_Header_GalleryTrigger, OptionType::Header });
+        SettingsItem itemGalleryTrigger = { AppStrings::Settings_Label_GalleryTriggerMode, OptionType::ComboBox, nullptr, nullptr, &g_config.GalleryTriggerMode };
+        itemGalleryTrigger.options = {
+            AppStrings::Settings_Option_GalleryTriggerAuto,
+            AppStrings::Settings_Option_GalleryTriggerDelay,
+            AppStrings::Settings_Option_GalleryTriggerClick,
+            AppStrings::Settings_Option_GalleryTriggerDisable
+        };
+        itemGalleryTrigger.tooltipText = AppStrings::Settings_Tooltip_GalleryTrigger;
         itemGalleryTrigger.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) { SaveConfig(); };
         tabControl.items.push_back(itemGalleryTrigger);
     }
