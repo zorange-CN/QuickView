@@ -241,6 +241,30 @@ std::wstring SettingsOverlay::GetRealWindowsVersion() {
     return L"Windows (Unknown)"; 
 }
 
+void SettingsOverlay::AutoSwitchToCustom() {
+    if (g_config.ThemeMode != 3) {
+        // [UX Fix] If moving from a fixed preset (Dark/Light), capture its current tint 
+        // into custom slots to prevent the UI from jumping to Dark base (system default)
+        // when ThemeMode becomes 3 (Custom).
+        if (g_config.GlassTintProfile == 0) {
+            bool currentlyLight = IsLightThemeActive();
+            auto& base = currentlyLight ? PRESET_LIGHT : PRESET_DARK;
+            g_config.GlassCustomTintR = base.tintColor.r;
+            g_config.GlassCustomTintG = base.tintColor.g;
+            g_config.GlassCustomTintB = base.tintColor.b;
+            g_config.GlassTintProfile = 1; // Lock the current visual base
+        }
+        
+        g_config.ThemeMode = 3;
+        // Defer layout change (adding new rows) until mouse release if currently dragging
+        if (!m_pActiveSlider) m_pendingRebuild = true;
+        else m_needsLayoutRebuild = true;
+    }
+    g_config.EnforceGlassSafetyLimits();
+    SaveConfig();
+    if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
+}
+
 
 static bool IsWindows11() {
     static int cache = -1;
@@ -987,15 +1011,15 @@ void SettingsOverlay::BuildMenu() {
         L"German", 
         L"Spanish" 
     };
-    itemLang.onChange = [this]() {
+    itemLang.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         AppStrings::SetLanguage((AppStrings::Language)g_config.Language);
         // Force resource recreation to apply new font size
-        m_brushBg.Reset();
+        overlay->m_brushBg.Reset();
         
         // Defer rebuild to avoid destroying the active item while executing its callback (Use-After-Free fix)
-        m_pendingRebuild = true;
+        overlay->m_pendingRebuild = true;
         
-        if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
+        if (overlay->m_hwnd) InvalidateRect(overlay->m_hwnd, NULL, FALSE);
     };
     tabGeneral.items.push_back(itemLang);
 
@@ -1003,8 +1027,8 @@ void SettingsOverlay::BuildMenu() {
     
     // Single Instance with restart notification
     SettingsItem itemSI = { AppStrings::Settings_Label_SingleInstance, OptionType::Toggle, &g_config.SingleInstance };
-    itemSI.onChange = [this]() {
-        SetItemStatus(AppStrings::Settings_Label_SingleInstance, AppStrings::Settings_Status_RestartRequired, D2D1::ColorF(0.9f, 0.7f, 0.1f));
+    itemSI.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
+        overlay->SetItemStatus(AppStrings::Settings_Label_SingleInstance, AppStrings::Settings_Status_RestartRequired, D2D1::ColorF(0.9f, 0.7f, 0.1f));
     };
     tabGeneral.items.push_back(itemSI);
     
@@ -1014,14 +1038,14 @@ void SettingsOverlay::BuildMenu() {
     tabGeneral.items.push_back({ AppStrings::Settings_Group_Habits, OptionType::Header });
 
     SettingsItem itemLoop = { AppStrings::Settings_Label_NavLoopMode, OptionType::Toggle, &g_config.NavLoop };
-    itemLoop.onChange = []() {
+    itemLoop.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         g_runtime.NavLoop = g_config.NavLoop;
         SaveConfig();
     };
     tabGeneral.items.push_back(itemLoop);
 
     SettingsItem itemTraverse = { AppStrings::Settings_Option_NavThrough, OptionType::Toggle, &g_config.NavTraverse };
-    itemTraverse.onChange = []() {
+    itemTraverse.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         g_runtime.NavTraverse = g_config.NavTraverse;
         SaveConfig();
     };
@@ -1033,14 +1057,14 @@ void SettingsOverlay::BuildMenu() {
         AppStrings::Settings_Option_SortModified, AppStrings::Settings_Option_SortDateTaken,
         AppStrings::Settings_Option_SortSize, AppStrings::Settings_Option_SortType
     };
-    itemSortOrder.onChange = []() {
+    itemSortOrder.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         g_runtime.SortOrder = g_config.SortOrder;
         SaveConfig();
     };
     tabGeneral.items.push_back(itemSortOrder);
 
     SettingsItem itemSortDesc = { AppStrings::Settings_Label_SortDescending, OptionType::Toggle, &g_config.SortDescending };
-    itemSortDesc.onChange = []() {
+    itemSortDesc.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         g_runtime.SortDescending = g_config.SortDescending;
         SaveConfig();
     };
@@ -1050,7 +1074,7 @@ void SettingsOverlay::BuildMenu() {
     
     // [Phase 2] Cross-Monitor
     SettingsItem itemCrossMon = { AppStrings::Settings_Label_SpanDisplays, OptionType::Toggle, &g_config.EnableCrossMonitor };
-    itemCrossMon.onChange = []() {
+    itemCrossMon.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         g_runtime.CrossMonitorMode = g_config.EnableCrossMonitor;
     };
     tabGeneral.items.push_back(itemCrossMon);
@@ -1060,7 +1084,7 @@ void SettingsOverlay::BuildMenu() {
     // Portable Mode with file move logic
     SettingsItem itemPortable = { AppStrings::Settings_Label_Portable, OptionType::Toggle, &g_config.PortableMode };
     itemPortable.tooltipText = AppStrings::Settings_Tooltip_Portable;
-    itemPortable.onChange = [this]() {
+    itemPortable.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         wchar_t exePath[MAX_PATH]; GetModuleFileNameW(nullptr, exePath, MAX_PATH);
         std::wstring exeDir = exePath;
         size_t lastSlash = exeDir.find_last_of(L"\\/");
@@ -1076,7 +1100,7 @@ void SettingsOverlay::BuildMenu() {
             // User turned ON: Move config from AppData to ExeDir
             if (!CheckWritePermission(exeDir)) {
                 g_config.PortableMode = false; // Revert
-                SetItemStatus(AppStrings::Settings_Label_Portable, AppStrings::Settings_Status_NoWritePerm, D2D1::ColorF(0.8f, 0.1f, 0.1f));
+                overlay->SetItemStatus(AppStrings::Settings_Label_Portable, AppStrings::Settings_Status_NoWritePerm, D2D1::ColorF(0.8f, 0.1f, 0.1f));
                 return;
             }
             
@@ -1096,12 +1120,12 @@ void SettingsOverlay::BuildMenu() {
             // 3. AppData missing, ExeDir exists: Do NOT overwrite (preserve existing portable config)
             
             // Clean up registry entries (portable mode should not use registry)
-            UnregisterAssociations();
+            overlay->UnregisterAssociations();
             
-            // Use deferred rebuild to avoid crash (don't call RebuildMenu directly in onChange)
-            m_pendingRebuild = true;
+            // Use deferred rebuild to avoid crash (don't call overlay->RebuildMenu directly in onChange)
+            overlay->m_pendingRebuild = true;
             
-            SetItemStatus(AppStrings::Settings_Label_Portable, AppStrings::Settings_Status_Enabled, D2D1::ColorF(0.1f, 0.8f, 0.1f));
+            overlay->SetItemStatus(AppStrings::Settings_Label_Portable, AppStrings::Settings_Status_Enabled, D2D1::ColorF(0.1f, 0.8f, 0.1f));
         } else {
             // User turned OFF: Move config from ExeDir to AppData
             // Ensure AppData directory exists
@@ -1121,9 +1145,9 @@ void SettingsOverlay::BuildMenu() {
             SaveConfig();
             
             // Use deferred rebuild to update File Association button state
-            m_pendingRebuild = true;
+            overlay->m_pendingRebuild = true;
             
-            SetItemStatus(AppStrings::Settings_Label_Portable, L"", D2D1::ColorF(1,1,1));
+            overlay->SetItemStatus(AppStrings::Settings_Label_Portable, L"", D2D1::ColorF(1,1,1));
         }
     };
     tabGeneral.items.push_back(itemPortable);
@@ -1147,7 +1171,7 @@ void SettingsOverlay::BuildMenu() {
         0,
         { AppStrings::Settings_Option_ThemeAuto, AppStrings::Settings_Option_ThemeDark, AppStrings::Settings_Option_ThemeLight, AppStrings::Settings_Option_ThemeCustom }
     };
-    itemThemeMode.onChange = [this]() {
+    itemThemeMode.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         if (g_config.ThemeMode < 0 || g_config.ThemeMode > 3) g_config.ThemeMode = 0;
         // Preset-driven full overwrite: clicking Dark/Light applies the built-in preset
         if (g_config.ThemeMode == 1) {
@@ -1156,12 +1180,12 @@ void SettingsOverlay::BuildMenu() {
             g_config.ApplyThemePreset(PRESET_LIGHT);
         }
         SaveConfig();
-        if (m_hwnd) {
-            ApplyWindowTheme(m_hwnd);
-            InvalidateRect(m_hwnd, nullptr, FALSE);
+        if (overlay->m_hwnd) {
+            ApplyWindowTheme(overlay->m_hwnd);
+            InvalidateRect(overlay->m_hwnd, nullptr, FALSE);
         }
         // Needs a rebuild to show/hide the custom color choosers
-        m_pendingRebuild = true;
+        overlay->m_pendingRebuild = true;
     };
     tabTheme.items.push_back(itemThemeMode);
 
@@ -1171,7 +1195,7 @@ void SettingsOverlay::BuildMenu() {
 
     // Rounded Corners
     SettingsItem itemRounded = { AppStrings::Settings_Label_RoundedCorners, OptionType::Toggle, &g_config.RoundedCorners, {} };
-    itemRounded.onChange = []() {
+    itemRounded.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         bool enable = g_config.RoundedCorners;
         DWM_WINDOW_CORNER_PREFERENCE preference = enable ? DWMWCP_ROUND : DWMWCP_DONOTROUND;
         DwmSetWindowAttribute(GetActiveWindow(), DWMWA_WINDOW_CORNER_PREFERENCE, &preference, sizeof(preference));
@@ -1187,7 +1211,7 @@ void SettingsOverlay::BuildMenu() {
         // Custom Theme Mode options
         SettingsItem itemAccentColor = { AppStrings::Settings_Label_AccentColor, OptionType::CustomColorRow, nullptr, {} };
         itemAccentColor.pFloatVal = &g_config.ThemeCustomAccentR;
-        itemAccentColor.onChange = [this]() {
+        itemAccentColor.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
             HWND hwnd = GetActiveWindow();
             static COLORREF acrCustClr[16]; 
             CHOOSECOLOR cc{}; cc.lStructSize = sizeof(cc);
@@ -1201,14 +1225,14 @@ void SettingsOverlay::BuildMenu() {
                 g_config.ThemeCustomAccentG = GetGValue(cc.rgbResult) / 255.0f;
                 g_config.ThemeCustomAccentB = GetBValue(cc.rgbResult) / 255.0f;
                 SaveConfig();
-                if (m_hwnd) InvalidateRect(m_hwnd, nullptr, FALSE);
+                if (overlay->m_hwnd) InvalidateRect(overlay->m_hwnd, nullptr, FALSE);
             }
         };
         tabTheme.items.push_back(itemAccentColor);
 
         SettingsItem itemTextColor = { AppStrings::Settings_Label_TextColor, OptionType::CustomColorRow };
         itemTextColor.pFloatVal = &g_config.ThemeCustomTextR;
-        itemTextColor.onChange = [this]() {
+        itemTextColor.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
             HWND hwnd = GetActiveWindow();
             static COLORREF acrCustClr[16]; 
             CHOOSECOLOR cc{};
@@ -1223,7 +1247,7 @@ void SettingsOverlay::BuildMenu() {
                 g_config.ThemeCustomTextG = GetGValue(cc.rgbResult) / 255.0f;
                 g_config.ThemeCustomTextB = GetBValue(cc.rgbResult) / 255.0f;
                 SaveConfig();
-                if (m_hwnd) InvalidateRect(m_hwnd, nullptr, FALSE);
+                if (overlay->m_hwnd) InvalidateRect(overlay->m_hwnd, nullptr, FALSE);
             }
         };
         tabTheme.items.push_back(itemTextColor);
@@ -1232,7 +1256,7 @@ void SettingsOverlay::BuildMenu() {
     // Geek Glass Engine
     tabTheme.items.push_back({ AppStrings::Settings_Header_GeekGlass, OptionType::Header });
     SettingsItem itemEnableGlass = { AppStrings::Settings_Label_EnableGeekGlass, OptionType::Toggle, &g_config.EnableGeekGlass };
-    itemEnableGlass.onChange = [this]() { 
+    itemEnableGlass.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) { 
         if (!g_config.EnableGeekGlass) {
             // [Requirement] Save current config as backup before disabling glass
             g_config.GlassBlurSigmaBackup = g_config.GlassBlurSigma;
@@ -1266,12 +1290,12 @@ void SettingsOverlay::BuildMenu() {
         }
 
         SaveConfig(); 
-        this->m_pendingRebuild = true; // Rebuild to update isDisabled states of dependent sliders
+        overlay->m_pendingRebuild = true; // Rebuild to update isDisabled states of dependent sliders
     };
     tabTheme.items.push_back(itemEnableGlass);
 
     SettingsItem itemAnimations = { AppStrings::Settings_Label_GlassUIAnimations, OptionType::Toggle, &g_config.GlassUIAnimations };
-    itemAnimations.onChange = []() { SaveConfig(); };
+    itemAnimations.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) { SaveConfig(); };
     tabTheme.items.push_back(itemAnimations);
     
     // --- Core Material Parameters ---
@@ -1281,35 +1305,12 @@ void SettingsOverlay::BuildMenu() {
     static float fZero = 0.0f;
  
     // Auto-switch to Custom lambda (shared by all material sliders)
-    auto autoSwitchToCustom = [this]() {
-        if (g_config.ThemeMode != 3) {
-            // [UX Fix] If moving from a fixed preset (Dark/Light), capture its current tint 
-            // into custom slots to prevent the UI from jumping to Dark base (system default)
-            // when ThemeMode becomes 3 (Custom).
-            if (g_config.GlassTintProfile == 0) {
-                bool currentlyLight = IsLightThemeActive();
-                auto& base = currentlyLight ? PRESET_LIGHT : PRESET_DARK;
-                g_config.GlassCustomTintR = base.tintColor.r;
-                g_config.GlassCustomTintG = base.tintColor.g;
-                g_config.GlassCustomTintB = base.tintColor.b;
-                g_config.GlassTintProfile = 1; // Lock the current visual base
-            }
-            
-            g_config.ThemeMode = 3;
-            // Defer layout change (adding new rows) until mouse release if currently dragging
-            if (!m_pActiveSlider) m_pendingRebuild = true;
-            else m_needsLayoutRebuild = true;
-        }
-        g_config.EnforceGlassSafetyLimits();
-        SaveConfig();
-        if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
-    };
     
     SettingsItem itemBlur = { AppStrings::Settings_Label_BlurSigma, OptionType::Slider, nullptr, &g_config.GlassBlurSigma };
     itemBlur.minVal = 1.0f;
     itemBlur.maxVal = 40.0f;
     itemBlur.displayFormat = L"%.0f px";
-    itemBlur.onChange = autoSwitchToCustom;
+    itemBlur.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) { overlay->AutoSwitchToCustom(); };
     if (glassDisabled) {
         itemBlur.isDisabled = true;
         itemBlur.pFloatVal = &fZero;
@@ -1322,7 +1323,7 @@ void SettingsOverlay::BuildMenu() {
     itemTintAlpha.maxVal = 1.0f;
     itemTintAlpha.displayFormat = L"%.0f %%";
     itemTintAlpha.tooltipText = AppStrings::Settings_Tooltip_TintDensity;
-    itemTintAlpha.onChange = autoSwitchToCustom;
+    itemTintAlpha.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) { overlay->AutoSwitchToCustom(); };
     // [Fix] Keep TintAlpha enabled in Traditional Mode to allow background density control
     tabTheme.items.push_back(itemTintAlpha);
 
@@ -1331,7 +1332,7 @@ void SettingsOverlay::BuildMenu() {
     itemSpecular.maxVal = 0.50f;
     itemSpecular.displayFormat = L"%.0f %%";
     itemSpecular.tooltipText = AppStrings::Settings_Tooltip_SpecularOpacity;
-    itemSpecular.onChange = autoSwitchToCustom;
+    itemSpecular.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) { overlay->AutoSwitchToCustom(); };
     if (glassDisabled) {
         itemSpecular.isDisabled = true;
         itemSpecular.pFloatVal = &fZero;
@@ -1343,7 +1344,7 @@ void SettingsOverlay::BuildMenu() {
     itemShadow.maxVal = 1.0f;
     itemShadow.displayFormat = L"%.0f %%";
     itemShadow.tooltipText = AppStrings::Settings_Tooltip_ShadowIntensity;
-    itemShadow.onChange = autoSwitchToCustom;
+    itemShadow.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) { overlay->AutoSwitchToCustom(); };
     if (glassDisabled) {
         itemShadow.isDisabled = true;
         itemShadow.pFloatVal = &fZero;
@@ -1353,22 +1354,22 @@ void SettingsOverlay::BuildMenu() {
     // Vector Stroke Config
     tabTheme.items.push_back({ AppStrings::Settings_Header_VectorAssets, OptionType::Header });
     SettingsItem itemStroke = { AppStrings::Settings_Label_VectorStrokeWeight, OptionType::Segment, nullptr, nullptr, &g_config.GlassVectorStrokeWeightIndex, nullptr, 0, 0, { AppStrings::Settings_Option_StrokeStandard, AppStrings::Settings_Option_StrokeFine } };
-    itemStroke.onChange = [this]() { SaveConfig(); if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE); };
+    itemStroke.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) { SaveConfig(); if (overlay->m_hwnd) InvalidateRect(overlay->m_hwnd, NULL, FALSE); };
     tabTheme.items.push_back(itemStroke);
 
     // Glass Tint Profile (Base Color)
     tabTheme.items.push_back({ AppStrings::Settings_Header_GlassTint, OptionType::Header });
     SettingsItem itemTintProfile = { AppStrings::Settings_Label_TintProfile, OptionType::Segment, nullptr, nullptr, &g_config.GlassTintProfile, nullptr, 0, 0, { AppStrings::Settings_Option_TintAuto, AppStrings::Settings_Option_TintCustom } };
-    itemTintProfile.onChange = [this, autoSwitchToCustom]() { 
-        autoSwitchToCustom();
-        this->m_pendingRebuild = true; 
+    itemTintProfile.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) { 
+        overlay->AutoSwitchToCustom();
+        overlay->m_pendingRebuild = true; 
     };
     tabTheme.items.push_back(itemTintProfile);
 
     if (g_config.GlassTintProfile == 1) {
         SettingsItem itemTintColor = { AppStrings::Settings_Label_GlassCustomColor, OptionType::CustomColorRow };
         itemTintColor.pFloatVal = &g_config.GlassCustomTintR;
-        itemTintColor.onChange = [autoSwitchToCustom]() {
+        itemTintColor.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
             HWND hwnd = GetActiveWindow();
             static COLORREF acrCustClr[16]; 
             CHOOSECOLOR cc{};
@@ -1382,7 +1383,7 @@ void SettingsOverlay::BuildMenu() {
                 g_config.GlassCustomTintR = GetRValue(cc.rgbResult) / 255.0f;
                 g_config.GlassCustomTintG = GetGValue(cc.rgbResult) / 255.0f;
                 g_config.GlassCustomTintB = GetBValue(cc.rgbResult) / 255.0f;
-                autoSwitchToCustom();
+                overlay->AutoSwitchToCustom();
             }
         };
         tabTheme.items.push_back(itemTintColor);
@@ -1394,25 +1395,25 @@ void SettingsOverlay::BuildMenu() {
     SettingsItem itemOsd = { AppStrings::Settings_Label_OsdDensity, OptionType::Slider, nullptr, &g_config.GlassOsdOpacity };
     itemOsd.minVal = 0.0f; itemOsd.maxVal = 100.0f; itemOsd.displayFormat = L"%.0f %%";
     itemOsd.tooltipText = AppStrings::Settings_Tooltip_OsdDensity;
-    itemOsd.onChange = autoSwitchToCustom;
+    itemOsd.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) { overlay->AutoSwitchToCustom(); };
     tabTheme.items.push_back(itemOsd);
 
     SettingsItem itemPanels = { AppStrings::Settings_Label_PanelsDensity, OptionType::Slider, nullptr, &g_config.GlassPanelsOpacity };
     itemPanels.minVal = 0.0f; itemPanels.maxVal = 100.0f; itemPanels.displayFormat = L"%.0f %%";
     itemPanels.tooltipText = AppStrings::Settings_Tooltip_PanelsDensity;
-    itemPanels.onChange = autoSwitchToCustom;
+    itemPanels.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) { overlay->AutoSwitchToCustom(); };
     tabTheme.items.push_back(itemPanels);
 
     SettingsItem itemModals = { AppStrings::Settings_Label_ModalsDensity, OptionType::Slider, nullptr, &g_config.GlassModalsOpacity };
     itemModals.minVal = 0.0f; itemModals.maxVal = 100.0f; itemModals.displayFormat = L"%.0f %%";
     itemModals.tooltipText = AppStrings::Settings_Tooltip_ModalsDensity;
-    itemModals.onChange = autoSwitchToCustom;
+    itemModals.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) { overlay->AutoSwitchToCustom(); };
     tabTheme.items.push_back(itemModals);
 
     SettingsItem itemMenus = { AppStrings::Settings_Label_MenusDensity, OptionType::Slider, nullptr, &g_config.GlassMenusOpacity };
     itemMenus.minVal = 0.0f; itemMenus.maxVal = 100.0f; itemMenus.displayFormat = L"%.0f %%";
     itemMenus.tooltipText = AppStrings::Settings_Tooltip_MenusDensity;
-    itemMenus.onChange = autoSwitchToCustom;
+    itemMenus.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) { overlay->AutoSwitchToCustom(); };
     tabTheme.items.push_back(itemMenus);
 
 
@@ -1420,14 +1421,14 @@ void SettingsOverlay::BuildMenu() {
     SettingsItem itemThemeManage = { AppStrings::Settings_Header_ThemeManagement, OptionType::DualActionButton };
     itemThemeManage.buttonText = AppStrings::Settings_Action_ImportTheme;
     itemThemeManage.buttonText2 = AppStrings::Settings_Action_ExportTheme;
-    itemThemeManage.onChange = [this]() {
-        if (QuickView::UI::ThemeSystem::ImportTheme(m_hwnd, g_config)) {
+    itemThemeManage.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
+        if (QuickView::UI::ThemeSystem::ImportTheme(overlay->m_hwnd, g_config)) {
              g_runtime.SyncFrom(g_config);
-             this->m_pendingRebuild = true; 
+             overlay->m_pendingRebuild = true; 
         }
     };
-    itemThemeManage.onChange2 = [this]() {
-        if (QuickView::UI::ThemeSystem::ExportTheme(m_hwnd, g_config)) {
+    itemThemeManage.onChange2 = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
+        if (QuickView::UI::ThemeSystem::ExportTheme(overlay->m_hwnd, g_config)) {
              // Maybe show a success status?
         }
     };
@@ -1445,7 +1446,7 @@ void SettingsOverlay::BuildMenu() {
     
     // Canvas Color Segment
     SettingsItem itemColor = { AppStrings::Settings_Label_CanvasColor, OptionType::Segment, nullptr, nullptr, BindEnum(&g_config.CanvasColor), nullptr, 0, 0, {AppStrings::Settings_Option_Black, AppStrings::Settings_Option_White, AppStrings::Settings_Option_Grid, AppStrings::Settings_Option_Custom} };
-    itemColor.onChange = [this]() { this->m_pendingRebuild = true; }; // Rebuild to show/hide sliders
+    itemColor.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) { overlay->m_pendingRebuild = true; }; // Rebuild to show/hide sliders
     tabVisuals.items.push_back(itemColor);
     
     // Grid & Custom Color Row
@@ -1453,7 +1454,7 @@ void SettingsOverlay::BuildMenu() {
         // Custom Mode: Show merged row
         SettingsItem itemRow = { AppStrings::Settings_Label_Overlay, OptionType::CustomColorRow };
         // We can use onChange as the Color Picker callback
-        itemRow.onChange = []() {
+        itemRow.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
              HWND hwnd = GetActiveWindow();
             static COLORREF acrCustClr[16]; 
             CHOOSECOLOR cc{};
@@ -1480,7 +1481,7 @@ void SettingsOverlay::BuildMenu() {
     
     tabVisuals.items.push_back({ AppStrings::Settings_Header_Window, OptionType::Header });
     SettingsItem itemSmooth = { AppStrings::Settings_Label_EnableSmoothScaling, OptionType::Toggle, &g_config.EnableSmoothScaling };
-    itemSmooth.onChange = []() { SaveConfig(); };
+    itemSmooth.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) { SaveConfig(); };
     tabVisuals.items.push_back(itemSmooth);
 
 
@@ -1495,7 +1496,7 @@ void SettingsOverlay::BuildMenu() {
         0,
         { AppStrings::Settings_Option_Auto, L"90%", L"100%", L"110%", L"125%" }
     };
-    itemUiScale.onChange = []() {
+    itemUiScale.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         if (g_config.UIScalePreset < 0 || g_config.UIScalePreset > 4) g_config.UIScalePreset = 0;
         SaveConfig();
     };
@@ -1505,7 +1506,7 @@ void SettingsOverlay::BuildMenu() {
     
     // Always on Top with immediate effect
     SettingsItem itemAoT = { AppStrings::Settings_Label_AlwaysOnTop, OptionType::Toggle, &g_config.AlwaysOnTop };
-    itemAoT.onChange = []() {
+    itemAoT.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         HWND hwnd = GetActiveWindow();
         SetWindowPos(hwnd, g_config.AlwaysOnTop ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
     };
@@ -1538,7 +1539,7 @@ void SettingsOverlay::BuildMenu() {
     tabVisuals.items.push_back({ AppStrings::Settings_Header_WindowLock, OptionType::Header });
     SettingsItem itemLockWindow = { AppStrings::Settings_Label_LockWindow, OptionType::Toggle, &g_config.LockWindowSize };
     itemLockWindow.tooltipText = AppStrings::Settings_Tooltip_LockWindow;
-    itemLockWindow.onChange = []() {
+    itemLockWindow.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         g_runtime.LockWindowSize = g_config.LockWindowSize;
         g_toolbar.SetLockState(g_runtime.LockWindowSize);
         if (!g_config.LockWindowSize) {
@@ -1550,7 +1551,7 @@ void SettingsOverlay::BuildMenu() {
 
     tabVisuals.items.push_back({ AppStrings::Settings_Label_KeepWindowSizeOnNav, OptionType::Toggle, &g_config.KeepWindowSizeOnNav });
     SettingsItem itemRememberWindow = { AppStrings::Settings_Label_RememberLastWindowSizeAndPosition, OptionType::Toggle, &g_config.RememberLastWindowSizeAndPosition };
-    itemRememberWindow.onChange = []() {
+    itemRememberWindow.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         if (g_config.RememberLastWindowSizeAndPosition) {
             g_config.LockWindowSize = true;
             g_runtime.LockWindowSize = true;
@@ -1565,7 +1566,7 @@ void SettingsOverlay::BuildMenu() {
     
     // [Fix] Lock Toolbar: Update runtime state immediately
     SettingsItem itemToolbar = { AppStrings::Settings_Label_LockToolbar, OptionType::Toggle, &g_config.LockBottomToolbar };
-    itemToolbar.onChange = []() {
+    itemToolbar.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         g_toolbar.SetPinned(g_config.LockBottomToolbar);
         
         // [Fix] Update Layout to refresh Pin Button Icon state
@@ -1581,7 +1582,7 @@ void SettingsOverlay::BuildMenu() {
     
     // Exif Panel Mode (Syncs to Runtime ShowInfoPanel)
     SettingsItem itemExif = { AppStrings::Settings_Label_ExifMode, OptionType::Segment, nullptr, nullptr, BindEnum(&g_config.ExifPanelMode), nullptr, 0, 0, {AppStrings::Settings_Option_Off, AppStrings::Settings_Option_Lite, AppStrings::Settings_Option_Full} };
-    itemExif.onChange = []() {
+    itemExif.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         if (g_config.ExifPanelMode == 0) {
             g_runtime.ShowInfoPanel = false;
         } else {
@@ -1597,7 +1598,7 @@ void SettingsOverlay::BuildMenu() {
     
     SettingsItem itemFsZoom = { AppStrings::Settings_Label_FullScreenZoomMode, OptionType::Segment, nullptr, nullptr, &g_config.FullScreenZoomMode, nullptr, 0, 0, {AppStrings::Settings_Option_FitScreen, AppStrings::Settings_Option_AutoFit} };
     itemFsZoom.tooltipText = AppStrings::Settings_Tooltip_ZoomAuto;
-    itemFsZoom.onChange = []() {
+    itemFsZoom.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         SaveConfig();
         HWND hwnd = GetActiveWindow();
                 if (hwnd && (IsZoomed(hwnd) || g_isFullScreen)) {
@@ -1615,7 +1616,7 @@ void SettingsOverlay::BuildMenu() {
     tabVisuals.items.push_back({ AppStrings::Settings_Header_Professional, OptionType::Header });
     SettingsItem itemShowDirtyRect = { AppStrings::Settings_Label_ShowDirtyRect, OptionType::Toggle, &g_config.ShowDirtyRectButton };
     itemShowDirtyRect.tooltipText = AppStrings::Settings_Tooltip_ShowDirtyRect;
-    itemShowDirtyRect.onChange = []() { SaveConfig(); };
+    itemShowDirtyRect.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) { SaveConfig(); };
     tabVisuals.items.push_back(itemShowDirtyRect);
 
 
@@ -1641,7 +1642,7 @@ void SettingsOverlay::BuildMenu() {
     // Left Drag: {Window=0, Pan=1} -> {WindowDrag=1, PanImage=2}
     // Using g_config.LeftDragIndex helper (0=Window, 1=Pan)
     SettingsItem itemLeftDrag = { AppStrings::Settings_Label_LeftDrag, OptionType::Segment, nullptr, nullptr, &g_config.LeftDragIndex, nullptr, 0, 0, {AppStrings::Settings_Option_Window, AppStrings::Settings_Option_Pan} };
-    itemLeftDrag.onChange = []() {
+    itemLeftDrag.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         // Convert index to enum and set interlock
         if (g_config.LeftDragIndex == 0) {
             g_config.LeftDragAction = MouseAction::WindowDrag;
@@ -1657,7 +1658,7 @@ void SettingsOverlay::BuildMenu() {
     
     // Middle Drag: {Window=0, Pan=1} -> {WindowDrag=1, PanImage=2}
     SettingsItem itemMiddleDrag = { AppStrings::Settings_Label_MiddleDrag, OptionType::Segment, nullptr, nullptr, &g_config.MiddleDragIndex, nullptr, 0, 0, {AppStrings::Settings_Option_Window, AppStrings::Settings_Option_Pan} };
-    itemMiddleDrag.onChange = []() {
+    itemMiddleDrag.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         // Convert index to enum and set interlock
         if (g_config.MiddleDragIndex == 0) {
             g_config.MiddleDragAction = MouseAction::WindowDrag;
@@ -1673,7 +1674,7 @@ void SettingsOverlay::BuildMenu() {
     
     // Middle Click: {None=0, Exit=1} -> {None=0, ExitApp=3}
     SettingsItem itemMiddleClick = { AppStrings::Settings_Label_MiddleClick, OptionType::Segment, nullptr, nullptr, &g_config.MiddleClickIndex, nullptr, 0, 0, {AppStrings::Settings_Option_None, AppStrings::Settings_Option_Exit} };
-    itemMiddleClick.onChange = []() {
+    itemMiddleClick.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         if (g_config.MiddleClickIndex == 0) {
             g_config.MiddleClickAction = MouseAction::None;
         } else {
@@ -1699,7 +1700,7 @@ void SettingsOverlay::BuildMenu() {
 
     // Zoom Mode In
     SettingsItem itemZoomIn = { AppStrings::Settings_Label_ZoomModeIn, OptionType::ComboBox, nullptr, nullptr, BindEnum(&g_config.ZoomModeIn), nullptr, 0, 0, {AppStrings::Settings_Option_ZoomAuto, AppStrings::Settings_Option_Linear, AppStrings::Settings_Option_Nearest, AppStrings::Settings_Option_HighQualityCubic} };
-    itemZoomIn.onChange = []() {
+    itemZoomIn.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         SaveConfig();
         extern HWND g_mainHwnd;
         extern void RefreshImageDisplay(HWND hwnd);
@@ -1709,7 +1710,7 @@ void SettingsOverlay::BuildMenu() {
 
     // Zoom Mode Out
     SettingsItem itemZoomOut = { AppStrings::Settings_Label_ZoomModeOut, OptionType::ComboBox, nullptr, nullptr, BindEnum(&g_config.ZoomModeOut), nullptr, 0, 0, {AppStrings::Settings_Option_ZoomAuto, AppStrings::Settings_Option_Linear, AppStrings::Settings_Option_Nearest, AppStrings::Settings_Option_HighQualityCubic} };
-    itemZoomOut.onChange = []() {
+    itemZoomOut.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         SaveConfig();
         extern HWND g_mainHwnd;
         extern void RefreshImageDisplay(HWND hwnd);
@@ -1722,7 +1723,7 @@ void SettingsOverlay::BuildMenu() {
     
     // Force Raw Decode (moved to Render group)
     SettingsItem itemRaw = { AppStrings::Settings_Label_ForceRaw, OptionType::Toggle, &g_config.ForceRawDecode };
-    itemRaw.onChange = []() { g_runtime.ForceRawDecode = g_config.ForceRawDecode; };
+    itemRaw.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) { g_runtime.ForceRawDecode = g_config.ForceRawDecode; };
     tabImage.items.push_back(itemRaw);
 
     // --- 2. Color Management (CMS) Group ---
@@ -1731,7 +1732,7 @@ void SettingsOverlay::BuildMenu() {
     // CMS - Color Management System Toggle
     SettingsItem itemCmsToggle = { AppStrings::Settings_Label_CMS, OptionType::Toggle, &g_config.ColorManagement };
     itemCmsToggle.tooltipText = AppStrings::Settings_Tooltip_CMS;
-    itemCmsToggle.onChange = []() {
+    itemCmsToggle.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         SaveConfig();
         extern HWND g_mainHwnd;
         extern void RefreshImageDisplay(HWND hwnd);
@@ -1745,7 +1746,7 @@ void SettingsOverlay::BuildMenu() {
     SettingsItem itemCmsIntent = { AppStrings::Settings_Label_CmsIntent, OptionType::ComboBox, nullptr, nullptr, &g_config.CmsRenderingIntent, nullptr, 0, 0,
         { AppStrings::Settings_Option_CmsIntentPerceptual, AppStrings::Settings_Option_CmsIntentRelative } };
     itemCmsIntent.tooltipText = AppStrings::Settings_Tooltip_CmsIntent;
-    itemCmsIntent.onChange = []() {
+    itemCmsIntent.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         SaveConfig();
         extern HWND g_mainHwnd;
         extern void RefreshImageDisplay(HWND hwnd);
@@ -1755,7 +1756,7 @@ void SettingsOverlay::BuildMenu() {
 
     // Default CMS Fallback (for unprofiled images)
     SettingsItem itemCmsFallback = { AppStrings::Settings_Label_CmsFallback, OptionType::ComboBox, nullptr, nullptr, BindEnum(&g_config.CmsDefaultFallback), nullptr, 0, 0, {AppStrings::Settings_Option_CmssRGB, AppStrings::Settings_Option_CmsP3, AppStrings::Settings_Option_CmsAdobeRGB, AppStrings::Settings_Option_CmsProPhoto} };
-    itemCmsFallback.onChange = []() {
+    itemCmsFallback.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         SaveConfig();
         extern void RequestRepaint(QuickView::PaintLayer layerMask);
         RequestRepaint(QuickView::PaintLayer::All);
@@ -1769,7 +1770,7 @@ void SettingsOverlay::BuildMenu() {
         std::wstring filename = g_config.CustomSoftProofProfile.substr(g_config.CustomSoftProofProfile.find_last_of(L"/\\") + 1);
         itemCustomProof.buttonText = filename.length() > 20 ? (filename.substr(0, 17) + L"...") : filename;
     }
-    itemCustomProof.onChange = []() {
+    itemCustomProof.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         extern HWND g_mainHwnd;
         wchar_t filename[MAX_PATH] = { 0 };
         OPENFILENAMEW ofn;
@@ -1791,7 +1792,7 @@ void SettingsOverlay::BuildMenu() {
     // Gamut Overflow / Color Spill Warning Detection
     SettingsItem itemGamutWarning = { AppStrings::Settings_Label_GamutWarning, OptionType::Segment, nullptr, nullptr, &g_config.GamutWarningMode, nullptr, 0, 0, { AppStrings::Settings_Option_Off, AppStrings::Settings_Option_SoftProofing, AppStrings::Settings_Option_All } };
     itemGamutWarning.tooltipText = AppStrings::Settings_Tooltip_GamutWarning;
-    itemGamutWarning.onChange = []() {
+    itemGamutWarning.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         SaveConfig();
         extern HWND g_mainHwnd;
         extern void ScheduleGamutWarningAnalysis(HWND hwnd);
@@ -1804,7 +1805,7 @@ void SettingsOverlay::BuildMenu() {
     // Gamut Overflow Auto Prompt
     SettingsItem itemGamutAutoPrompt = { AppStrings::Settings_Label_GamutAutoPrompt, OptionType::Toggle, &g_config.GamutWarningAutoPrompt };
     itemGamutAutoPrompt.tooltipText = AppStrings::Settings_Tooltip_GamutAutoPrompt;
-    itemGamutAutoPrompt.onChange = []() {
+    itemGamutAutoPrompt.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         SaveConfig();
     };
     tabImage.items.push_back(itemGamutAutoPrompt);
@@ -1812,7 +1813,7 @@ void SettingsOverlay::BuildMenu() {
     // Gamut Warning Highlight Color Customizer
     SettingsItem itemGamutColor = { AppStrings::Settings_Label_GamutColor, OptionType::CustomColorRow };
     itemGamutColor.pFloatVal = &g_config.GamutWarningColorR;
-    itemGamutColor.onChange = []() {
+    itemGamutColor.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         extern HWND g_mainHwnd;
         CHOOSECOLORW cc{};
         cc.lStructSize = sizeof(CHOOSECOLORW);
@@ -1843,7 +1844,7 @@ void SettingsOverlay::BuildMenu() {
     // Advanced Color (HDR & Wide Color Gamut switcher)
     SettingsItem itemAdvColor = { AppStrings::Settings_Label_AdvancedColor, OptionType::Segment, nullptr, nullptr, &g_config.AdvancedColorMode, nullptr, 0, 0, {AppStrings::Settings_Option_Off, AppStrings::Settings_Option_On, AppStrings::Settings_Option_Auto} };
     itemAdvColor.tooltipText = AppStrings::Settings_Tooltip_AdvancedColor;
-    itemAdvColor.onChange = []() {
+    itemAdvColor.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         SaveConfig();
         extern HWND g_mainHwnd;
         extern FireAndForget LoadImageAsync(HWND hwnd, std::wstring path, bool showOSD = true, QuickView::BrowseDirection dir = QuickView::BrowseDirection::IDLE);
@@ -1864,13 +1865,13 @@ void SettingsOverlay::BuildMenu() {
     itemExposure.minVal = 0.18f;
     itemExposure.maxVal = 10.0f;
     itemExposure.displayFormat = L"%.2fx";
-    itemExposure.onChange = []() {
+    itemExposure.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
       extern HWND g_mainHwnd;
       extern void RefreshImageDisplay(HWND hwnd);
       RefreshImageDisplay(g_mainHwnd);
       SaveConfig();
     };
-    itemExposure.onReset = []() {
+    itemExposure.onReset = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
       g_config.Exposure = 1.0f;
       SaveConfig();
       extern HWND g_mainHwnd;
@@ -1883,10 +1884,10 @@ void SettingsOverlay::BuildMenu() {
     SettingsItem itemHdrToneMapping = { AppStrings::Settings_Label_HdrToneMapping, OptionType::ComboBox, nullptr, nullptr, &g_config.HdrToneMappingMode, nullptr, 0, 0,
         { AppStrings::Settings_Option_HdrSpline, AppStrings::Settings_Option_HdrColorimetric, AppStrings::Settings_Option_HdrLegacyReinhard } };
     itemHdrToneMapping.tooltipText = AppStrings::Settings_Tooltip_HdrToneMapping;
-    itemHdrToneMapping.onChange = [this]() {
+    itemHdrToneMapping.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         SaveConfig();
-        this->m_pendingRebuild = true;
-        this->m_needsLayoutRebuild = true;
+        overlay->m_pendingRebuild = true;
+        overlay->m_needsLayoutRebuild = true;
         extern HWND g_mainHwnd;
         extern void RefreshImageDisplay(HWND hwnd);
         RefreshImageDisplay(g_mainHwnd);
@@ -1899,21 +1900,21 @@ void SettingsOverlay::BuildMenu() {
     itemHdrSplineKnee.maxVal = 1.0f;
     itemHdrSplineKnee.displayFormat = L"%.2f";
     itemHdrSplineKnee.isDisabled = (g_config.HdrToneMappingMode != 0);
-    itemHdrSplineKnee.onChange2 = []() {
+    itemHdrSplineKnee.onChange2 = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         extern HWND g_mainHwnd;
         extern void RefreshImageDisplay(HWND hwnd);
         RefreshImageDisplay(g_mainHwnd);
     };
-    itemHdrSplineKnee.onChange = []() {
+    itemHdrSplineKnee.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         SaveConfig();
         extern HWND g_mainHwnd;
         extern void RefreshImageDisplay(HWND hwnd);
         RefreshImageDisplay(g_mainHwnd);
     };
-    itemHdrSplineKnee.onReset = [this]() {
+    itemHdrSplineKnee.onReset = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         g_config.HdrSplineKnee = 0.0f;
         SaveConfig();
-        this->m_pendingRebuild = true;
+        overlay->m_pendingRebuild = true;
         extern HWND g_mainHwnd;
         extern void RefreshImageDisplay(HWND hwnd);
         RefreshImageDisplay(g_mainHwnd);
@@ -1926,7 +1927,7 @@ void SettingsOverlay::BuildMenu() {
     itemHdrPeak.minVal = 0.0f;
     itemHdrPeak.maxVal = 2000.0f;
     itemHdrPeak.displayFormat = L"%.0f nits";
-    itemHdrPeak.onChange = []() {
+    itemHdrPeak.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         extern void RefreshHdrOverrideSettings(HWND hwnd);
         extern HWND g_mainHwnd;
         RefreshHdrOverrideSettings(g_mainHwnd);
@@ -1944,7 +1945,7 @@ void SettingsOverlay::BuildMenu() {
     SettingsItem itemHdrPercentile = { AppStrings::Settings_Label_HdrPeakPercentile, OptionType::ComboBox, nullptr, nullptr, &s_hdrPercentileIdx, nullptr, 0, 0,
         { AppStrings::Settings_Option_HdrPeakPercentile_100, AppStrings::Settings_Option_HdrPeakPercentile_99995, AppStrings::Settings_Option_HdrPeakPercentile_999 } };
     itemHdrPercentile.tooltipText = AppStrings::Settings_Tooltip_HdrPeakPercentile;
-    itemHdrPercentile.onChange = []() {
+    itemHdrPercentile.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         if (s_hdrPercentileIdx == 0) g_config.HdrPeakPercentile = 100.0f;
         else if (s_hdrPercentileIdx == 1) g_config.HdrPeakPercentile = 99.995f;
         else if (s_hdrPercentileIdx == 2) g_config.HdrPeakPercentile = 99.9f;
@@ -1962,13 +1963,13 @@ void SettingsOverlay::BuildMenu() {
     itemDesatRange.minVal = 0.0f;
     itemDesatRange.maxVal = 1.0f;
     itemDesatRange.displayFormat = L"%.2f";
-    itemDesatRange.onChange = []() {
+    itemDesatRange.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
       extern HWND g_mainHwnd;
       extern void RefreshImageDisplay(HWND hwnd);
       RefreshImageDisplay(g_mainHwnd);
       SaveConfig();
     };
-    itemDesatRange.onReset = []() {
+    itemDesatRange.onReset = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
       g_config.HdrDesatThreshold = 0.18f;
       SaveConfig();
       extern HWND g_mainHwnd;
@@ -1983,13 +1984,13 @@ void SettingsOverlay::BuildMenu() {
     itemDesatStrength.minVal = 0.0f;
     itemDesatStrength.maxVal = 1.0f;
     itemDesatStrength.displayFormat = L"%.2f";
-    itemDesatStrength.onChange = []() {
+    itemDesatStrength.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
       extern HWND g_mainHwnd;
       extern void RefreshImageDisplay(HWND hwnd);
       RefreshImageDisplay(g_mainHwnd);
       SaveConfig();
     };
-    itemDesatStrength.onReset = []() {
+    itemDesatStrength.onReset = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
       g_config.HdrMaxDesat = 0.75f;
       SaveConfig();
       extern HWND g_mainHwnd;
@@ -2013,7 +2014,7 @@ void SettingsOverlay::BuildMenu() {
         itemFileAssoc.isDisabled = true;
         itemFileAssoc.disabledText = AppStrings::Settings_Status_DisabledInPortable;
     } else {
-        itemFileAssoc.onChange = []() {
+        itemFileAssoc.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
             SettingsOverlay::RegisterAssociations();
         };
     }
@@ -2025,7 +2026,7 @@ void SettingsOverlay::BuildMenu() {
         std::wstring filename = g_config.CustomEditorPath.substr(g_config.CustomEditorPath.find_last_of(L"/\\") + 1);
         itemCustomEditor.buttonText = filename.length() > 20 ? (filename.substr(0, 17) + L"...") : filename;
     }
-    itemCustomEditor.onChange = []() {
+    itemCustomEditor.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         extern HWND g_mainHwnd;
         wchar_t filename[MAX_PATH] = { 0 };
         OPENFILENAMEW ofn;
@@ -2060,7 +2061,7 @@ void SettingsOverlay::BuildMenu() {
     // [Prefetch System]
     tabAdvanced.items.push_back({ AppStrings::Settings_Header_Performance, OptionType::Header });
     SettingsItem itemPrefetch = { AppStrings::Settings_Label_Prefetch, OptionType::Segment, nullptr, nullptr, &g_config.PrefetchGear, nullptr, 0, 0, {AppStrings::Settings_Option_Off, AppStrings::Settings_Option_Auto, AppStrings::Settings_Option_Eco, AppStrings::Settings_Option_Balanced, AppStrings::Settings_Option_Ultra} };
-    itemPrefetch.onChange = [this]() {
+    itemPrefetch.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
          // Apply Policy Immediately
          if (g_pImageEngine) {
              ImageEngine::PrefetchPolicy policy;
@@ -2099,14 +2100,14 @@ void SettingsOverlay::BuildMenu() {
              } else {
                  status = AppStrings::Settings_Option_Off;
              }
-             SetItemStatus(AppStrings::Settings_Label_Prefetch, status, D2D1::ColorF(0.1f, 0.8f, 0.1f));
+             overlay->SetItemStatus(AppStrings::Settings_Label_Prefetch, status, D2D1::ColorF(0.1f, 0.8f, 0.1f));
          }
     };
     tabAdvanced.items.push_back(itemPrefetch);
 
     SettingsItem itemMemoryReclaim = { AppStrings::Settings_Label_MemoryReclaim, OptionType::Segment, nullptr, nullptr, &g_config.MemoryReclaimStrategy, nullptr, 0, 0, {AppStrings::Settings_Option_MemSmart, AppStrings::Settings_Option_MemAggressive, AppStrings::Settings_Option_MemOnDemand} };
     itemMemoryReclaim.tooltipText = AppStrings::Settings_Tooltip_MemoryReclaim;
-    itemMemoryReclaim.onChange = []() {
+    itemMemoryReclaim.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
          SaveConfig();
          // Runtime will naturally apply this on the next cycle, or we can force a shrink
          extern void QuickView_TryReclaimMemory();
@@ -2122,7 +2123,7 @@ void SettingsOverlay::BuildMenu() {
     itemReset.buttonText = AppStrings::Settings_Action_Restore;
     itemReset.buttonActivatedText = AppStrings::Settings_Action_Done;
     itemReset.isDestructive = true;
-    itemReset.onChange = [this]() {
+    itemReset.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
          // 1. Delete Config Files
          wchar_t exePath[MAX_PATH]; GetModuleFileNameW(nullptr, exePath, MAX_PATH);
          std::wstring exeDir = exePath;
@@ -2139,16 +2140,16 @@ void SettingsOverlay::BuildMenu() {
          
          // 3. Sync Runtime & Refresh UI
          g_runtime.SyncFrom(g_config);
-         this->m_pendingRebuild = true; 
-         this->m_needsLayoutRebuild = true;
-         if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
+         overlay->m_pendingRebuild = true; 
+         overlay->m_needsLayoutRebuild = true;
+         if (overlay->m_hwnd) InvalidateRect(overlay->m_hwnd, NULL, FALSE);
          
          // 4. Force UI refresh
          // 4. Force UI refresh
-         m_pendingRebuild = true;
-         m_pendingResetFeedback = true;
+         overlay->m_pendingRebuild = true;
+         overlay->m_pendingResetFeedback = true;
          
-         // 5. Visual Feedback - Deferred to Render()
+         // 5. Visual Feedback - Deferred to overlay->Render()
     };
     tabAdvanced.items.push_back(itemReset);
 
@@ -2216,7 +2217,7 @@ void SettingsOverlay::BuildMenu() {
         itemUpdate.buttonText = AppStrings::Settings_Action_CheckUpdates;
     }
 
-    itemUpdate.onChange = [this]() {
+    itemUpdate.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
          if (UpdateManager::Get().GetStatus() == UpdateStatus::NewVersionFound) {
              std::string v = UpdateManager::Get().GetRemoteVersion().version;
              std::string log = UpdateManager::Get().GetRemoteVersion().changelog;
@@ -2227,15 +2228,15 @@ void SettingsOverlay::BuildMenu() {
                  MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), &w[0], sz);
                  return w;
              };
-             m_updateVersion = to_wide(v);
-             m_updateLog = to_wide(log);
-             m_toastScrollY = 0.0f;
-             m_showUpdateToast = true;
-             SetVisible(false); // Close Settings to focus on Update (Fixes visibility/focus issues)
+             overlay->m_updateVersion = to_wide(v);
+             overlay->m_updateLog = to_wide(log);
+             overlay->m_toastScrollY = 0.0f;
+             overlay->m_showUpdateToast = true;
+             overlay->SetVisible(false); // Close Settings to focus on Update (Fixes visibility/focus issues)
          } else {
              UpdateManager::Get().StartBackgroundCheck(0); 
              // Force slight visual feedback
-             SetItemStatus(AppStrings::Settings_Action_CheckUpdates, AppStrings::Settings_Status_Checking, D2D1::ColorF(0.5f, 0.5f, 0.5f));
+             overlay->SetItemStatus(AppStrings::Settings_Action_CheckUpdates, AppStrings::Settings_Status_Checking, D2D1::ColorF(0.5f, 0.5f, 0.5f));
          }
     };
     tabAbout.items.push_back(itemUpdate);
@@ -3288,7 +3289,7 @@ bool SettingsOverlay::OnMouseWheel(float delta) {
         if (*m_pHoverItem->pFloatVal < m_pHoverItem->minVal) *m_pHoverItem->pFloatVal = m_pHoverItem->minVal;
         if (*m_pHoverItem->pFloatVal > m_pHoverItem->maxVal) *m_pHoverItem->pFloatVal = m_pHoverItem->maxVal;
         if (m_pHoverItem->onChange) {
-            m_pHoverItem->onChange();
+            m_pHoverItem->onChange(this, m_pHoverItem);
         }
         return true;
     }
@@ -3564,7 +3565,7 @@ SettingsAction SettingsOverlay::OnMouseMove(float x, float y) {
         float newVal = m_pActiveSlider->minVal + t * (m_pActiveSlider->maxVal - m_pActiveSlider->minVal);
         if (*m_pActiveSlider->pFloatVal != newVal) {
             *m_pActiveSlider->pFloatVal = newVal;
-            if (m_pActiveSlider->onChange) m_pActiveSlider->onChange();
+            if (m_pActiveSlider->onChange) m_pActiveSlider->onChange(this, m_pActiveSlider);
         }
         return SettingsAction::RepaintStatic;
     }
@@ -3737,7 +3738,7 @@ SettingsAction SettingsOverlay::OnLButtonDown(float x, float y) {
                      if (*m_pActiveCombo->pIntVal != idx) {
                          *m_pActiveCombo->pIntVal = idx;
                          [[maybe_unused]] int effectiveCmsMode = g_runtime.GetEffectiveCmsMode(g_config.ColorManagement);
-                         if (m_pActiveCombo->onChange) m_pActiveCombo->onChange();
+                         if (m_pActiveCombo->onChange) m_pActiveCombo->onChange(this, m_pActiveCombo);
                      }
                  }
                  m_pActiveCombo = nullptr; // Close
@@ -3788,7 +3789,7 @@ SettingsAction SettingsOverlay::OnLButtonDown(float x, float y) {
         if (m_pHoverItem->type == OptionType::Toggle && m_pHoverItem->pBoolVal) {
             if (m_pHoverItem->isDisabled) return SettingsAction::RepaintStatic;
             *m_pHoverItem->pBoolVal = !(*m_pHoverItem->pBoolVal);
-            if (m_pHoverItem->onChange) m_pHoverItem->onChange();
+            if (m_pHoverItem->onChange) m_pHoverItem->onChange(this, m_pHoverItem);
             return SettingsAction::RepaintAll;
         }
         // Slider
@@ -3797,7 +3798,7 @@ SettingsAction SettingsOverlay::OnLButtonDown(float x, float y) {
 
             // Check for Reset Button click (interactRect2)
             if (m_pHoverItem->onReset && m_pHoverItem->isHovered2) {
-              m_pHoverItem->onReset();
+              m_pHoverItem->onReset(this, m_pHoverItem);
               return SettingsAction::RepaintAll;
             }
 
@@ -3825,7 +3826,7 @@ SettingsAction SettingsOverlay::OnLButtonDown(float x, float y) {
                  }
                  if (idx >= 0 && idx < (int)m_pHoverItem->options.size()) {
                      *m_pHoverItem->pIntVal = idx;
-                     if (m_pHoverItem->onChange) m_pHoverItem->onChange();
+                     if (m_pHoverItem->onChange) m_pHoverItem->onChange(this, m_pHoverItem);
                  }
              }
              return SettingsAction::RepaintAll;
@@ -3834,7 +3835,7 @@ SettingsAction SettingsOverlay::OnLButtonDown(float x, float y) {
         if (m_pHoverItem->type == OptionType::ActionButton) {
             // Ignore click if disabled (but still consume the click event)
             if (m_pHoverItem->isDisabled) return SettingsAction::RepaintStatic;
-            if (m_pHoverItem->onChange) m_pHoverItem->onChange();
+            if (m_pHoverItem->onChange) m_pHoverItem->onChange(this, m_pHoverItem);
             m_pHoverItem->isActivated = true; // Mark as activated for visual feedback
             return SettingsAction::RepaintAll;
         }
@@ -3843,11 +3844,11 @@ SettingsAction SettingsOverlay::OnLButtonDown(float x, float y) {
             
             // Primary Button
             if (x >= m_pHoverItem->interactRect.left && x <= m_pHoverItem->interactRect.right) {
-                if (m_pHoverItem->onChange) m_pHoverItem->onChange();
+                if (m_pHoverItem->onChange) m_pHoverItem->onChange(this, m_pHoverItem);
             }
             // Secondary Button
             else if (x >= m_pHoverItem->interactRect2.left && x <= m_pHoverItem->interactRect2.right) {
-                if (m_pHoverItem->onChange2) m_pHoverItem->onChange2();
+                if (m_pHoverItem->onChange2) m_pHoverItem->onChange2(this, m_pHoverItem);
             }
             return SettingsAction::RepaintAll;
         }
@@ -3855,7 +3856,7 @@ SettingsAction SettingsOverlay::OnLButtonDown(float x, float y) {
         if (m_pHoverItem->type == OptionType::AboutVersionCard) {
             // Full width hit test (item.rect)
             if (x >= m_pHoverItem->rect.left && x <= m_pHoverItem->rect.right && y >= m_pHoverItem->rect.top && y <= m_pHoverItem->rect.bottom) {
-                 if (m_pHoverItem->onChange) m_pHoverItem->onChange();
+                 if (m_pHoverItem->onChange) m_pHoverItem->onChange(this, m_pHoverItem);
             }
             return SettingsAction::RepaintAll;
         }
@@ -3885,11 +3886,11 @@ SettingsAction SettingsOverlay::OnLButtonDown(float x, float y) {
                  if (x < controlX + 200.0f) {
                      g_config.CanvasShowGrid = !g_config.CanvasShowGrid;
                  } else {
-                     if (m_pHoverItem->onChange) m_pHoverItem->onChange();
+                     if (m_pHoverItem->onChange) m_pHoverItem->onChange(this, m_pHoverItem);
                  }
              } else {
                  // Generic color picker: entire area triggers color picker
-                 if (m_pHoverItem->onChange) m_pHoverItem->onChange();
+                 if (m_pHoverItem->onChange) m_pHoverItem->onChange(this, m_pHoverItem);
              }
              return SettingsAction::RepaintAll;
         }

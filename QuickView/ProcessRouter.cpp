@@ -40,7 +40,8 @@ static HANDLE               s_mutex          = nullptr;
 static std::wstring          s_pipeName;
 static std::jthread          s_serverThread;
 static HANDLE               s_connectEvent   = nullptr;  // manual-reset for cancel
-static PathCallback          s_onNewPath;
+static PathCallback          s_onNewPath      = nullptr;
+static void*                s_onNewPathContext = nullptr;
 
 static std::mutex            s_childMutex;
 static std::vector<HANDLE>   s_childHandles;        // owned process handles
@@ -125,7 +126,7 @@ static void ServerLoop(std::stop_token st) {
             buf[bytesRead / sizeof(wchar_t)] = L'\0';
             std::wstring path(buf);
             if (!path.empty() && s_onNewPath) {
-                s_onNewPath(std::move(path));
+                s_onNewPath(std::move(path), s_onNewPathContext);
             }
         }
     }
@@ -228,8 +229,9 @@ RouteResult TryRoute(bool singleInstanceEnabled) {
     return RouteResult::Independent;
 }
 
-void StartMasterServer(PathCallback onNewPath) {
-    s_onNewPath = std::move(onNewPath);
+void StartMasterServer(PathCallback onNewPath, void* context) {
+    s_onNewPath = onNewPath;
+    s_onNewPathContext = context;
     s_masterThreadId = GetCurrentThreadId();
 
     // Create manual-reset event for cancellable ConnectNamedPipe.
@@ -275,6 +277,7 @@ void ShutdownMaster() {
     }
 
     s_onNewPath = nullptr;
+    s_onNewPathContext = nullptr;
 }
 
 void SpawnViewer(const std::wstring& imagePath) {

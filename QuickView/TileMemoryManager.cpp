@@ -104,9 +104,7 @@ TileMemoryManager::SlabPtr TileMemoryManager::AllocateSmart() {
     void* ptr = Allocate();
     if (!ptr) return nullptr;
     
-    return SlabPtr(static_cast<uint8_t*>(ptr), [this](uint8_t* p) {
-        this->Free(p);
-    });
+    return SlabPtr(static_cast<uint8_t*>(ptr), SlabDeleter{this});
 }
 
 size_t TileMemoryManager::GetUsed() const {

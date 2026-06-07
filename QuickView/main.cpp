@@ -9,7 +9,6 @@ static constexpr const char* CURRENT_MODULE = "Main";
 #include "ImageEngine.h"
 #include "MappedFile.h"
 #include "UIRenderer.h"
-#include "IController.h"
 #include "AppContext.h"
 #include "CompareController.h"
 #include "DialogController.h"
@@ -5498,18 +5497,19 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, [[maybe_unused]] LPWSTR lpCm
     // SingleInstance ON  鈫?replace current image in Master's window
     // SingleInstance OFF 鈫?spawn child viewer process (Chrome multi-window)
     if (g_isMasterProcess) {
-        QuickView::ProcessRouter::StartMasterServer([hwnd](std::wstring path) {
+        QuickView::ProcessRouter::StartMasterServer([](std::wstring path, void* context) {
             // Callback runs on pipe server thread.
             if (path.empty()) return;
+            HWND h = static_cast<HWND>(context);
             if (g_config.SingleInstance) {
                 // Replace current image: marshal to UI thread via PostMessage.
                 auto* heapPath = new std::wstring(std::move(path));
-                PostMessageW(hwnd, WM_ROUTED_OPEN, 0, reinterpret_cast<LPARAM>(heapPath));
+                PostMessageW(h, WM_ROUTED_OPEN, 0, reinterpret_cast<LPARAM>(heapPath));
             } else {
                 // Multi-window: spawn independent child viewer process.
                 QuickView::ProcessRouter::SpawnViewer(path);
             }
-        });
+        }, hwnd);
     }
     ApplyWindowCornerPreference(hwnd, g_config.RoundedCorners);
     
@@ -5701,10 +5701,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, [[maybe_unused]] LPWSTR lpCm
     
     // --- Auto Update Integration ---
     UpdateManager::Get().Init(GetAppVersionUTF8());
-    UpdateManager::Get().SetCallback([hwnd](bool found, [[maybe_unused]] const VersionInfo& info) {
+    UpdateManager::Get().SetCallback([](bool found, [[maybe_unused]] const VersionInfo& info, void* context) {
         // Post status (found = 1, not found = 0)
-        PostMessage(hwnd, WM_UPDATE_FOUND, (WPARAM)found, 0); 
-    });
+        HWND h = static_cast<HWND>(context);
+        PostMessage(h, WM_UPDATE_FOUND, (WPARAM)found, 0); 
+    }, hwnd);
     if (g_config.CheckUpdates) {
         UpdateManager::Get().StartBackgroundCheck();
     }

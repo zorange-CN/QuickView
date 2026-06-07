@@ -51,7 +51,7 @@ void UpdateManager::CheckThread(int delaySeconds) {
     m_status = UpdateStatus::Checking;
     
     // Notify UI immediately that we are checking (since we reset to Idle)
-    if (m_callback) m_callback(false, VersionInfo()); 
+    if (m_callback) m_callback(false, VersionInfo(), m_callbackContext); 
 
     // 1. Check Version
     if (CheckVersion()) {
@@ -114,17 +114,17 @@ void UpdateManager::CheckThread(int delaySeconds) {
                         downloadSuccess = true;
                     } else {
                          m_status = UpdateStatus::Error;
-                         if (m_callback) m_callback(false, VersionInfo());
+                         if (m_callback) m_callback(false, VersionInfo(), m_callbackContext);
                     }
                 } else {
                     DeleteFileW(partPath.c_str()); // Clean up corrupted download
                     m_status = UpdateStatus::Error;
-                    if (m_callback) m_callback(false, VersionInfo());
+                    if (m_callback) m_callback(false, VersionInfo(), m_callbackContext);
                 }
             } else {
                  DeleteFileW(partPath.c_str());
                  m_status = UpdateStatus::Error;
-                 if (m_callback) m_callback(false, VersionInfo());
+                 if (m_callback) m_callback(false, VersionInfo(), m_callbackContext);
             }
         }
         
@@ -163,22 +163,22 @@ void UpdateManager::CheckThread(int delaySeconds) {
                    }
                    
                    if (extracted) {
-                       m_status = UpdateStatus::ReadyToInstall;
-                       if (m_callback) m_callback(true, m_remoteInfo);
-                   } else {
-                       m_status = UpdateStatus::Error; // Extraction failed
-                       if (m_callback) m_callback(false, VersionInfo());
-                   }
+                        m_status = UpdateStatus::ReadyToInstall;
+                        if (m_callback) m_callback(true, m_remoteInfo, m_callbackContext);
+                    } else {
+                        m_status = UpdateStatus::Error; // Extraction failed
+                        if (m_callback) m_callback(false, VersionInfo(), m_callbackContext);
+                    }
             } else {
                 // Direct EXE
                 m_status = UpdateStatus::ReadyToInstall;
                 m_tempPath = dest; 
-                if (m_callback) m_callback(true, m_remoteInfo);
+                if (m_callback) m_callback(true, m_remoteInfo, m_callbackContext);
             }
         }
     } else {
         m_status = UpdateStatus::UpToDate;
-        if (m_callback) m_callback(false, VersionInfo());
+        if (m_callback) m_callback(false, VersionInfo(), m_callbackContext);
     }
 }
 

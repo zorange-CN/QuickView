@@ -21,8 +21,15 @@ public:
     void* Allocate();
     void Free(void* ptr);
 
-    // Creates a unique_ptr with specific custom deleter for this manager
-    using SlabPtr = std::unique_ptr<uint8_t[], std::function<void(uint8_t*)>>;
+    struct SlabDeleter {
+        TileMemoryManager* manager = nullptr;
+        inline void operator()(uint8_t* ptr) const {
+            if (manager && ptr) {
+                manager->Free(ptr);
+            }
+        }
+    };
+    using SlabPtr = std::unique_ptr<uint8_t[], SlabDeleter>;
     SlabPtr AllocateSmart();
 
     size_t GetCapacity() const { return m_capacity * TILE_SLAB_SIZE; }

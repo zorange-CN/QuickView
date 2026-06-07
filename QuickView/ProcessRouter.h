@@ -44,8 +44,8 @@ RouteResult TryRoute(bool singleInstanceEnabled);
 // |onNewPath| is invoked on a BACKGROUND THREAD — use PostMessage to
 // marshal to the UI thread if needed.
 //
-using PathCallback = std::function<void(std::wstring path)>;
-void StartMasterServer(PathCallback onNewPath);
+using PathCallback = void (*)(std::wstring path, void* context);
+void StartMasterServer(PathCallback onNewPath, void* context);
 
 // ─── Step 3: Shutdown (before process exit) ──────────────────────────────────
 //

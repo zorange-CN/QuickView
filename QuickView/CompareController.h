@@ -8,21 +8,19 @@
 #include "AppContext.h"
 #include "CoroutineTypes.h"
 
-#include "IController.h"
-
-class CompareController : public IController {
+class CompareController {
 public:
     explicit CompareController(AppContext& context);
-    ~CompareController() override = default;
+    ~CompareController() = default;
 
-    std::optional<LRESULT> HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) override;
-    void Render(ID2D1DeviceContext* ctx) override;
+    std::optional<LRESULT> HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
+    void Render(ID2D1DeviceContext* ctx);
 
     bool RenderComposite(HWND hwnd);
     void MarkDirty();
     void EnterMode(HWND hwnd);
     void ExitMode(HWND hwnd);
-    bool IsActive() const override;
+    bool IsActive() const;
     
     ComparePane HitTest(HWND hwnd, POINT ptClient) const;
     D2D1_RECT_F GetViewport(HWND hwnd, ComparePane pane) const;

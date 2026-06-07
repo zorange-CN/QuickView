@@ -12,6 +12,8 @@
 #undef LoadImage
 #undef LoadImageW
 
+class SettingsOverlay;
+
 enum class SettingsAction {
     None,
     RepaintStatic, 
@@ -53,9 +55,9 @@ struct SettingsItem {
     std::vector<std::wstring> options = {}; 
     std::wstring displayFormat = L"";        
     
-    std::function<void()> onChange = nullptr;
-    std::function<void()> onChange2 = nullptr; 
-    std::function<void()> onReset = nullptr;
+    void (*onChange)(SettingsOverlay* overlay, SettingsItem* item) = nullptr;
+    void (*onChange2)(SettingsOverlay* overlay, SettingsItem* item) = nullptr; 
+    void (*onReset)(SettingsOverlay* overlay, SettingsItem* item) = nullptr;
 
     D2D1_RECT_F rect = {}; 
     D2D1_RECT_F interactRect = {};
@@ -186,6 +188,7 @@ private:
     bool m_isHoveringCopyright = false;
     
     std::wstring GetRealWindowsVersion();
+    void AutoSwitchToCustom();
 
     bool m_showUpdateToast = false;
     std::wstring m_updateVersion;

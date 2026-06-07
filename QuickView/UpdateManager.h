@@ -42,8 +42,8 @@ public:
     bool IsUpdatePending() const { return m_isUpdatePending; }
 
     // Callback to HUD
-    using UpdateCallback = std::function<void(bool hasUpdate, const VersionInfo&)>;
-    void SetCallback(UpdateCallback cb) { m_callback = cb; }
+    using UpdateCallback = void (*)(bool hasUpdate, const VersionInfo& info, void* context);
+    void SetCallback(UpdateCallback cb, void* context) { m_callback = cb; m_callbackContext = context; }
 
 private:
     UpdateManager() = default;
@@ -68,5 +68,6 @@ private:
     bool m_shouldRestartNow = false;    // True if "Restart Now"
     std::wstring m_tempPath;            // Path to downloaded installer
 
-    UpdateCallback m_callback;
+    UpdateCallback m_callback = nullptr;
+    void* m_callbackContext = nullptr;
 };
