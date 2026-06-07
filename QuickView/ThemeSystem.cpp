@@ -1,7 +1,6 @@
 #include "pch.h"
 #include "ThemeSystem.h"
 #include "yyjson.h"
-#include <fstream>
 #include <commdlg.h>
 #include <shlwapi.h>
 
@@ -74,13 +73,14 @@ namespace QuickView::UI::ThemeSystem {
         size_t len;
         char *json = yyjson_mut_write(doc, YYJSON_WRITE_PRETTY, &len);
         if (json) {
-            std::ofstream ofs(path);
-            if (ofs.is_open()) {
-                ofs.write(json, len);
-                ofs.close();
+            HANDLE hFile = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+            if (hFile != INVALID_HANDLE_VALUE) {
+                DWORD written = 0;
+                BOOL res = WriteFile(hFile, json, static_cast<DWORD>(len), &written, nullptr);
+                CloseHandle(hFile);
                 free(json);
                 yyjson_mut_doc_free(doc);
-                return true;
+                return res && (written == len);
             }
             free(json);
         }
@@ -92,9 +92,21 @@ namespace QuickView::UI::ThemeSystem {
         std::wstring path = ShowFileDialog(hwnd, false);
         if (path.empty()) return false;
 
-        std::ifstream ifs(path, std::ios::binary);
-        if (!ifs.is_open()) return false;
-        std::string json_str((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+        HANDLE hFile = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (hFile == INVALID_HANDLE_VALUE) return false;
+
+        LARGE_INTEGER fileSize;
+        if (!GetFileSizeEx(hFile, &fileSize) || fileSize.QuadPart <= 0) {
+            CloseHandle(hFile);
+            return false;
+        }
+
+        std::string json_str(static_cast<size_t>(fileSize.QuadPart), '\0');
+        DWORD bytesRead = 0;
+        BOOL success = ReadFile(hFile, json_str.data(), static_cast<DWORD>(fileSize.QuadPart), &bytesRead, nullptr);
+        CloseHandle(hFile);
+
+        if (!success || bytesRead != fileSize.QuadPart) return false;
 
         yyjson_doc *doc = yyjson_read(json_str.c_str(), json_str.size(), 0);
         if (!doc) return false;

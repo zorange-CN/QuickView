@@ -5,8 +5,6 @@
 #include <vector>
 #include <algorithm>
 #include <array>
-#include <fstream>
-
 #include "RenderEngine.h"
 #define CURRENT_MODULE "RenderEngine"
 #include "QuickViewETW.h"
@@ -224,21 +222,27 @@ bool BuildSrgbProfileBytes(std::vector<uint8_t> *outBytes) {
   }
   profilePath.resize(wcsnlen(profilePath.c_str(), pathLen));
 
-  std::ifstream stream(profilePath, std::ios::binary);
-  if (!stream) {
+  HANDLE hFile = CreateFileW(profilePath.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (hFile == INVALID_HANDLE_VALUE) {
     return false;
   }
 
-  stream.seekg(0, std::ios::end);
-  const std::streamoff size = stream.tellg();
-  if (size <= 0) {
+  LARGE_INTEGER fileSize;
+  if (!GetFileSizeEx(hFile, &fileSize) || fileSize.QuadPart <= 0) {
+    CloseHandle(hFile);
     return false;
   }
 
-  outBytes->resize(static_cast<size_t>(size));
-  stream.seekg(0, std::ios::beg);
-  stream.read(reinterpret_cast<char *>(outBytes->data()), size);
-  return stream.good() || stream.eof();
+  outBytes->resize(static_cast<size_t>(fileSize.QuadPart));
+  DWORD bytesRead = 0;
+  BOOL success = ReadFile(hFile, outBytes->data(), static_cast<DWORD>(fileSize.QuadPart), &bytesRead, nullptr);
+  CloseHandle(hFile);
+  
+  if (!success || bytesRead != fileSize.QuadPart) {
+    outBytes->clear();
+    return false;
+  }
+  return true;
 }
 
 bool TryLoadProfileBytesForPrimaries(QuickView::ColorPrimaries primaries,
@@ -1536,14 +1540,21 @@ bool ResolveTargetProfileBlob(const CRenderEngine::GamutWarningAnalysisOptions& 
 
   if (options.targetKind == CRenderEngine::GamutTargetKind::ProofTarget &&
       options.enableSoftProofing && !options.softProofProfilePath.empty()) {
-    std::ifstream stream(options.softProofProfilePath, std::ios::binary);
-    if (!stream) return false;
-    stream.seekg(0, std::ios::end);
-    const std::streamoff size = stream.tellg();
-    if (size <= 0) return false;
-    outBlob->bytes.resize(static_cast<size_t>(size));
-    stream.seekg(0, std::ios::beg);
-    stream.read(reinterpret_cast<char*>(outBlob->bytes.data()), size);
+    HANDLE hFile = CreateFileW(options.softProofProfilePath.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (hFile == INVALID_HANDLE_VALUE) return false;
+    LARGE_INTEGER fileSize;
+    if (!GetFileSizeEx(hFile, &fileSize) || fileSize.QuadPart <= 0) {
+      CloseHandle(hFile);
+      return false;
+    }
+    outBlob->bytes.resize(static_cast<size_t>(fileSize.QuadPart));
+    DWORD bytesRead = 0;
+    BOOL success = ReadFile(hFile, outBlob->bytes.data(), static_cast<DWORD>(fileSize.QuadPart), &bytesRead, nullptr);
+    CloseHandle(hFile);
+    if (!success || bytesRead != fileSize.QuadPart) {
+      outBlob->bytes.clear();
+      return false;
+    }
     outBlob->name = options.softProofProfilePath.substr(
         options.softProofProfilePath.find_last_of(L"\\/") == std::wstring::npos
             ? 0
@@ -1560,19 +1571,25 @@ bool ResolveTargetProfileBlob(const CRenderEngine::GamutWarningAnalysisOptions& 
       TryGetMonitorProfilePath(options.displayState, &monitorProfilePath) &&
       !monitorProfilePath.empty() &&
       !IsGenericSrgbProfilePath(monitorProfilePath)) {
-    std::ifstream stream(monitorProfilePath, std::ios::binary);
-    if (stream) {
-      stream.seekg(0, std::ios::end);
-      const std::streamoff size = stream.tellg();
-      if (size > 0) {
-        outBlob->bytes.resize(static_cast<size_t>(size));
-        stream.seekg(0, std::ios::beg);
-        stream.read(reinterpret_cast<char*>(outBlob->bytes.data()), size);
-        outBlob->name = monitorProfilePath.substr(
-            monitorProfilePath.find_last_of(L"\\/") == std::wstring::npos
-                ? 0
-                : monitorProfilePath.find_last_of(L"\\/") + 1);
-        return !outBlob->bytes.empty();
+    HANDLE hFile = CreateFileW(monitorProfilePath.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (hFile != INVALID_HANDLE_VALUE) {
+      LARGE_INTEGER fileSize;
+      if (GetFileSizeEx(hFile, &fileSize) && fileSize.QuadPart > 0) {
+        outBlob->bytes.resize(static_cast<size_t>(fileSize.QuadPart));
+        DWORD bytesRead = 0;
+        BOOL success = ReadFile(hFile, outBlob->bytes.data(), static_cast<DWORD>(fileSize.QuadPart), &bytesRead, nullptr);
+        CloseHandle(hFile);
+        if (success && bytesRead == fileSize.QuadPart) {
+          outBlob->name = monitorProfilePath.substr(
+              monitorProfilePath.find_last_of(L"\\/") == std::wstring::npos
+                  ? 0
+                  : monitorProfilePath.find_last_of(L"\\/") + 1);
+          return !outBlob->bytes.empty();
+        } else {
+          outBlob->bytes.clear();
+        }
+      } else {
+        CloseHandle(hFile);
       }
     }
   }

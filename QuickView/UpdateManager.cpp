@@ -2,8 +2,6 @@
 #include <string>
 #include <vector>
 #include <algorithm>
-#include <fstream>
-#include <ios>
 #include <ctime>
 #include "UpdateManager.h"
 #include "yyjson.h"
@@ -78,8 +76,16 @@ void UpdateManager::CheckThread(int delaySeconds) {
                     valid = false;
                 }
             } else {
-                std::ifstream f(dest, std::ios_base::binary | std::ios_base::ate);
-                if (!f.good() || f.tellg() < 100000) valid = false;
+                HANDLE hFile = CreateFileW(dest.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+                if (hFile == INVALID_HANDLE_VALUE) {
+                    valid = false;
+                } else {
+                    LARGE_INTEGER size;
+                    if (!GetFileSizeEx(hFile, &size) || size.QuadPart < 100000) {
+                        valid = false;
+                    }
+                    CloseHandle(hFile);
+                }
             }
             if (valid) {
                  cached = true;
@@ -242,10 +248,12 @@ bool UpdateManager::DownloadUpdate(const std::string& url, const std::wstring& d
     }
 
     // Write to file
-    std::ofstream outfile(destPath, std::ios_base::binary);
-    if (!outfile.is_open()) return false;
-    outfile.write(data.c_str(), data.size());
-    outfile.close();
+    HANDLE hFile = CreateFileW(destPath.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (hFile == INVALID_HANDLE_VALUE) return false;
+    DWORD written = 0;
+    BOOL res = WriteFile(hFile, data.data(), static_cast<DWORD>(data.size()), &written, nullptr);
+    CloseHandle(hFile);
+    return res && (written == data.size());
 
     return true;
 }
