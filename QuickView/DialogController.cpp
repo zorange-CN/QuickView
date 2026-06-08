@@ -173,8 +173,14 @@ void DialogController::Render(ID2D1DeviceContext* context) {
 
     // Message
     float msgTop = titleBottom + 8;
-    float msgBottom = layout.Checkbox.top - 55.0f;
-    if (m_context.Dialog.HasInput) msgBottom = layout.Input.top - 10.0f;
+    float buttonAreaY = layout.Box.bottom - 60.0f * g_uiScale;
+    float msgBottom = buttonAreaY - 10.0f * g_uiScale;
+    if (m_context.Dialog.HasCheckbox) {
+        msgBottom = layout.Checkbox.top - 10.0f * g_uiScale;
+    }
+    if (m_context.Dialog.HasInput) {
+        msgBottom = layout.Input.top - 10.0f * g_uiScale;
+    }
 
     context->DrawText(m_context.Dialog.Message.c_str(), (UINT32)m_context.Dialog.Message.length(), fmtBody.Get(), 
         D2D1::RectF(layout.Box.left + 25, msgTop, layout.Box.right - 25, msgBottom), pTextBrush.Get(), D2D1_DRAW_TEXT_OPTIONS_NONE);

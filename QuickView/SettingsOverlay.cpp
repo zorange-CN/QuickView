@@ -4,6 +4,7 @@
 #include "HelpOverlay.h"
 #include "AppStrings.h"
 #include "ImageEngine.h"
+#include "OSDState.h"
 #include <algorithm>
 #include <Shlobj.h>
 #include <commdlg.h>
@@ -1607,7 +1608,7 @@ void SettingsOverlay::BuildMenu() {
     itemFsZoom.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         SaveConfig();
         HWND hwnd = GetActiveWindow();
-                if (hwnd && (IsZoomed(hwnd) || g_isFullScreen)) {
+        if (hwnd && (IsZoomed(hwnd) || g_isFullScreen)) {
             // Forward declaration to let main.cpp handle this cleanly
             extern void ApplyFullScreenZoomMode(HWND hwnd);
             ApplyFullScreenZoomMode(hwnd);
@@ -1617,7 +1618,7 @@ void SettingsOverlay::BuildMenu() {
         }
     };
     tabVisuals.items.push_back(itemFsZoom);
- 
+    
     // Professional Tools
     tabVisuals.items.push_back({ AppStrings::Settings_Header_Professional, OptionType::Header });
     SettingsItem itemShowDirtyRect = { AppStrings::Settings_Label_ShowDirtyRect, OptionType::Toggle, &g_config.ShowDirtyRectButton };
@@ -1625,11 +1626,9 @@ void SettingsOverlay::BuildMenu() {
     itemShowDirtyRect.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) { SaveConfig(); };
     tabVisuals.items.push_back(itemShowDirtyRect);
 
-
-
     m_tabs.push_back(tabVisuals);
 
-    // --- 3. Control (操作) ---
+    // --- 3. Controls (操作) ---
     SettingsTab tabControl;
     tabControl.name = AppStrings::Settings_Tab_Controls;
     tabControl.icon = Icons::Control;
@@ -1645,40 +1644,37 @@ void SettingsOverlay::BuildMenu() {
     tabControl.items.push_back({ AppStrings::Settings_Label_WheelZoomSpeed, OptionType::Slider, nullptr, &g_config.WheelZoomSpeed, nullptr, nullptr, 5.0f, 50.0f, {}, L"%.0f%%" });
     tabControl.items.push_back({ AppStrings::Settings_Label_InvertButtons, OptionType::Toggle, &g_config.InvertXButton });
     
-    // Left Drag: {Window=0, Pan=1} -> {WindowDrag=1, PanImage=2}
-    // Using g_config.LeftDragIndex helper (0=Window, 1=Pan)
+    // Left Drag
     SettingsItem itemLeftDrag = { AppStrings::Settings_Label_LeftDrag, OptionType::Segment, nullptr, nullptr, &g_config.LeftDragIndex, nullptr, 0, 0, {AppStrings::Settings_Option_Window, AppStrings::Settings_Option_Pan} };
     itemLeftDrag.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
-        // Convert index to enum and set interlock
         if (g_config.LeftDragIndex == 0) {
             g_config.LeftDragAction = MouseAction::WindowDrag;
             g_config.MiddleDragAction = MouseAction::PanImage;
-            g_config.MiddleDragIndex = 1; // Pan
+            g_config.MiddleDragIndex = 1;
         } else {
             g_config.LeftDragAction = MouseAction::PanImage;
             g_config.MiddleDragAction = MouseAction::WindowDrag;
-            g_config.MiddleDragIndex = 0; // Window
+            g_config.MiddleDragIndex = 0;
         }
     };
     tabControl.items.push_back(itemLeftDrag);
     
-    // Middle Drag: {Window=0, Pan=1} -> {WindowDrag=1, PanImage=2}
+    // Middle Drag
     SettingsItem itemMiddleDrag = { AppStrings::Settings_Label_MiddleDrag, OptionType::Segment, nullptr, nullptr, &g_config.MiddleDragIndex, nullptr, 0, 0, {AppStrings::Settings_Option_Window, AppStrings::Settings_Option_Pan} };
     itemMiddleDrag.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
-        // Convert index to enum and set interlock
         if (g_config.MiddleDragIndex == 0) {
             g_config.MiddleDragAction = MouseAction::WindowDrag;
             g_config.LeftDragAction = MouseAction::PanImage;
-            g_config.LeftDragIndex = 1; // Pan
+            g_config.LeftDragIndex = 1;
         } else {
             g_config.MiddleDragAction = MouseAction::PanImage;
             g_config.LeftDragAction = MouseAction::WindowDrag;
-            g_config.LeftDragIndex = 0; // Window
+            g_config.LeftDragIndex = 0;
         }
     };
     tabControl.items.push_back(itemMiddleDrag);
     
-    // Middle Click: {None=0, Exit=1} -> {None=0, ExitApp=3}
+    // Middle Click
     SettingsItem itemMiddleClick = { AppStrings::Settings_Label_MiddleClick, OptionType::Segment, nullptr, nullptr, &g_config.MiddleClickIndex, nullptr, 0, 0, {AppStrings::Settings_Option_None, AppStrings::Settings_Option_Exit} };
     itemMiddleClick.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         if (g_config.MiddleClickIndex == 0) {
@@ -1693,8 +1689,8 @@ void SettingsOverlay::BuildMenu() {
     tabControl.items.push_back({ AppStrings::Settings_Label_EdgeNavClick, OptionType::Toggle, &g_config.EdgeNavClick });
     tabControl.items.push_back({ AppStrings::Settings_Label_DisableEdgeNavInCompare, OptionType::Toggle, &g_config.DisableEdgeNavInCompare });
     tabControl.items.push_back({ AppStrings::Settings_Label_NavIndicator, OptionType::Segment, nullptr, nullptr, BindEnum(&g_config.NavIndicator), nullptr, 0, 0, {AppStrings::Settings_Option_Arrow, AppStrings::Settings_Option_Cursor} });
-
-    // Gallery Trigger Mode (Top Hover Gallery)
+ 
+    // Gallery Trigger Mode
     {
         tabControl.items.push_back({ AppStrings::Settings_Header_GalleryTrigger, OptionType::Header });
         SettingsItem itemGalleryTrigger = { AppStrings::Settings_Label_GalleryTriggerMode, OptionType::ComboBox, nullptr, nullptr, &g_config.GalleryTriggerMode };
@@ -1708,8 +1704,73 @@ void SettingsOverlay::BuildMenu() {
         itemGalleryTrigger.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) { SaveConfig(); };
         tabControl.items.push_back(itemGalleryTrigger);
     }
-
     m_tabs.push_back(tabControl);
+
+    // --- 4. Shortcuts (快捷键) ---
+    SettingsTab tabKeys;
+    tabKeys.name = AppStrings::Settings_Tab_Shortcuts;
+    tabKeys.icon = Icons::Keyboard;
+ 
+    tabKeys.items.push_back({ AppStrings::Settings_Tab_Shortcuts, OptionType::Header });
+    tabKeys.items.push_back({ AppStrings::Settings_Hotkey_MouseTip, OptionType::InfoLabel });
+ 
+    // Restore Default Hotkeys
+    bool isChinese = (g_config.Language == 2 || g_config.Language == 3);
+    SettingsItem itemRestoreKeys = { L"", OptionType::ActionButton };
+    itemRestoreKeys.buttonText = AppStrings::Settings_Hotkey_Restore;
+    itemRestoreKeys.buttonActivatedText = AppStrings::Settings_Hotkey_Restored;
+    itemRestoreKeys.isDestructive = true;
+    itemRestoreKeys.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
+        for (auto& binding : g_hotkeys) {
+            binding.combo = binding.defaultCombo;
+        }
+        SaveConfig();
+        overlay->m_pendingRebuild = true;
+        overlay->m_pendingResetFeedback = true;
+        if (overlay->m_hwnd) InvalidateRect(overlay->m_hwnd, NULL, FALSE);
+    };
+    tabKeys.items.push_back(itemRestoreKeys);
+ 
+    for (size_t i = 1; i < static_cast<size_t>(HotkeyAction::Count); ++i) {
+        HotkeyAction action = static_cast<HotkeyAction>(i);
+        if (action == HotkeyAction::Help || action == HotkeyAction::Exit || action == HotkeyAction::ToggleDebugHud) {
+            continue; // Exclude F1, Esc, and F12 from customization
+        }
+
+        // Category Group Headers
+        if (action == HotkeyAction::NavNext) {
+            tabKeys.items.push_back({ isChinese ? L"图片导航" : L"Navigation", OptionType::Header });
+        } else if (action == HotkeyAction::ZoomIn) {
+            tabKeys.items.push_back({ isChinese ? L"图片缩放" : L"Zoom", OptionType::Header });
+        } else if (action == HotkeyAction::RotateCW) {
+            tabKeys.items.push_back({ isChinese ? L"图像变换" : L"Transforms", OptionType::Header });
+        } else if (action == HotkeyAction::ToggleAnimation) {
+            tabKeys.items.push_back({ isChinese ? L"动画控制" : L"Animation Control", OptionType::Header });
+        } else if (action == HotkeyAction::ToggleGallery) {
+            tabKeys.items.push_back({ isChinese ? L"视图模式" : L"View Modes", OptionType::Header });
+        } else if (action == HotkeyAction::OpenFile) {
+            tabKeys.items.push_back({ isChinese ? L"文件操作" : L"File Operations", OptionType::Header });
+        } else if (action == HotkeyAction::ToggleOverlay) {
+            tabKeys.items.push_back({ isChinese ? L"临摹模式" : L"Tracing (Overlay) Mode", OptionType::Header });
+        }
+
+        std::wstring name = AppStrings::GetHotkeyActionName(action);
+        
+        SettingsItem item;
+        item.label = name;
+        item.type = OptionType::HotkeyBindRow;
+        item.hotkeyAction = action;
+ 
+        // Apply pending conflict status if any
+        if (m_lastConflictAction == action && GetTickCount() - m_lastConflictTime < 3000) {
+            item.statusText = m_lastConflictMsg;
+            item.statusColor = D2D1::ColorF(D2D1::ColorF::Red);
+            item.statusSetTime = m_lastConflictTime;
+        }
+        
+        tabKeys.items.push_back(item);
+    }
+    m_tabs.push_back(tabKeys);
 
     // --- 4. Image & Edit (图像与编辑) ---
     SettingsTab tabImage;
@@ -2156,8 +2217,13 @@ void SettingsOverlay::BuildMenu() {
          std::wstring appDataDir = std::wstring(appDataPath) + L"\\QuickView";
          
          DeleteFileW((exeDir + L"\\QuickView.ini").c_str());
-         DeleteFileW((appDataDir + L"\\QuickView.ini").c_str());         // 2. Reset In-Memory Config
+         DeleteFileW((appDataDir + L"\\QuickView.ini").c_str());
+         
+         // 2. Reset In-Memory Config
          g_config = AppConfig(); 
+         for (auto& binding : g_hotkeys) {
+             binding.combo = binding.defaultCombo;
+         }
          
          // 3. Sync Runtime & Refresh UI
          g_runtime.SyncFrom(g_config);
@@ -2165,7 +2231,6 @@ void SettingsOverlay::BuildMenu() {
          overlay->m_needsLayoutRebuild = true;
          if (overlay->m_hwnd) InvalidateRect(overlay->m_hwnd, NULL, FALSE);
          
-         // 4. Force UI refresh
          // 4. Force UI refresh
          overlay->m_pendingRebuild = true;
          overlay->m_pendingResetFeedback = true;
@@ -2176,6 +2241,8 @@ void SettingsOverlay::BuildMenu() {
 
 
     m_tabs.push_back(tabAdvanced);
+
+
 
     // --- 6. About (关于) ---
     // --- 6. About (关于) ---
@@ -2578,11 +2645,29 @@ void SettingsOverlay::Render(ID2D1DeviceContext* pRT, float winW, float winH) {
 
             // 1. Header Type
             if (item.type == OptionType::Header) {
+                // Draw a separator line if it's not the first header in the tab
+                if (contentY > startContentY + 5.0f) {
+                    contentY += 15.0f * s; // Spacing BEFORE the line
+                    
+                    float origOpacity = m_brushBorder->GetOpacity();
+                    m_brushBorder->SetOpacity(origOpacity * 0.4f); // Subtly fade the border color
+                    
+                    pRT->DrawLine(
+                        D2D1::Point2F(contentX, contentY),
+                        D2D1::Point2F(contentX + contentW, contentY),
+                        m_brushBorder.Get(),
+                        1.0f * s // Thin hairline
+                    );
+                    
+                    m_brushBorder->SetOpacity(origOpacity); // Restore
+                    contentY += 20.0f * s; // Spacing AFTER the line
+                }
+
                 // Header text
-                D2D1_RECT_F headerRect = D2D1::RectF(contentX, contentY + 10, contentX + contentW, contentY + 40);
+                D2D1_RECT_F headerRect = D2D1::RectF(contentX, contentY + 10.0f * s, contentX + contentW, contentY + 40.0f * s);
                 m_textFormatHeader->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
                 pRT->DrawText(item.label.c_str(), (UINT32)item.label.length(), m_textFormatHeader.Get(), headerRect, m_brushText.Get());
-                contentY += 50.0f; // More spacing for header
+                contentY += 50.0f * s; // More spacing for header
                 
                 m_settingsContentHeight = (contentY - startContentY > m_settingsContentHeight) ? (contentY - startContentY) : m_settingsContentHeight;
                 continue;
@@ -2878,6 +2963,7 @@ void SettingsOverlay::Render(ID2D1DeviceContext* pRT, float winW, float winH) {
                      contentW, 5000.0f, &textLayout); // 5000px max height
                  
                  if (SUCCEEDED(hr)) {
+                     textLayout->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
                      DWRITE_TEXT_METRICS metrics;
                      textLayout->GetMetrics(&metrics);
                      pRT->DrawTextLayout(D2D1::Point2F(contentX, contentY), textLayout.Get(), m_brushTextDim.Get());
@@ -3248,6 +3334,85 @@ void SettingsOverlay::Render(ID2D1DeviceContext* pRT, float winW, float winH) {
                                (item.pIntVal ? *item.pIntVal : 0), item.options,
                                isOpen);
                   break;
+                }
+                case OptionType::HotkeyBindRow: {
+                    const float btnMinWidth = 120.0f * s;
+                    const float btnPadX = 14.0f * s;
+                    const float btnInsetY = CONTROL_INSET_Y * s;
+                    const float btnRadius = 4.0f * s;
+                    
+                    std::wstring btnText;
+                    bool isThisCapturing = m_capturingHotkey && (m_capturingAction == item.hotkeyAction);
+                    
+                    if (isThisCapturing) {
+                        btnText = AppStrings::Settings_Hotkey_PressKey;
+                    } else {
+                        auto idx = static_cast<size_t>(item.hotkeyAction);
+                        if (idx < g_hotkeys.size()) {
+                            btnText = KeyComboToString(g_hotkeys[idx].combo);
+                        } else {
+                            btnText = L"None";
+                        }
+                    }
+                    
+                    float textW = 0.0f;
+                    if (m_dwriteFactory && m_textFormatItem) {
+                        ComPtr<IDWriteTextLayout> btnLayout;
+                        if (SUCCEEDED(m_dwriteFactory->CreateTextLayout(
+                            btnText.c_str(), (UINT32)btnText.length(), m_textFormatItem.Get(),
+                            800.0f * s, rowHeight, &btnLayout))) {
+                            DWRITE_TEXT_METRICS metrics = {};
+                            if (SUCCEEDED(btnLayout->GetMetrics(&metrics))) {
+                                textW = ceilf(metrics.widthIncludingTrailingWhitespace);
+                            }
+                        }
+                    }
+
+                    float btnWidth = std::max(btnMinWidth, textW + btnPadX * 2.0f);
+                    float btnMaxWidth = controlW * 0.95f; 
+                    if (btnWidth > btnMaxWidth) btnWidth = btnMaxWidth;
+
+                    float btnX = controlX + controlW - btnWidth;
+                    D2D1_RECT_F btnRect = D2D1::RectF(btnX, contentY + btnInsetY, btnX + btnWidth, contentY + rowHeight - btnInsetY);
+                    item.interactRect = btnRect;
+                    
+                    ComPtr<ID2D1SolidColorBrush> btnBrush;
+                    if (isThisCapturing) {
+                        btnBrush = m_brushAccent;
+                    } else if (isHovered) {
+                        pRT->CreateSolidColorBrush(palette.hoverTint, &btnBrush);
+                    } else {
+                        btnBrush = m_brushControlBg;
+                    }
+                    
+                    if (isThisCapturing) {
+                        pRT->FillRoundedRectangle(D2D1::RoundedRect(btnRect, btnRadius, btnRadius), btnBrush.Get());
+                    } else {
+                        pRT->FillRoundedRectangle(D2D1::RoundedRect(btnRect, btnRadius, btnRadius), btnBrush.Get());
+                        pRT->DrawRoundedRectangle(D2D1::RoundedRect(btnRect, btnRadius, btnRadius), m_brushBorder.Get(), 1.0f);
+                    }
+                    
+                    if (!item.statusText.empty() && item.statusSetTime > 0) {
+                         if (GetTickCount() - item.statusSetTime > 3000) {
+                             item.statusText.clear();
+                         }
+                    }
+                    if (!item.statusText.empty()) {
+                        ComPtr<ID2D1SolidColorBrush> statusBrush;
+                        pRT->CreateSolidColorBrush(item.statusColor, &statusBrush);
+                        D2D1_RECT_F statusRect = D2D1::RectF(controlX, contentY, btnX - 16, contentY + rowHeight);
+                        m_textFormatItem->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
+                        pRT->DrawText(item.statusText.c_str(), (UINT32)item.statusText.length(), m_textFormatItem.Get(), statusRect, statusBrush.Get());
+                        m_textFormatItem->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+                    }
+
+                    m_textFormatItem->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+                    m_textFormatItem->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+                    ID2D1SolidColorBrush* textBrush = isThisCapturing ? m_brushText.Get() : m_brushTextDim.Get();
+                    pRT->DrawText(btnText.c_str(), (UINT32)btnText.length(), m_textFormatItem.Get(), btnRect, textBrush);
+                    m_textFormatItem->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+                    m_textFormatItem->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+                    break;
                 }
 
 
@@ -3838,6 +4003,14 @@ SettingsAction SettingsOverlay::OnLButtonDown(float x, float y) {
              }
              return SettingsAction::RepaintAll;
         }
+        // Hotkey binding row button
+        if (m_pHoverItem->type == OptionType::HotkeyBindRow) {
+            if (m_pHoverItem->isDisabled) return SettingsAction::RepaintStatic;
+            m_capturingHotkey = true;
+            m_capturingAction = m_pHoverItem->hotkeyAction;
+            m_pendingRebuild = true;
+            return SettingsAction::RepaintAll;
+        }
         // Button
         if (m_pHoverItem->type == OptionType::ActionButton) {
             // Ignore click if disabled (but still consume the click event)
@@ -4123,4 +4296,51 @@ void SettingsOverlay::RenderTooltip(ID2D1DeviceContext* pRT) {
 
     // Text
     pRT->DrawTextLayout(D2D1::Point2F(x + padding, y + padding), layout.Get(), m_brushText.Get());
+}
+
+void SettingsOverlay::OnHotkeyCaptured(const KeyCombo& combo) {
+    if (!m_capturingHotkey || m_capturingAction == HotkeyAction::None) return;
+
+    HotkeyAction action = m_capturingAction;
+    
+    m_capturingHotkey = false;
+    m_capturingAction = HotkeyAction::None;
+    m_pendingRebuild = true;
+
+    // ESC (without modifiers) cancels the capture
+    if (combo.virtualKey == VK_ESCAPE && combo.modifiers == 0) {
+        if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
+        return;
+    }
+
+    // Check conflict
+    HotkeyAction conflictAction = HotkeyAction::None;
+    for (const auto& binding : g_hotkeys) {
+        if (binding.action != action && !binding.combo.IsEmpty() && binding.combo == combo) {
+            conflictAction = binding.action;
+            break;
+        }
+    }
+
+    extern OSDState g_osd;
+    extern void SaveConfig();
+
+    if (conflictAction != HotkeyAction::None) {
+        std::wstring actionName = AppStrings::GetHotkeyActionName(conflictAction);
+        std::wstring warnMsg = std::wstring(AppStrings::Settings_Hotkey_Conflict) + L": " + actionName;
+        
+        m_lastConflictAction = action;
+        m_lastConflictMsg = warnMsg;
+        m_lastConflictTime = GetTickCount();
+    } else {
+        // Apply new key combo
+        for (auto& binding : g_hotkeys) {
+            if (binding.action == action) {
+                binding.combo = combo;
+                break;
+            }
+        }
+        SaveConfig();
+    }
+    if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
 }

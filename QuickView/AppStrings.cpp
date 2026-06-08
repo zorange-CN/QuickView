@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "AppStrings.h"
 #include <windows.h> // For GetUserDefaultUILanguage
+#include "EditState.h"
 
 namespace AppStrings {
 
@@ -42,6 +43,12 @@ const wchar_t *Dialog_HEICGetExtension = nullptr;
 const wchar_t *Dialog_Cancel = nullptr;
 const wchar_t *Settings_Tab_General = nullptr;
 const wchar_t *Settings_Tab_About = nullptr;
+const wchar_t *Settings_Tab_Shortcuts = nullptr;
+const wchar_t *Settings_Hotkey_PressKey = nullptr;
+const wchar_t *Settings_Hotkey_Conflict = nullptr;
+const wchar_t *Settings_Hotkey_Restore = nullptr;
+const wchar_t *Settings_Hotkey_Restored = nullptr;
+const wchar_t *Settings_Hotkey_MouseTip = nullptr;
 const wchar_t *Settings_Group_Foundation = nullptr;
 const wchar_t *Settings_Group_Startup = nullptr;
 const wchar_t *Settings_Group_Habits = nullptr;
@@ -5223,5 +5230,322 @@ void SetLanguage(Language lang) {
     Apply(Table_EN);
     break;
   }
+
+  switch (target) {
+  case Language::ChineseSimplified:
+    Settings_Tab_Shortcuts = L"快捷键";
+    Settings_Hotkey_PressKey = L"请按下按键...";
+    Settings_Hotkey_Conflict = L"快捷键冲突";
+    Settings_Hotkey_Restore = L"恢复快捷键默认值";
+    Settings_Hotkey_Restored = L"已恢复";
+    Settings_Hotkey_MouseTip = L"提示：支持鼠标中键、侧键等鼠标多功能按键。更多侧键请在鼠标驱动中映射为键盘按键后绑定。";
+    break;
+  case Language::ChineseTraditional:
+    Settings_Tab_Shortcuts = L"快捷鍵";
+    Settings_Hotkey_PressKey = L"請按下按鍵...";
+    Settings_Hotkey_Conflict = L"快捷鍵衝突";
+    Settings_Hotkey_Restore = L"恢復快捷鍵預設值";
+    Settings_Hotkey_Restored = L"已恢復";
+    Settings_Hotkey_MouseTip = L"提示：支持滑鼠中鍵、側鍵等滑鼠多功能按鍵。更多側鍵請在滑鼠驅動中映射為鍵盤按鍵後綁定。";
+    break;
+  case Language::Japanese:
+    Settings_Tab_Shortcuts = L"ショートカット";
+    Settings_Hotkey_PressKey = L"キーを押してください...";
+    Settings_Hotkey_Conflict = L"キーの競合";
+    Settings_Hotkey_Restore = L"既定のショートカットに戻す";
+    Settings_Hotkey_Restored = L"復元されました";
+    Settings_Hotkey_MouseTip = L"ヒント：中央ボタンやサイドボタンなどのマウス多機能ボタンに対応しています。その他のサイドボタンは、マウスのドライバーでキーボードのキーにマッピングしてからバインドしてください。";
+    break;
+  case Language::Russian:
+    Settings_Tab_Shortcuts = L"Клавиши";
+    Settings_Hotkey_PressKey = L"Нажмите клавиши...";
+    Settings_Hotkey_Conflict = L"Конфликт клавиш";
+    Settings_Hotkey_Restore = L"Сбросить горячие клавиши";
+    Settings_Hotkey_Restored = L"Восстановлено";
+    Settings_Hotkey_MouseTip = L"Подсказка: поддерживаются средняя кнопка, боковые и другие многофункциональные кнопки мыши. Для сопоставления дополнительных кнопок сначала назначьте их на клавиши клавиатуры в драйвере мыши.";
+    break;
+  case Language::German:
+    Settings_Tab_Shortcuts = L"Kürzel";
+    Settings_Hotkey_PressKey = L"Tasten drücken...";
+    Settings_Hotkey_Conflict = L"Tastenkonflikt";
+    Settings_Hotkey_Restore = L"Standard-Tastenkombinationen wiederherstellen";
+    Settings_Hotkey_Restored = L"Wiederhergestellt";
+    Settings_Hotkey_MouseTip = L"Tipp: Unterstützt die mittlere Maustaste, Seitentasten und andere Multifunktionstasten. Ordnen Sie weitere Seitentasten im Maustreiber Tastaturtasten zu, um sie zu binden.";
+    break;
+  case Language::Spanish:
+    Settings_Tab_Shortcuts = L"Atajos";
+    Settings_Hotkey_PressKey = L"Presione teclas...";
+    Settings_Hotkey_Conflict = L"Conflicto de teclas";
+    Settings_Hotkey_Restore = L"Restablecer atajos predeterminados";
+    Settings_Hotkey_Restored = L"Restablecido";
+    Settings_Hotkey_MouseTip = L"Consejo: Admite el botón central del mouse, los botones laterales y otros botones multifunción. Asigne botones laterales adicionales a teclas del teclado en el controlador del mouse para vincularlos.";
+    break;
+  case Language::French:
+    Settings_Tab_Shortcuts = L"Raccourcis";
+    Settings_Hotkey_PressKey = L"Appuyez sur les touches...";
+    Settings_Hotkey_Conflict = L"Conflit de raccourcis";
+    Settings_Hotkey_Restore = L"Restaurer les raccourcis par défaut";
+    Settings_Hotkey_Restored = L"Restauré";
+    Settings_Hotkey_MouseTip = L"Conseil : Prend en charge le bouton central de la souris, les boutons latéraux et autres boutons multifonctions. Mappez les boutons latéraux supplémentaires sur les touches du clavier dans le pilote de votre souris pour les lier.";
+    break;
+  case Language::English:
+  default:
+    Settings_Tab_Shortcuts = L"Shortcuts";
+    Settings_Hotkey_PressKey = L"Press keys...";
+    Settings_Hotkey_Conflict = L"Hotkey conflict";
+    Settings_Hotkey_Restore = L"Restore Default Hotkeys";
+    Settings_Hotkey_Restored = L"Restored";
+    Settings_Hotkey_MouseTip = L"Tip: Supports middle mouse button, side buttons, and other multi-function mouse keys. Map additional buttons to keyboard keys in your mouse driver to bind them.";
+    break;
+  }
 }
+
+static std::wstring CleanLabel(const wchar_t* label) {
+    if (!label) return L"";
+    std::wstring s(label);
+    
+    // Clean tab separator
+    size_t pos = s.find(L'\t');
+    if (pos != std::wstring::npos) {
+        s = s.substr(0, pos);
+    }
+    
+    // Clean (F1) or (F1) variants
+    pos = s.find(L" (F1)");
+    if (pos != std::wstring::npos) {
+        s = s.substr(0, pos);
+    }
+    pos = s.find(L"(F1)");
+    if (pos != std::wstring::npos) {
+        s = s.substr(0, pos);
+    }
+
+    // Clean parenthesis content unless it contains "100%"
+    if (s.find(L"100%") == std::wstring::npos) {
+        // Half-width parenthesis
+        size_t p = s.find(L'(');
+        if (p != std::wstring::npos) {
+            while (p > 0 && s[p - 1] == L' ') p--;
+            s = s.substr(0, p);
+        }
+        // Full-width parenthesis
+        p = s.find(L'（');
+        if (p != std::wstring::npos) {
+            while (p > 0 && s[p - 1] == L' ') p--;
+            s = s.substr(0, p);
+        }
+    }
+    
+    return s;
 }
+
+static AppStrings::Language GetActiveLanguage() {
+    if (AppStrings::OSD_NoImage == nullptr) return AppStrings::Language::English;
+    if (wcscmp(AppStrings::OSD_NoImage, L"没有加载图片") == 0) return AppStrings::Language::ChineseSimplified;
+    if (wcscmp(AppStrings::OSD_NoImage, L"沒有載入圖片") == 0) return AppStrings::Language::ChineseTraditional;
+    if (wcscmp(AppStrings::OSD_NoImage, L"画像が読み込まれていません") == 0) return AppStrings::Language::Japanese;
+    if (wcscmp(AppStrings::OSD_NoImage, L"Изображение не загружено") == 0) return AppStrings::Language::Russian;
+    if (wcscmp(AppStrings::OSD_NoImage, L"Kein Bild geladen") == 0) return AppStrings::Language::German;
+    if (wcscmp(AppStrings::OSD_NoImage, L"No hay imagen cargada") == 0) return AppStrings::Language::Spanish;
+    return AppStrings::Language::English;
+}
+
+std::wstring GetHotkeyActionName(HotkeyAction action) {
+    const wchar_t* raw = nullptr;
+    bool needsCleaning = true;
+    
+    switch (action) {
+    case HotkeyAction::NavNext:
+        raw = AppStrings::Toolbar_Tooltip_Next;
+        break;
+    case HotkeyAction::NavPrev:
+        raw = AppStrings::Toolbar_Tooltip_Prev;
+        break;
+    case HotkeyAction::NavFirst: {
+        needsCleaning = false;
+        switch (GetActiveLanguage()) {
+        case AppStrings::Language::ChineseSimplified:  raw = L"第一张图片"; break;
+        case AppStrings::Language::ChineseTraditional: raw = L"第一張圖片"; break;
+        case AppStrings::Language::Japanese:           raw = L"最初の画像"; break;
+        case AppStrings::Language::Russian:            raw = L"Первое изображение"; break;
+        case AppStrings::Language::German:             raw = L"Erstes Bild"; break;
+        case AppStrings::Language::Spanish:            raw = L"Primera imagen"; break;
+        case AppStrings::Language::French:             raw = L"Première image"; break;
+        default:                                       raw = L"First Image"; break;
+        }
+        break;
+    }
+    case HotkeyAction::NavLast: {
+        needsCleaning = false;
+        switch (GetActiveLanguage()) {
+        case AppStrings::Language::ChineseSimplified:  raw = L"最后一张"; break;
+        case AppStrings::Language::ChineseTraditional: raw = L"最後一張"; break;
+        case AppStrings::Language::Japanese:           raw = L"最後の画像"; break;
+        case AppStrings::Language::Russian:            raw = L"Последнее изображение"; break;
+        case AppStrings::Language::German:             raw = L"Letztes Bild"; break;
+        case AppStrings::Language::Spanish:            raw = L"Última imagen"; break;
+        case AppStrings::Language::French:             raw = L"Dernière image"; break;
+        default:                                       raw = L"Last Image"; break;
+        }
+        break;
+    }
+    case HotkeyAction::ZoomIn:
+        raw = AppStrings::Context_ZoomIn;
+        break;
+    case HotkeyAction::ZoomInFine: {
+        needsCleaning = false;
+        switch (GetActiveLanguage()) {
+        case AppStrings::Language::ChineseSimplified:  raw = L"放大微调"; break;
+        case AppStrings::Language::ChineseTraditional: raw = L"放大微調"; break;
+        case AppStrings::Language::Japanese:           raw = L"ズームイン (微調整)"; break;
+        case AppStrings::Language::Russian:            raw = L"Приближение (точно)"; break;
+        case AppStrings::Language::German:             raw = L"Vergrößern (Fein)"; break;
+        case AppStrings::Language::Spanish:            raw = L"Acercar (Ajuste fino)"; break;
+        case AppStrings::Language::French:             raw = L"Zoom avant (Précis)"; break;
+        default:                                       raw = L"Zoom In (Fine)"; break;
+        }
+        break;
+    }
+    case HotkeyAction::ZoomOut:
+        raw = AppStrings::Context_ZoomOut;
+        break;
+    case HotkeyAction::ZoomOutFine: {
+        needsCleaning = false;
+        switch (GetActiveLanguage()) {
+        case AppStrings::Language::ChineseSimplified:  raw = L"缩小微调"; break;
+        case AppStrings::Language::ChineseTraditional: raw = L"縮小微調"; break;
+        case AppStrings::Language::Japanese:           raw = L"ズームアウト (微調整)"; break;
+        case AppStrings::Language::Russian:            raw = L"Отдаление (точно)"; break;
+        case AppStrings::Language::German:             raw = L"Verkleinern (Fein)"; break;
+        case AppStrings::Language::Spanish:            raw = L"Alejar (Ajuste fino)"; break;
+        case AppStrings::Language::French:             raw = L"Zoom arrière (Précis)"; break;
+        default:                                       raw = L"Zoom Out (Fine)"; break;
+        }
+        break;
+    }
+    case HotkeyAction::Zoom100:
+        raw = AppStrings::Context_ActualSize;
+        break;
+    case HotkeyAction::ZoomFit:
+        raw = AppStrings::Context_FitToScreen;
+        break;
+    case HotkeyAction::RotateCW:
+        raw = AppStrings::Context_RotateCW;
+        break;
+    case HotkeyAction::RotateCCW:
+        raw = AppStrings::Context_RotateCCW;
+        break;
+    case HotkeyAction::FlipH:
+        raw = AppStrings::Context_FlipH;
+        break;
+    case HotkeyAction::FlipV:
+        raw = AppStrings::Context_FlipV;
+        break;
+    case HotkeyAction::ToggleAnimation: {
+        // Special case: returns concatenated string
+        std::wstring play = CleanLabel(AppStrings::Toolbar_Tooltip_AnimPlay);
+        std::wstring pause = CleanLabel(AppStrings::Toolbar_Tooltip_AnimPause);
+        return play + L"/" + pause;
+    }
+    case HotkeyAction::AnimNextFrame:
+        raw = AppStrings::Toolbar_Tooltip_AnimNext;
+        break;
+    case HotkeyAction::AnimPrevFrame:
+        raw = AppStrings::Toolbar_Tooltip_AnimPrev;
+        break;
+    case HotkeyAction::ToggleGallery:
+        raw = AppStrings::Context_HUDGallery;
+        break;
+    case HotkeyAction::ToggleInfoPanel:
+        raw = AppStrings::Context_LiteInfoPanel;
+        break;
+    case HotkeyAction::ToggleExifPanel:
+        raw = AppStrings::Context_FullInfoPanel;
+        break;
+    case HotkeyAction::ToggleFullscreen:
+        raw = AppStrings::Context_Fullscreen;
+        break;
+    case HotkeyAction::ToggleSpan:
+        needsCleaning = false;
+        raw = AppStrings::Settings_Label_SpanDisplays;
+        break;
+    case HotkeyAction::OpenFile:
+        raw = AppStrings::Context_Open;
+        break;
+    case HotkeyAction::EditFile:
+        raw = AppStrings::Context_Edit;
+        break;
+    case HotkeyAction::RenameFile:
+        raw = AppStrings::Context_Rename;
+        break;
+    case HotkeyAction::DeleteFile:
+        raw = AppStrings::Context_Delete;
+        break;
+    case HotkeyAction::CopyImage:
+        raw = AppStrings::Context_CopyImage;
+        break;
+    case HotkeyAction::CopyPath:
+        raw = AppStrings::Context_CopyPath;
+        break;
+    case HotkeyAction::ToggleCompare:
+        raw = AppStrings::Context_CompareMode;
+        break;
+    case HotkeyAction::AlwaysOnTop:
+        raw = AppStrings::Context_AlwaysOnTop;
+        break;
+    case HotkeyAction::ToggleDebugHud:
+        raw = AppStrings::Settings_Label_DebugHUD;
+        break;
+    case HotkeyAction::Print:
+        raw = AppStrings::Context_Print;
+        break;
+    case HotkeyAction::ToggleOverlay:
+        raw = AppStrings::Context_OverlayMode;
+        break;
+    case HotkeyAction::OverlayAlphaUp: {
+        needsCleaning = false;
+        switch (GetActiveLanguage()) {
+        case AppStrings::Language::ChineseSimplified:  raw = L"增加透明度"; break;
+        case AppStrings::Language::ChineseTraditional: raw = L"增加透明度"; break;
+        case AppStrings::Language::Japanese:           raw = L"不透明度を上げる"; break;
+        case AppStrings::Language::Russian:            raw = L"Увеличить непрозрачность"; break;
+        case AppStrings::Language::German:             raw = L"Deckkraft erhöhen"; break;
+        case AppStrings::Language::Spanish:            raw = L"Aumentar opacidad"; break;
+        case AppStrings::Language::French:             raw = L"Augmenter l'opacité"; break;
+        default:                                       raw = L"Increase Opacity"; break;
+        }
+        break;
+    }
+    case HotkeyAction::OverlayAlphaDown: {
+        needsCleaning = false;
+        switch (GetActiveLanguage()) {
+        case AppStrings::Language::ChineseSimplified:  raw = L"减少透明度"; break;
+        case AppStrings::Language::ChineseTraditional: raw = L"減少透明度"; break;
+        case AppStrings::Language::Japanese:           raw = L"不透明度を下げる"; break;
+        case AppStrings::Language::Russian:            raw = L"Уменьшить непрозрачность"; break;
+        case AppStrings::Language::German:             raw = L"Deckkraft verringern"; break;
+        case AppStrings::Language::Spanish:            raw = L"Disminuir opacidad"; break;
+        case AppStrings::Language::French:             raw = L"Diminuer l'opacité"; break;
+        default:                                       raw = L"Decrease Opacity"; break;
+        }
+        break;
+    }
+    case HotkeyAction::OverlayTogglePassthrough:
+        raw = AppStrings::Menu_ExitPassthrough;
+        break;
+    case HotkeyAction::Help:
+        raw = AppStrings::Settings_Link_Hotkeys;
+        break;
+    case HotkeyAction::Exit:
+        raw = AppStrings::Context_Exit;
+        break;
+    default:
+        needsCleaning = false;
+        raw = L"None";
+        break;
+    }
+
+    if (!raw) return L"";
+    return needsCleaning ? CleanLabel(raw) : std::wstring(raw);
+}
+}

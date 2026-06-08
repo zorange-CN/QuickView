@@ -5,6 +5,7 @@
 #include <functional>
 #include "GeekGlass.h"
 #include "GeekIconLibrary.h"
+#include "EditState.h"
 
 // [Fix] Resolve Windows macro interference
 #undef LoadIcon
@@ -38,7 +39,8 @@ enum class OptionType {
     AboutTechBadges,  
     AboutSystemInfo,  
     InfoLabel,        
-    CopyrightLabel    
+    CopyrightLabel,
+    HotkeyBindRow
 };
 
 struct SettingsItem {
@@ -79,6 +81,8 @@ struct SettingsItem {
     std::wstring statusText = L"";
     D2D1::ColorF statusColor = D2D1::ColorF(D2D1::ColorF::White);
     DWORD statusSetTime = 0; 
+    
+    HotkeyAction hotkeyAction = HotkeyAction::None;
 };
 
 struct SettingsTab {
@@ -131,6 +135,14 @@ public:
     static void UnregisterAssociations(); 
     static bool IsRegistrationNeeded();
     static std::wstring GetAppVersion();
+
+    bool IsCapturingHotkey() const { return m_capturingHotkey; }
+    void CancelHotkeyCapture() {
+        m_capturingHotkey = false;
+        m_capturingAction = HotkeyAction::None;
+        m_pendingRebuild = true;
+    }
+    void OnHotkeyCaptured(const KeyCombo& combo);
 
 private:
     void CreateResources(ID2D1DeviceContext* pRT);
@@ -208,6 +220,12 @@ private:
     
     bool m_pendingRebuild = false;
     bool m_pendingResetFeedback = false; 
+
+    bool m_capturingHotkey = false;
+    HotkeyAction m_capturingAction = HotkeyAction::None;
+    HotkeyAction m_lastConflictAction = HotkeyAction::None;
+    std::wstring m_lastConflictMsg = L"";
+    DWORD m_lastConflictTime = 0;
 
     // Geek Glass properties
     QuickView::UI::GeekGlass::GeekGlassEngine m_geekGlass;

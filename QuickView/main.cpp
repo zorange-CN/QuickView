@@ -224,7 +224,49 @@ static const UINT_PTR TIMER_ID_REGISTRY_CHECK = 993;
 
 DWORD g_toolbarHideTime = 0; // For auto-hide delay
 AppConfig g_config;
+std::array<HotkeyBinding, static_cast<size_t>(HotkeyAction::Count)> g_hotkeys = {
+    HotkeyBinding{ HotkeyAction::None, KeyCombo{0, 0}, KeyCombo{0, 0} },
+    HotkeyBinding{ HotkeyAction::NavNext, KeyCombo{ VK_RIGHT, 0 }, KeyCombo{ VK_RIGHT, 0 } },
+    HotkeyBinding{ HotkeyAction::NavPrev, KeyCombo{ VK_LEFT, 0 }, KeyCombo{ VK_LEFT, 0 } },
+    HotkeyBinding{ HotkeyAction::NavFirst, KeyCombo{ VK_HOME, 0 }, KeyCombo{ VK_HOME, 0 } },
+    HotkeyBinding{ HotkeyAction::NavLast, KeyCombo{ VK_END, 0 }, KeyCombo{ VK_END, 0 } },
+    HotkeyBinding{ HotkeyAction::ZoomIn, KeyCombo{ VK_OEM_PLUS, 0 }, KeyCombo{ VK_OEM_PLUS, 0 } },
+    HotkeyBinding{ HotkeyAction::ZoomInFine, KeyCombo{ VK_OEM_PLUS, 1 }, KeyCombo{ VK_OEM_PLUS, 1 } }, // Ctrl + +
+    HotkeyBinding{ HotkeyAction::ZoomOut, KeyCombo{ VK_OEM_MINUS, 0 }, KeyCombo{ VK_OEM_MINUS, 0 } },
+    HotkeyBinding{ HotkeyAction::ZoomOutFine, KeyCombo{ VK_OEM_MINUS, 1 }, KeyCombo{ VK_OEM_MINUS, 1 } }, // Ctrl + -
+    HotkeyBinding{ HotkeyAction::Zoom100, KeyCombo{ 'Z', 0 }, KeyCombo{ 'Z', 0 } },
+    HotkeyBinding{ HotkeyAction::ZoomFit, KeyCombo{ 'F', 0 }, KeyCombo{ 'F', 0 } },
+    HotkeyBinding{ HotkeyAction::RotateCW, KeyCombo{ 'R', 0 }, KeyCombo{ 'R', 0 } },
+    HotkeyBinding{ HotkeyAction::RotateCCW, KeyCombo{ 'R', 2 }, KeyCombo{ 'R', 2 } }, // Shift + R
+    HotkeyBinding{ HotkeyAction::FlipH, KeyCombo{ 'H', 0 }, KeyCombo{ 'H', 0 } },
+    HotkeyBinding{ HotkeyAction::FlipV, KeyCombo{ 'V', 0 }, KeyCombo{ 'V', 0 } },
+    HotkeyBinding{ HotkeyAction::ToggleAnimation, KeyCombo{ VK_SPACE, 0 }, KeyCombo{ VK_SPACE, 0 } },
+    HotkeyBinding{ HotkeyAction::AnimNextFrame, KeyCombo{ VK_RIGHT, 4 }, KeyCombo{ VK_RIGHT, 4 } }, // Alt + Right
+    HotkeyBinding{ HotkeyAction::AnimPrevFrame, KeyCombo{ VK_LEFT, 4 }, KeyCombo{ VK_LEFT, 4 } },   // Alt + Left
+    HotkeyBinding{ HotkeyAction::ToggleGallery, KeyCombo{ 'T', 0 }, KeyCombo{ 'T', 0 } },
+    HotkeyBinding{ HotkeyAction::ToggleInfoPanel, KeyCombo{ VK_TAB, 0 }, KeyCombo{ VK_TAB, 0 } },
+    HotkeyBinding{ HotkeyAction::ToggleExifPanel, KeyCombo{ 'I', 0 }, KeyCombo{ 'I', 0 } },
+    HotkeyBinding{ HotkeyAction::ToggleFullscreen, KeyCombo{ VK_F11, 0 }, KeyCombo{ VK_F11, 0 } },
+    HotkeyBinding{ HotkeyAction::ToggleSpan, KeyCombo{ VK_F11, 1 }, KeyCombo{ VK_F11, 1 } }, // Ctrl + F11
+    HotkeyBinding{ HotkeyAction::OpenFile, KeyCombo{ 'O', 0 }, KeyCombo{ 'O', 0 } },
+    HotkeyBinding{ HotkeyAction::EditFile, KeyCombo{ 'E', 0 }, KeyCombo{ 'E', 0 } },
+    HotkeyBinding{ HotkeyAction::RenameFile, KeyCombo{ VK_F2, 0 }, KeyCombo{ VK_F2, 0 } },
+    HotkeyBinding{ HotkeyAction::DeleteFile, KeyCombo{ VK_DELETE, 0 }, KeyCombo{ VK_DELETE, 0 } },
+    HotkeyBinding{ HotkeyAction::CopyImage, KeyCombo{ 'C', 1 }, KeyCombo{ 'C', 1 } }, // Ctrl + C
+    HotkeyBinding{ HotkeyAction::CopyPath, KeyCombo{ 'C', 5 }, KeyCombo{ 'C', 5 } },  // Ctrl + Alt + C (1 | 4 = 5)
+    HotkeyBinding{ HotkeyAction::ToggleCompare, KeyCombo{ 'C', 0 }, KeyCombo{ 'C', 0 } },
+    HotkeyBinding{ HotkeyAction::AlwaysOnTop, KeyCombo{ 'T', 1 }, KeyCombo{ 'T', 1 } }, // Ctrl + T
+    HotkeyBinding{ HotkeyAction::ToggleDebugHud, KeyCombo{ VK_F12, 0 }, KeyCombo{ VK_F12, 0 } },
+    HotkeyBinding{ HotkeyAction::Print, KeyCombo{ 'P', 1 }, KeyCombo{ 'P', 1 } }, // Ctrl + P
+    HotkeyBinding{ HotkeyAction::ToggleOverlay, KeyCombo{ 'O', 3 }, KeyCombo{ 'O', 3 } }, // Ctrl + Shift + O (1 | 2 = 3)
+    HotkeyBinding{ HotkeyAction::OverlayAlphaUp, KeyCombo{ VK_UP, 4 }, KeyCombo{ VK_UP, 4 } }, // Alt + Up
+    HotkeyBinding{ HotkeyAction::OverlayAlphaDown, KeyCombo{ VK_DOWN, 4 }, KeyCombo{ VK_DOWN, 4 } }, // Alt + Down
+    HotkeyBinding{ HotkeyAction::OverlayTogglePassthrough, KeyCombo{ VK_ESCAPE, 2 }, KeyCombo{ VK_ESCAPE, 2 } }, // Shift + Esc
+    HotkeyBinding{ HotkeyAction::Help, KeyCombo{ VK_F1, 0 }, KeyCombo{ VK_F1, 0 } },
+    HotkeyBinding{ HotkeyAction::Exit, KeyCombo{ VK_ESCAPE, 0 }, KeyCombo{ VK_ESCAPE, 0 } }
+};
 RuntimeConfig g_runtime;
+bool HandleHotkeyAction(HWND hwnd, HotkeyAction action);
 bool g_preserveViewStateOnNextLoad = false;
 ViewState g_preservedViewState;
 int g_renderExifOrientation = 1; // Exif orientation baked into the bitmap surface
@@ -1683,8 +1725,18 @@ static void EnterPassthroughMode(HWND hwnd) {
     LONG_PTR exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
     SetWindowLongPtr(hwnd, GWL_EXSTYLE, exStyle | WS_EX_LAYERED | WS_EX_TRANSPARENT);
 
-    // Register global hotkey (Shift+Esc) — only way to exit since we lose focus
-    RegisterHotKey(hwnd, HOTKEY_ID_EXIT_PASSTHROUGH, MOD_SHIFT, VK_ESCAPE);
+    // Register global hotkey (Shift+Esc default or customized OverlayTogglePassthrough) — only way to exit since we lose focus
+    const auto& binding = g_hotkeys[static_cast<size_t>(HotkeyAction::OverlayTogglePassthrough)];
+    UINT fsModifiers = 0;
+    if (binding.combo.modifiers & 1) fsModifiers |= MOD_CONTROL;
+    if (binding.combo.modifiers & 2) fsModifiers |= MOD_SHIFT;
+    if (binding.combo.modifiers & 4) fsModifiers |= MOD_ALT;
+    UINT vk = binding.combo.virtualKey;
+    if (vk == 0) {
+        fsModifiers = MOD_SHIFT;
+        vk = VK_ESCAPE;
+    }
+    RegisterHotKey(hwnd, HOTKEY_ID_EXIT_PASSTHROUGH, fsModifiers, vk);
 
     g_runtime.OverlayModeState = OverlayState::Overlay_Passthrough;
 
@@ -3825,9 +3877,16 @@ void SaveConfig() {
     WritePrivateProfileStringW(L"Registry", L"RegVer", g_config.LastRegisteredVersion.c_str(), iniPath.c_str());
     WritePrivateProfileStringW(L"Registry", L"RegPath", g_config.LastRegisteredPath.c_str(), iniPath.c_str());
 
-    // Legacy cleanup
     WritePrivateProfileStringW(L"General", L"NavLoopMode", nullptr, iniPath.c_str());
     WritePrivateProfileStringW(L"General", L"LoopNavigation", nullptr, iniPath.c_str());
+
+    // Save Hotkeys
+    for (size_t i = 1; i < static_cast<size_t>(HotkeyAction::Count); ++i) {
+        const auto& binding = g_hotkeys[i];
+        std::wstring_view actionName = HotkeyActionToString(binding.action);
+        std::wstring valStr = KeyComboToString(binding.combo);
+        WritePrivateProfileStringW(L"Hotkeys", std::wstring(actionName).c_str(), valStr.c_str(), iniPath.c_str());
+    }
 }
 
 void LoadConfig() {
@@ -4089,6 +4148,24 @@ void LoadConfig() {
     GetPrivateProfileStringW(L"Registry", L"RegPath", L"", bufPath, MAX_PATH, iniPath.c_str());
     g_config.LastRegisteredVersion = bufVer;
     g_config.LastRegisteredPath = bufPath;
+
+    // Load Hotkeys
+    for (size_t i = 1; i < static_cast<size_t>(HotkeyAction::Count); ++i) {
+        auto& binding = g_hotkeys[i];
+        std::wstring_view actionName = HotkeyActionToString(binding.action);
+        wchar_t bufCombo[128];
+        std::wstring defaultVal = KeyComboToString(binding.defaultCombo);
+        GetPrivateProfileStringW(L"Hotkeys", std::wstring(actionName).c_str(), defaultVal.c_str(), bufCombo, 128, iniPath.c_str());
+        
+        // Migration of legacy frame step hotkeys (convert old hardcoded "." and "," to Alt+Right/Left)
+        if (binding.action == HotkeyAction::AnimNextFrame && wcscmp(bufCombo, L".") == 0) {
+            wcscpy_s(bufCombo, defaultVal.c_str());
+        } else if (binding.action == HotkeyAction::AnimPrevFrame && wcscmp(bufCombo, L",") == 0) {
+            wcscpy_s(bufCombo, defaultVal.c_str());
+        }
+        
+        binding.combo = StringToKeyCombo(std::wstring_view(bufCombo));
+    }
 }
 
 
@@ -5759,6 +5836,25 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, [[maybe_unused]] LPWSTR lpCm
     return (int)msg.wParam;
 }
 
+static bool TryTriggerCustomMouseHotkey(HWND hwnd, uint16_t vk, bool execute) {
+    KeyCombo pressed;
+    pressed.virtualKey = vk;
+    pressed.modifiers = 0;
+    if (GetKeyState(VK_CONTROL) & 0x8000) pressed.modifiers |= 1;
+    if (GetKeyState(VK_SHIFT) & 0x8000)   pressed.modifiers |= 2;
+    if (GetKeyState(VK_MENU) & 0x8000)    pressed.modifiers |= 4;
+
+    for (const auto& binding : g_hotkeys) {
+        if (!binding.combo.IsEmpty() && binding.combo == pressed) {
+            if (execute) {
+                return HandleHotkeyAction(hwnd, binding.action);
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
 LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
     if (AppContext::GetInstance().DialogCtrl && AppContext::GetInstance().DialogCtrl->IsActive()) {
         auto result = AppContext::GetInstance().DialogCtrl->HandleMessage(hwnd, message, wParam, lParam);
@@ -7115,6 +7211,24 @@ SKIP_EDGE_NAV:;
     }
 
     case WM_MBUTTONDOWN: {
+        if (g_settingsOverlay.IsVisible() && g_settingsOverlay.IsCapturingHotkey()) {
+            KeyCombo captured;
+            captured.virtualKey = VK_MBUTTON;
+            captured.modifiers = 0;
+            if (GetKeyState(VK_CONTROL) & 0x8000) captured.modifiers |= 1;
+            if (GetKeyState(VK_SHIFT) & 0x8000)   captured.modifiers |= 2;
+            if (GetKeyState(VK_MENU) & 0x8000)    captured.modifiers |= 4;
+            
+            g_settingsOverlay.OnHotkeyCaptured(captured);
+            RequestRepaint(PaintLayer::Static);
+            return 0;
+        }
+
+        // Check custom hotkeys for VK_MBUTTON
+        if (TryTriggerCustomMouseHotkey(hwnd, VK_MBUTTON, true)) {
+            return 0;
+        }
+
         POINT pt = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
         // Record start position/time for click vs drag detection
         GetPaneContext(PaneSlot::Primary).view.LastMousePos = pt;
@@ -7154,6 +7268,15 @@ SKIP_EDGE_NAV:;
         return 0;
     }
     case WM_MBUTTONUP: {
+        if (g_settingsOverlay.IsVisible() && g_settingsOverlay.IsCapturingHotkey()) {
+            return 0;
+        }
+
+        // Check if matching custom hotkey combination
+        if (TryTriggerCustomMouseHotkey(hwnd, VK_MBUTTON, false)) {
+            return 0; // Intercepted, do not perform default click/drag actions
+        }
+
         // Release capture if we were dragging window with middle button
         if (GetPaneContext(PaneSlot::Primary).view.IsMiddleDragWindow) {
             ReleaseCapture();
@@ -7236,8 +7359,28 @@ SKIP_EDGE_NAV:;
     }
     
     case WM_XBUTTONDOWN: {
-        // Mouse forward/back buttons for navigation
         int button = GET_XBUTTON_WPARAM(wParam);
+        uint16_t vk = (button == XBUTTON1) ? VK_XBUTTON1 : VK_XBUTTON2;
+
+        if (g_settingsOverlay.IsVisible() && g_settingsOverlay.IsCapturingHotkey()) {
+            KeyCombo captured;
+            captured.virtualKey = vk;
+            captured.modifiers = 0;
+            if (GetKeyState(VK_CONTROL) & 0x8000) captured.modifiers |= 1;
+            if (GetKeyState(VK_SHIFT) & 0x8000)   captured.modifiers |= 2;
+            if (GetKeyState(VK_MENU) & 0x8000)    captured.modifiers |= 4;
+            
+            g_settingsOverlay.OnHotkeyCaptured(captured);
+            RequestRepaint(PaintLayer::Static);
+            return TRUE;
+        }
+
+        // Check custom hotkeys for VK_XBUTTON1 or VK_XBUTTON2
+        if (TryTriggerCustomMouseHotkey(hwnd, vk, true)) {
+            return TRUE;
+        }
+
+        // Mouse forward/back buttons for navigation
         int direction = 0;
         if (button == XBUTTON1) direction = -1; // Back button = previous
         else if (button == XBUTTON2) direction = 1; // Forward button = next
@@ -8168,9 +8311,31 @@ SKIP_EDGE_NAV:;
             if (handled) {
                 g_imageEngine->UpdateConfig(g_runtime); // Push to engine
                 g_uiRenderer->SetRuntimeConfig(g_runtime); // Push to HUD
-                RequestRepaint(PaintLayer::All); // Repaint to show HUD changes or Effect changes
+            }
+        }
+
+        // 1. If settings is visible and capturing a hotkey, intercept it
+        if (g_settingsOverlay.IsVisible() && g_settingsOverlay.IsCapturingHotkey()) {
+            if (wParam == VK_ESCAPE) {
+                g_settingsOverlay.CancelHotkeyCapture();
+                RequestRepaint(PaintLayer::Static);
                 return 0;
             }
+            if (wParam == VK_CONTROL || wParam == VK_SHIFT || wParam == VK_MENU ||
+                wParam == VK_LCONTROL || wParam == VK_RCONTROL || wParam == VK_LSHIFT || wParam == VK_RSHIFT ||
+                wParam == VK_LMENU || wParam == VK_RMENU) {
+                return 0; // Ignore pure modifier key press
+            }
+            KeyCombo captured;
+            captured.virtualKey = static_cast<uint16_t>(wParam);
+            captured.modifiers = 0;
+            if (GetKeyState(VK_CONTROL) & 0x8000) captured.modifiers |= 1;
+            if (GetKeyState(VK_SHIFT) & 0x8000)   captured.modifiers |= 2;
+            if (GetKeyState(VK_MENU) & 0x8000)    captured.modifiers |= 4;
+            
+            g_settingsOverlay.OnHotkeyCaptured(captured);
+            RequestRepaint(PaintLayer::Static);
+            return 0;
         }
 
         // Settings handling
@@ -8218,9 +8383,6 @@ SKIP_EDGE_NAV:;
             // Not Visible - Handled in switch below
         }
 
-        // 閲嶅閿繃?(Bit 30: The previous key state)
-        // 娉ㄦ剰: Warp 娴嬭瘯閫昏緫闇€瑕佸鐞囬暱鎸夛紝鎵€浠ヤ笉鍦ㄨ繖閲岃繃婊ら噸?
-        
         bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
         bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
         bool alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
@@ -8230,321 +8392,53 @@ SKIP_EDGE_NAV:;
             break; // 其他系统键交给默认处理
         }
         
-        // [Overlay Mode] Priority key handling
-        if (IsOverlayModeActive() && !IsPassthroughModeActive()) {
-            if (alt && wParam == VK_UP) { AdjustOverlayAlpha(hwnd, +25); return 0; }
-            if (alt && wParam == VK_DOWN) { AdjustOverlayAlpha(hwnd, -25); return 0; }
-            if (wParam == VK_ESCAPE) { ExitOverlayMode(hwnd); RequestRepaint(PaintLayer::All); return 0; }
-        }
-        // Ctrl+Shift+O: Toggle Overlay Mode
-        if (ctrl && shift && wParam == 'O') {
-            if (IsOverlayModeActive()) ExitOverlayMode(hwnd);
-            else EnterOverlayMode(hwnd);
-            RequestRepaint(PaintLayer::All);
-            return 0;
-        }
-        // Shift+Esc: Toggle Passthrough (only in Interactive overlay)
-        if (shift && wParam == VK_ESCAPE && IsOverlayModeActive() && !IsPassthroughModeActive()) {
-            EnterPassthroughMode(hwnd);
-            RequestRepaint(PaintLayer::All);
-            return 0;
-        }
 
-        switch (wParam) {
-        case VK_MENU: return 0; // 拦截 Alt 键按下，配合 WM_SYSKEYUP 彻底消除菜单循环问题
-        // Navigation
-        case VK_LEFT: 
-            if (alt && GetPaneContext(PaneSlot::Primary).resource.animator) {
-                HandleAnimFrameStep(hwnd, false);
-            } else if (CheckUnsavedChanges(hwnd)) {
-                Navigate(hwnd, -1);
-            }
-            break;
-        case VK_RIGHT: 
-            if (alt && GetPaneContext(PaneSlot::Primary).resource.animator) {
-                HandleAnimFrameStep(hwnd, true);
-            } else if (CheckUnsavedChanges(hwnd)) {
-                Navigate(hwnd, 1);
-            }
-            break;
-        case VK_OEM_COMMA: // Comma (,): Previous Frame
-            if (GetPaneContext(PaneSlot::Primary).resource.animator) {
-                SendMessage(hwnd, WM_COMMAND, (WPARAM)ToolbarButtonID::AnimPrevFrame, 0);
-            }
-            break;
-        case VK_OEM_PERIOD: // Period (.): Next Frame
-            if (GetPaneContext(PaneSlot::Primary).resource.animator) {
-                SendMessage(hwnd, WM_COMMAND, (WPARAM)ToolbarButtonID::AnimNextFrame, 0);
-            }
-            break;
-        case VK_UP: SendMessage(hwnd, WM_KEYDOWN, VK_ADD, 0); break; // Up: Zoom In
-        case VK_DOWN: SendMessage(hwnd, WM_KEYDOWN, VK_SUBTRACT, 0); break; // Down: Zoom Out
-        case VK_SPACE: 
-            if (GetPaneContext(PaneSlot::Primary).resource.animator) {
-                g_animPlaying = !g_animPlaying;
-                if (g_animPlaying) {
-                    g_animInspectorFrame = -1;
-                    uint32_t delayMs = GetPaneContext(PaneSlot::Primary).resource.frameMeta.delayMs;
-                    if (delayMs < 10) delayMs = 100;
-                    SetTimer(hwnd, IDT_ANIMATION, delayMs, NULL);
-                    g_osd.Show(hwnd, L"[Animation] Playing", true);
-                } else {
-                    KillTimer(hwnd, IDT_ANIMATION);
-                    g_osd.Show(hwnd, AppStrings::OSD_AnimPaused, true);
-                }
-                RequestRepaint(PaintLayer::Dynamic);
-            } else if (CheckUnsavedChanges(hwnd)) {
-                Navigate(hwnd, 1);
-            }
-            break;
-        case VK_SHIFT:
-            break;
-        case VK_PRIOR: if (CheckUnsavedChanges(hwnd)) Navigate(hwnd, -1); break; // Page Up
-        case VK_NEXT: if (CheckUnsavedChanges(hwnd)) Navigate(hwnd, 1); break; // Page Down
-        case VK_HOME: if (CheckUnsavedChanges(hwnd)) NavigateEdge(hwnd, false); break; // Home
-        case VK_END: if (CheckUnsavedChanges(hwnd)) NavigateEdge(hwnd, true); break; // End
-        
-        // File operations
-        case 'O':
-            if (IsCompareModeActive()) AppContext::GetInstance().Compare.contextPane = AppContext::GetInstance().Compare.activePane;
-            SendMessage(hwnd, WM_COMMAND, IDM_OPEN, 0);
-            break; // O or Ctrl+O: Open
-        case 'E':
-            if (IsCompareModeActive()) AppContext::GetInstance().Compare.contextPane = AppContext::GetInstance().Compare.activePane;
-            SendMessage(hwnd, WM_COMMAND, IDM_EDIT, 0);
-            break; // E: Edit
-        case VK_F1: {
-             if (!g_helpOverlay.IsVisible()) {
-                 if (g_gallery.IsVisible()) {
-                     g_gallery.Close();
-                     RestoreOverlayWindowState(hwnd);
-                 }
-                 SaveOverlayWindowState(hwnd);
-             }
-             g_helpOverlay.Toggle();
-             RequestRepaint(PaintLayer::Static);
-             return 0;
-        }
-        case VK_F2:
-            if (IsCompareModeActive()) AppContext::GetInstance().Compare.contextPane = AppContext::GetInstance().Compare.activePane;
-            SendMessage(hwnd, WM_COMMAND, IDM_RENAME, 0);
-            break; // F2: Rename
-        case VK_DELETE:
-            if (IsCompareModeActive()) AppContext::GetInstance().Compare.contextPane = AppContext::GetInstance().Compare.activePane;
-            SendMessage(hwnd, WM_COMMAND, IDM_DELETE, 0);
-            break; // Del: Delete
-        case 'P':
-            if (ctrl) {
-                if (IsCompareModeActive()) AppContext::GetInstance().Compare.contextPane = AppContext::GetInstance().Compare.activePane;
-                SendMessage(hwnd, WM_COMMAND, IDM_PRINT, 0);
-            }
-            break; // Ctrl+P: Print
-        case 'C': // C: Toggle Compare Mode, Ctrl+C: Copy image, Ctrl+Alt+C: Copy path
-            if (ctrl && alt) {
-                if (IsCompareModeActive()) AppContext::GetInstance().Compare.contextPane = AppContext::GetInstance().Compare.activePane;
-                SendMessage(hwnd, WM_COMMAND, IDM_COPY_PATH, 0);
-            } else if (ctrl) {
-                if (IsCompareModeActive()) AppContext::GetInstance().Compare.contextPane = AppContext::GetInstance().Compare.activePane;
-                SendMessage(hwnd, WM_COMMAND, IDM_COPY_IMAGE, 0);
-            } else {
-                if (IsCompareModeActive()) {
-                    AppContext::GetInstance().CompareCtrl->ExitMode(hwnd);
-                } else {
-                    AppContext::GetInstance().CompareCtrl->EnterMode(hwnd);
-                }
-                RequestRepaint(PaintLayer::All);
-            }
-            break;
-        
-        // View
-        case 'T': // T: Gallery (non-Ctrl), Ctrl+T: Always on Top
-            if (ctrl) {
-                SendMessage(hwnd, WM_COMMAND, IDM_ALWAYS_ON_TOP, 0);
-            } else {
-                // Toggle Gallery (Only if not visible, ESC closes it)
-                if (g_gallery.IsVisible()) {
-                    g_gallery.Close();
-                    RestoreOverlayWindowState(hwnd);
-                    RequestRepaint(PaintLayer::All);
-                } else {
-                    ShowGallery(hwnd);
-                }
-            }
-            break;
-        case VK_TAB: // Tab: Toggle compact info panel
-            if (IsCompareModeActive()) {
-                ToggleCompareHUD(hwnd, 0);
-            } else {
-                if (!g_runtime.ShowInfoPanel) {
-                    if (g_gallery.IsVisible()) {
-                        g_gallery.Close();
-                        RestoreOverlayWindowState(hwnd);
-                    }
-                    g_runtime.ShowInfoPanel = true;
-                    g_runtime.InfoPanelExpanded = false;
-                    g_toolbar.SetExifState(true);
-                } else if (g_runtime.InfoPanelExpanded) {
-                    g_runtime.InfoPanelExpanded = false;
-                } else {
-                    g_runtime.ShowInfoPanel = false;
-                    g_toolbar.SetExifState(false);
-                }
-                if (g_runtime.ShowInfoPanel) {
-                AdjustWindowForOverlay(hwnd, false);
-            } else {
-                AdjustWindowForOverlay(hwnd, true);
-            }
-                RequestRepaint(PaintLayer::Static);
-            }
-            break;
-        case 'I': // I: Toggle HUD (Compare) or Panel (Normal)
-            if (IsCompareModeActive()) {
-                ToggleCompareHUD(hwnd, 1);
-            } else {
-                // Normal Mode: Toggle Info Panel
-                if (!g_runtime.ShowInfoPanel) {
-                    if (g_gallery.IsVisible()) {
-                        g_gallery.Close();
-                        RestoreOverlayWindowState(hwnd);
-                    }
-                    g_runtime.ShowInfoPanel = true;
-                    g_runtime.InfoPanelExpanded = true;
-                    if (GetPaneContext(PaneSlot::Primary).metadata.HistR.empty() && !GetPaneContext(PaneSlot::Primary).path.empty()) {
-                        UpdateHistogramAsync(hwnd, GetPaneContext(PaneSlot::Primary).path);
-                    }
-                    g_toolbar.SetExifState(true);
-                } else if (!g_runtime.InfoPanelExpanded) {
-                    g_runtime.InfoPanelExpanded = true;
-                    if (GetPaneContext(PaneSlot::Primary).metadata.HistR.empty() && !GetPaneContext(PaneSlot::Primary).path.empty()) {
-                        UpdateHistogramAsync(hwnd, GetPaneContext(PaneSlot::Primary).path);
-                    }
-                } else {
-                    g_runtime.ShowInfoPanel = false;
-                    g_toolbar.SetExifState(false);
-                }
-                if (g_runtime.ShowInfoPanel) {
-                AdjustWindowForOverlay(hwnd, false);
-            } else {
-                AdjustWindowForOverlay(hwnd, true);
-            }
-                RequestRepaint(PaintLayer::Static);
-            }
-            break;
-        
-        case VK_F12: // F12: Toggle Performance HUD
-            g_showDebugHUD = !g_showDebugHUD;
-            if (g_uiRenderer) g_uiRenderer->SetDebugHUDVisible(g_showDebugHUD);
-            
-            if (g_showDebugHUD) {
-                if (g_imageEngine) g_imageEngine->ResetDebugCounters();
-                // Start continuous refresh timer for accurate FPS
-                SetTimer(hwnd, 996, 16, nullptr);  // ~60Hz refresh
-            } else {
-                KillTimer(hwnd, 996);
-            }
-            RequestRepaint(PaintLayer::Dynamic);
-            break;
-        
 
-        
-        // Transforms
-        case 'R': PerformTransform(hwnd, shift ? TransformType::Rotate90CCW : TransformType::Rotate90CW); break;
-        case 'H': PerformTransform(hwnd, TransformType::FlipHorizontal); break;
-        case 'V': PerformTransform(hwnd, TransformType::FlipVertical); break;
-        
-        // Zoom
-        case '1': case 'Z': case VK_NUMPAD1: { // 100% Original size
-            if (IsCompareModeActive()) {
-                PerformCompareZoom100(hwnd);
-            } else if (GetPaneContext(PaneSlot::Primary).resource) {
-                float currentRealScale = GetCurrentRealScale(hwnd);
-                bool is100Percent = (fabsf(currentRealScale - 1.0f) < 0.05f);
-                bool isMaximizedOrFullscreen = IsZoomed(hwnd) || g_isFullScreen;
+        // Intercept Alt key press to prevent Alt menu loop
+        if (wParam == VK_MENU) return 0;
 
-                if (is100Percent && !isMaximizedOrFullscreen && s_restoredWindowRect.right > s_restoredWindowRect.left) {
-                    PerformRestoreWindow(hwnd);
-                } else {
-                    if (!isMaximizedOrFullscreen && s_restoredWindowRect.right == 0) GetWindowRect(hwnd, &s_restoredWindowRect);
-                    PerformZoom100(hwnd);
-                }
-            }
-            break;
-        }
-            
-        case '0': case 'F': case VK_NUMPAD0: { // Fit to Screen (Best Fit)
-            if (IsCompareModeActive()) {
-                PerformCompareZoomFit(hwnd);
-            } else if (GetPaneContext(PaneSlot::Primary).resource) {
-                HMONITOR hMon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-                MONITORINFO mi{}; mi.cbSize = sizeof(mi); GetMonitorInfoW(hMon, &mi);
-                int maxW = mi.rcWork.right - mi.rcWork.left;
-                int maxH = mi.rcWork.bottom - mi.rcWork.top;
-                RECT rcWin; GetWindowRect(hwnd, &rcWin);
-                int winWidth = rcWin.right - rcWin.left;
-                int winHeight = rcWin.bottom - rcWin.top;
+        // Construct KeyCombo for dynamic lookup
+        KeyCombo pressed;
+        pressed.virtualKey = static_cast<uint16_t>(wParam);
+        pressed.modifiers = 0;
+        if (ctrl) pressed.modifiers |= 1;
+        if (shift) pressed.modifiers |= 2;
+        if (alt) pressed.modifiers |= 4;
 
-                bool isMaximizedOrFullscreen = IsZoomed(hwnd) || g_isFullScreen;
-                bool isFitWindow = (winWidth >= maxW - 2 || winHeight >= maxH - 2) || isMaximizedOrFullscreen;
-
-                if (isFitWindow && !isMaximizedOrFullscreen && s_restoredWindowRect.right > s_restoredWindowRect.left) {
-                    PerformRestoreWindow(hwnd);
-                } else {
-                    if (!isMaximizedOrFullscreen && s_restoredWindowRect.right == 0) GetWindowRect(hwnd, &s_restoredWindowRect);
-                    PerformZoomFit(hwnd);
-                }
-            }
-            break;
-        }
-
-        case VK_ADD: case VK_OEM_PLUS: // Zoom In
-        case VK_SUBTRACT: case VK_OEM_MINUS: { // Zoom Out
-            if (!GetPaneContext(PaneSlot::Primary).resource) break;
-            
-            bool isZoomIn = (wParam == VK_ADD || wParam == VK_OEM_PLUS);
-            bool isCtrl = (GetKeyState(VK_CONTROL) & 0x8000);
-
-            if (IsCompareModeActive()) {
-                float delta = isZoomIn ? 1.0f : -1.0f;
-                AppContext::GetInstance().CompareCtrl->ApplyZoomStep(hwnd, delta, isCtrl);
+        // Perform linear scan to match Hotkey
+        HotkeyAction action = HotkeyAction::None;
+        for (const auto& binding : g_hotkeys) {
+            if (!binding.combo.IsEmpty() && binding.combo == pressed) {
+                action = binding.action;
                 break;
             }
-            
-            float delta = isZoomIn ? 1.0f : -1.0f;
-            float newTotalScale = CalculateTargetZoom(hwnd, delta, isCtrl);
-            
-            // Keyboard step zoom should respect the current lock-window policy.
-            PerformSmartZoom(hwnd, newTotalScale, nullptr, false, false);
-
-            GetPaneContext(PaneSlot::Primary).view.IsInteracting = true;
-            SetTimer(hwnd, IDT_INTERACTION, 150, nullptr);
-
-            ShowZoomOsd(hwnd, newTotalScale);
-            break;
         }
 
-        
-        // Fullscreen
-        case VK_RETURN: case VK_F11: // Enter/F11: Toggle fullscreen
-            if (GetKeyState(VK_CONTROL) < 0) {
-                 SendMessage(hwnd, WM_COMMAND, IDM_TOGGLE_SPAN, 0); // Ctrl+F11: Toggle Video Wall
-            } else {
-                 SendMessage(hwnd, WM_COMMAND, IDM_FULLSCREEN, 0);
+        // If matched, handle it!
+        if (action != HotkeyAction::None) {
+            if (HandleHotkeyAction(hwnd, action)) {
+                return 0; // Handled
             }
-            break;
-        
-        // Exit
-        case VK_ESCAPE: 
-            if (IsCompareModeActive()) {
-                AppContext::GetInstance().CompareCtrl->ExitMode(hwnd);
-                RequestRepaint(PaintLayer::All);
-                break;
+        } else {
+            // Fallback matching for unmapped keys
+            if (!shift && !alt) {
+                if (wParam == VK_UP) {
+                    if (HandleHotkeyAction(hwnd, HotkeyAction::ZoomIn)) return 0;
+                } else if (wParam == VK_DOWN) {
+                    if (HandleHotkeyAction(hwnd, HotkeyAction::ZoomOut)) return 0;
+                }
             }
-            if (IsZoomed(hwnd)) {
-                ShowWindow(hwnd, SW_RESTORE);
-            } else {
-                if (CheckUnsavedChanges(hwnd)) PostMessage(hwnd, WM_CLOSE, 0, 0);
+            if (!ctrl && !shift && !alt) {
+                if (wParam == '1' || wParam == VK_NUMPAD1) {
+                    if (HandleHotkeyAction(hwnd, HotkeyAction::Zoom100)) return 0;
+                } else if (wParam == '0' || wParam == VK_NUMPAD0) {
+                    if (HandleHotkeyAction(hwnd, HotkeyAction::ZoomFit)) return 0;
+                }
             }
-            break;
+        }
+
+        if (message == WM_SYSKEYDOWN) {
+            break; // Other system keys go to default processing
         }
         return 0;
     }
@@ -9527,7 +9421,7 @@ SKIP_EDGE_NAV:;
         }
         case IDM_SETTINGS: {
             if (g_settingsOverlay.IsVisible()) {
-                g_settingsOverlay.OpenTab(5);
+                g_settingsOverlay.OpenTab(6);
             } else {
                 if (g_gallery.IsVisible()) {
                     g_gallery.Close();
@@ -12046,3 +11940,367 @@ void PerformAnimSeek(HWND hwnd, float targetProgress) {
         }
     }
 }
+
+bool HandleHotkeyAction(HWND hwnd, HotkeyAction action) {
+    [[maybe_unused]] bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+    [[maybe_unused]] bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+    [[maybe_unused]] bool alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
+
+    switch (action) {
+    case HotkeyAction::NavNext:
+        if (alt && GetPaneContext(PaneSlot::Primary).resource.animator) {
+            HandleAnimFrameStep(hwnd, true);
+        } else if (CheckUnsavedChanges(hwnd)) {
+            Navigate(hwnd, 1);
+        }
+        return true;
+
+    case HotkeyAction::NavPrev:
+        if (alt && GetPaneContext(PaneSlot::Primary).resource.animator) {
+            HandleAnimFrameStep(hwnd, false);
+        } else if (CheckUnsavedChanges(hwnd)) {
+            Navigate(hwnd, -1);
+        }
+        return true;
+
+    case HotkeyAction::NavFirst:
+        if (CheckUnsavedChanges(hwnd)) NavigateEdge(hwnd, false);
+        return true;
+
+    case HotkeyAction::NavLast:
+        if (CheckUnsavedChanges(hwnd)) NavigateEdge(hwnd, true);
+        return true;
+
+    case HotkeyAction::ZoomIn:
+        if (GetPaneContext(PaneSlot::Primary).resource) {
+            float newTotalScale = CalculateTargetZoom(hwnd, 1.0f, ctrl);
+            PerformSmartZoom(hwnd, newTotalScale, nullptr, false, false);
+            GetPaneContext(PaneSlot::Primary).view.IsInteracting = true;
+            SetTimer(hwnd, IDT_INTERACTION, 150, nullptr);
+            ShowZoomOsd(hwnd, newTotalScale);
+        }
+        return true;
+
+    case HotkeyAction::ZoomInFine:
+        if (GetPaneContext(PaneSlot::Primary).resource) {
+            float newTotalScale = CalculateTargetZoom(hwnd, 1.0f, true);
+            PerformSmartZoom(hwnd, newTotalScale, nullptr, false, false);
+            GetPaneContext(PaneSlot::Primary).view.IsInteracting = true;
+            SetTimer(hwnd, IDT_INTERACTION, 150, nullptr);
+            ShowZoomOsd(hwnd, newTotalScale);
+        }
+        return true;
+
+    case HotkeyAction::ZoomOut:
+        if (GetPaneContext(PaneSlot::Primary).resource) {
+            float newTotalScale = CalculateTargetZoom(hwnd, -1.0f, ctrl);
+            PerformSmartZoom(hwnd, newTotalScale, nullptr, false, false);
+            GetPaneContext(PaneSlot::Primary).view.IsInteracting = true;
+            SetTimer(hwnd, IDT_INTERACTION, 150, nullptr);
+            ShowZoomOsd(hwnd, newTotalScale);
+        }
+        return true;
+
+    case HotkeyAction::ZoomOutFine:
+        if (GetPaneContext(PaneSlot::Primary).resource) {
+            float newTotalScale = CalculateTargetZoom(hwnd, -1.0f, true);
+            PerformSmartZoom(hwnd, newTotalScale, nullptr, false, false);
+            GetPaneContext(PaneSlot::Primary).view.IsInteracting = true;
+            SetTimer(hwnd, IDT_INTERACTION, 150, nullptr);
+            ShowZoomOsd(hwnd, newTotalScale);
+        }
+        return true;
+
+    case HotkeyAction::Zoom100:
+        if (IsCompareModeActive()) {
+            PerformCompareZoom100(hwnd);
+        } else if (GetPaneContext(PaneSlot::Primary).resource) {
+            float currentRealScale = GetCurrentRealScale(hwnd);
+            bool is100Percent = (fabsf(currentRealScale - 1.0f) < 0.05f);
+            bool isMaximizedOrFullscreen = IsZoomed(hwnd) || g_isFullScreen;
+
+            if (is100Percent && !isMaximizedOrFullscreen && s_restoredWindowRect.right > s_restoredWindowRect.left) {
+                PerformRestoreWindow(hwnd);
+            } else {
+                if (!isMaximizedOrFullscreen && s_restoredWindowRect.right == 0) GetWindowRect(hwnd, &s_restoredWindowRect);
+                PerformZoom100(hwnd);
+            }
+        }
+        return true;
+
+    case HotkeyAction::ZoomFit:
+        if (IsCompareModeActive()) {
+            PerformCompareZoomFit(hwnd);
+        } else if (GetPaneContext(PaneSlot::Primary).resource) {
+            HMONITOR hMon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+            MONITORINFO mi{}; mi.cbSize = sizeof(mi); GetMonitorInfoW(hMon, &mi);
+            int maxW = mi.rcWork.right - mi.rcWork.left;
+            int maxH = mi.rcWork.bottom - mi.rcWork.top;
+            RECT rcWin; GetWindowRect(hwnd, &rcWin);
+            int winWidth = rcWin.right - rcWin.left;
+            int winHeight = rcWin.bottom - rcWin.top;
+
+            bool isMaximizedOrFullscreen = IsZoomed(hwnd) || g_isFullScreen;
+            bool isFitWindow = (winWidth >= maxW - 2 || winHeight >= maxH - 2) || isMaximizedOrFullscreen;
+
+            if (isFitWindow && !isMaximizedOrFullscreen && s_restoredWindowRect.right > s_restoredWindowRect.left) {
+                PerformRestoreWindow(hwnd);
+            } else {
+                if (!isMaximizedOrFullscreen && s_restoredWindowRect.right == 0) GetWindowRect(hwnd, &s_restoredWindowRect);
+                PerformZoomFit(hwnd);
+            }
+        }
+        return true;
+
+    case HotkeyAction::RotateCW:
+        PerformTransform(hwnd, TransformType::Rotate90CW);
+        return true;
+
+    case HotkeyAction::RotateCCW:
+        PerformTransform(hwnd, TransformType::Rotate90CCW);
+        return true;
+
+    case HotkeyAction::FlipH:
+        PerformTransform(hwnd, TransformType::FlipHorizontal);
+        return true;
+
+    case HotkeyAction::FlipV:
+        PerformTransform(hwnd, TransformType::FlipVertical);
+        return true;
+
+    case HotkeyAction::ToggleAnimation:
+        if (GetPaneContext(PaneSlot::Primary).resource.animator) {
+            g_animPlaying = !g_animPlaying;
+            if (g_animPlaying) {
+                g_animInspectorFrame = -1;
+                uint32_t delayMs = GetPaneContext(PaneSlot::Primary).resource.frameMeta.delayMs;
+                if (delayMs < 10) delayMs = 100;
+                SetTimer(hwnd, IDT_ANIMATION, delayMs, NULL);
+                g_osd.Show(hwnd, L"[Animation] Playing", true);
+            } else {
+                KillTimer(hwnd, IDT_ANIMATION);
+                g_osd.Show(hwnd, AppStrings::OSD_AnimPaused, true);
+            }
+            RequestRepaint(PaintLayer::Dynamic);
+        } else if (CheckUnsavedChanges(hwnd)) {
+            Navigate(hwnd, 1);
+        }
+        return true;
+
+    case HotkeyAction::AnimNextFrame:
+        if (GetPaneContext(PaneSlot::Primary).resource.animator) {
+            HandleAnimFrameStep(hwnd, true);
+        }
+        return true;
+
+    case HotkeyAction::AnimPrevFrame:
+        if (GetPaneContext(PaneSlot::Primary).resource.animator) {
+            HandleAnimFrameStep(hwnd, false);
+        }
+        return true;
+
+    case HotkeyAction::ToggleGallery:
+        if (g_gallery.IsVisible()) {
+            g_gallery.Close();
+            RestoreOverlayWindowState(hwnd);
+            RequestRepaint(PaintLayer::All);
+        } else {
+            ShowGallery(hwnd);
+        }
+        return true;
+
+    case HotkeyAction::ToggleInfoPanel:
+        if (IsCompareModeActive()) {
+            ToggleCompareHUD(hwnd, 0);
+        } else {
+            if (!g_runtime.ShowInfoPanel) {
+                if (g_gallery.IsVisible()) {
+                    g_gallery.Close();
+                    RestoreOverlayWindowState(hwnd);
+                }
+                g_runtime.ShowInfoPanel = true;
+                g_runtime.InfoPanelExpanded = false;
+                g_toolbar.SetExifState(true);
+            } else if (g_runtime.InfoPanelExpanded) {
+                g_runtime.InfoPanelExpanded = false;
+            } else {
+                g_runtime.ShowInfoPanel = false;
+                g_toolbar.SetExifState(false);
+            }
+            if (g_runtime.ShowInfoPanel) {
+                AdjustWindowForOverlay(hwnd, false);
+            } else {
+                AdjustWindowForOverlay(hwnd, true);
+            }
+            RequestRepaint(PaintLayer::Static);
+        }
+        return true;
+
+    case HotkeyAction::ToggleExifPanel:
+        if (IsCompareModeActive()) {
+            ToggleCompareHUD(hwnd, 1);
+        } else {
+            if (!g_runtime.ShowInfoPanel) {
+                if (g_gallery.IsVisible()) {
+                    g_gallery.Close();
+                    RestoreOverlayWindowState(hwnd);
+                }
+                g_runtime.ShowInfoPanel = true;
+                g_runtime.InfoPanelExpanded = true;
+                if (GetPaneContext(PaneSlot::Primary).metadata.HistR.empty() && !GetPaneContext(PaneSlot::Primary).path.empty()) {
+                    UpdateHistogramAsync(hwnd, GetPaneContext(PaneSlot::Primary).path);
+                }
+                g_toolbar.SetExifState(true);
+            } else if (!g_runtime.InfoPanelExpanded) {
+                g_runtime.InfoPanelExpanded = true;
+                if (GetPaneContext(PaneSlot::Primary).metadata.HistR.empty() && !GetPaneContext(PaneSlot::Primary).path.empty()) {
+                    UpdateHistogramAsync(hwnd, GetPaneContext(PaneSlot::Primary).path);
+                }
+            } else {
+                g_runtime.ShowInfoPanel = false;
+                g_toolbar.SetExifState(false);
+            }
+            if (g_runtime.ShowInfoPanel) {
+                AdjustWindowForOverlay(hwnd, false);
+            } else {
+                AdjustWindowForOverlay(hwnd, true);
+            }
+            RequestRepaint(PaintLayer::Static);
+        }
+        return true;
+
+    case HotkeyAction::ToggleFullscreen:
+        if (GetKeyState(VK_CONTROL) < 0) {
+            SendMessage(hwnd, WM_COMMAND, IDM_TOGGLE_SPAN, 0);
+        } else {
+            SendMessage(hwnd, WM_COMMAND, IDM_FULLSCREEN, 0);
+        }
+        return true;
+
+    case HotkeyAction::ToggleSpan:
+        SendMessage(hwnd, WM_COMMAND, IDM_TOGGLE_SPAN, 0);
+        return true;
+
+    case HotkeyAction::OpenFile:
+        if (IsCompareModeActive()) AppContext::GetInstance().Compare.contextPane = AppContext::GetInstance().Compare.activePane;
+        SendMessage(hwnd, WM_COMMAND, IDM_OPEN, 0);
+        return true;
+
+    case HotkeyAction::EditFile:
+        if (IsCompareModeActive()) AppContext::GetInstance().Compare.contextPane = AppContext::GetInstance().Compare.activePane;
+        SendMessage(hwnd, WM_COMMAND, IDM_EDIT, 0);
+        return true;
+
+    case HotkeyAction::RenameFile:
+        if (IsCompareModeActive()) AppContext::GetInstance().Compare.contextPane = AppContext::GetInstance().Compare.activePane;
+        SendMessage(hwnd, WM_COMMAND, IDM_RENAME, 0);
+        return true;
+
+    case HotkeyAction::DeleteFile:
+        if (IsCompareModeActive()) AppContext::GetInstance().Compare.contextPane = AppContext::GetInstance().Compare.activePane;
+        SendMessage(hwnd, WM_COMMAND, IDM_DELETE, 0);
+        return true;
+
+    case HotkeyAction::CopyImage:
+        if (IsCompareModeActive()) AppContext::GetInstance().Compare.contextPane = AppContext::GetInstance().Compare.activePane;
+        SendMessage(hwnd, WM_COMMAND, IDM_COPY_IMAGE, 0);
+        return true;
+
+    case HotkeyAction::CopyPath:
+        if (IsCompareModeActive()) AppContext::GetInstance().Compare.contextPane = AppContext::GetInstance().Compare.activePane;
+        SendMessage(hwnd, WM_COMMAND, IDM_COPY_PATH, 0);
+        return true;
+
+    case HotkeyAction::ToggleCompare:
+        if (IsCompareModeActive()) {
+            AppContext::GetInstance().CompareCtrl->ExitMode(hwnd);
+        } else {
+            AppContext::GetInstance().CompareCtrl->EnterMode(hwnd);
+        }
+        RequestRepaint(PaintLayer::All);
+        return true;
+
+    case HotkeyAction::AlwaysOnTop:
+        SendMessage(hwnd, WM_COMMAND, IDM_ALWAYS_ON_TOP, 0);
+        return true;
+
+    case HotkeyAction::ToggleDebugHud:
+        g_showDebugHUD = !g_showDebugHUD;
+        if (g_uiRenderer) g_uiRenderer->SetDebugHUDVisible(g_showDebugHUD);
+        if (g_showDebugHUD) {
+            if (g_imageEngine) g_imageEngine->ResetDebugCounters();
+            SetTimer(hwnd, 996, 16, nullptr);
+        } else {
+            KillTimer(hwnd, 996);
+        }
+        RequestRepaint(PaintLayer::Dynamic);
+        return true;
+
+    case HotkeyAction::Print:
+        SendMessage(hwnd, WM_COMMAND, IDM_PRINT, 0);
+        return true;
+
+    case HotkeyAction::ToggleOverlay:
+        if (IsOverlayModeActive()) {
+            ExitOverlayMode(hwnd);
+        } else {
+            EnterOverlayMode(hwnd);
+        }
+        RequestRepaint(PaintLayer::All);
+        return true;
+
+    case HotkeyAction::OverlayAlphaUp:
+        AdjustOverlayAlpha(hwnd, 25);
+        return true;
+
+    case HotkeyAction::OverlayAlphaDown:
+        AdjustOverlayAlpha(hwnd, -25);
+        return true;
+
+    case HotkeyAction::OverlayTogglePassthrough:
+        if (IsOverlayModeActive()) {
+            if (IsPassthroughModeActive()) {
+                ExitPassthroughMode(hwnd);
+            } else {
+                EnterPassthroughMode(hwnd);
+            }
+            RequestRepaint(PaintLayer::All);
+        }
+        return true;
+
+    case HotkeyAction::Help:
+        if (!g_helpOverlay.IsVisible()) {
+            if (g_gallery.IsVisible()) {
+                g_gallery.Close();
+                RestoreOverlayWindowState(hwnd);
+            }
+            SaveOverlayWindowState(hwnd);
+        }
+        g_helpOverlay.Toggle();
+        RequestRepaint(PaintLayer::Static);
+        return true;
+
+    case HotkeyAction::Exit:
+        if (IsOverlayModeActive()) {
+            ExitOverlayMode(hwnd);
+            RequestRepaint(PaintLayer::All);
+            return true;
+        }
+        if (IsCompareModeActive()) {
+            AppContext::GetInstance().CompareCtrl->ExitMode(hwnd);
+            RequestRepaint(PaintLayer::All);
+            return true;
+        }
+        if (IsZoomed(hwnd)) {
+            ShowWindow(hwnd, SW_RESTORE);
+        } else {
+            if (CheckUnsavedChanges(hwnd)) PostMessage(hwnd, WM_CLOSE, 0, 0);
+        }
+        return true;
+
+    default:
+        break;
+    }
+    return false;
+}
+

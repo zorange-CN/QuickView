@@ -92,7 +92,7 @@ void HelpOverlay::RebuildList() {
 
     // Section: Navigation
     m_items.push_back({ true, AppStrings::Help_Header_Mouse, L"" }); // "Mouse Actions"
-    m_items.push_back({ false, L"\x2190 / \x2192 (Space), PgUp/PgDn", AppStrings::Help_Action_NextPrev });
+    m_items.push_back({ false, L"\x2190 / \x2192 (Space)", AppStrings::Help_Action_NextPrev });
     m_items.push_back({ false, L"Home / End", AppStrings::Help_Item_FirstLast });
     bool wheelPrimaryNavigate = (g_config.WheelActionMode == 1);
     m_items.push_back({ false, AppStrings::Help_Mouse_Wheel, wheelPrimaryNavigate ? AppStrings::Help_Action_NextPrev : AppStrings::Help_Action_Zoom });
@@ -132,7 +132,7 @@ void HelpOverlay::RebuildList() {
     std::wstring i_desc = std::wstring(AppStrings::Toolbar_Tooltip_Info);
     m_items.push_back({ false, L"I / Tab", L"Info Panel (Full / Lite)" });
     m_items.push_back({ false, L"C", AppStrings::Help_Item_Compare });
-    m_items.push_back({ false, L"Ctrl + F11", L"Span Displays (Video Wall)" });
+    m_items.push_back({ false, L"Ctrl + F11", AppStrings::Settings_Label_SpanDisplays });
 
     // Section: Overlay Mode
     std::wstring overlayText = AppStrings::Context_OverlayMode;

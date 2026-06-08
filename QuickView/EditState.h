@@ -6,6 +6,8 @@
 #include <vector>
 #include <memory>
 #include <algorithm>
+#include <array>
+#include <string_view>
 #include "LosslessTransform.h" // For EditQuality enum
 #include <d2d1.h>
 #include "ImageTypes.h"
@@ -112,6 +114,339 @@ struct ThemePreset {
 // Built-in presets (Synchronized defaults: Blur 3px, Tint 65%, Spec 15%, Shadow 45%)
 inline constexpr ThemePreset PRESET_DARK  = { {0.06f, 0.06f, 0.08f, 1.0f}, {0.92f, 0.92f, 0.95f, 1.0f}, {0.0f, 0.6f, 1.0f, 1.0f},  0.65f, 3.0f, 0.15f, 0.45f, 15.0f, 45.0f, 55.0f, 15.0f };
 inline constexpr ThemePreset PRESET_LIGHT = { {0.95f, 0.95f, 0.95f, 1.0f}, {0.1f, 0.1f, 0.12f, 1.0f},  {0.0f, 0.45f, 0.9f, 1.0f}, 0.65f, 3.0f, 0.15f, 0.45f,  8.0f, 40.0f, 40.0f, 15.0f };
+
+// ============================================================================
+// Hotkey Customization System
+// ============================================================================
+enum class HotkeyAction : uint8_t {
+    None = 0,
+    NavNext,           // Next Image
+    NavPrev,           // Previous Image
+    NavFirst,          // First Image
+    NavLast,           // Last Image
+    ZoomIn,            // Zoom In
+    ZoomInFine,        // Zoom In Fine
+    ZoomOut,           // Zoom Out
+    ZoomOutFine,       // Zoom Out Fine
+    Zoom100,           // Zoom 100% / Restore
+    ZoomFit,           // Zoom Fit / Restore
+    RotateCW,          // Rotate 90 CW
+    RotateCCW,         // Rotate 90 CCW
+    FlipH,             // Flip Horizontal
+    FlipV,             // Flip Vertical
+    ToggleAnimation,   // Play/Pause Animation
+    AnimNextFrame,     // Animation Next Frame
+    AnimPrevFrame,     // Animation Previous Frame
+    ToggleGallery,     // Toggle Gallery Overlay
+    ToggleInfoPanel,   // Toggle Info Panel (Lite)
+    ToggleExifPanel,   // Toggle Exif Panel (Full)
+    ToggleFullscreen,  // Toggle Fullscreen
+    ToggleSpan,        // Toggle Span Displays
+    OpenFile,          // Open File Dialog
+    EditFile,          // Edit with External Editor
+    RenameFile,        // Rename File Dialog
+    DeleteFile,        // Delete File Dialog
+    CopyImage,         // Copy Image to Clipboard
+    CopyPath,          // Copy Path to Clipboard
+    ToggleCompare,     // Toggle Compare Mode
+    AlwaysOnTop,       // Toggle Always on Top
+    ToggleDebugHud,    // Toggle Debug Performance HUD
+    Print,             // Print Image
+    ToggleOverlay,     // Toggle Tracing Mode (Overlay Mode)
+    OverlayAlphaUp,    // Adjust Overlay Alpha Up
+    OverlayAlphaDown,  // Adjust Overlay Alpha Down
+    OverlayTogglePassthrough, // Toggle Passthrough Mode
+    Help,              // Toggle Help Overlay
+    Exit,              // Exit App / Restore Screen
+    Count              // Sentinel
+};
+
+// Hotkey bindings array declaration
+
+inline std::wstring_view HotkeyActionToString(HotkeyAction action) noexcept {
+    switch (action) {
+        case HotkeyAction::NavNext: return L"NavNext";
+        case HotkeyAction::NavPrev: return L"NavPrev";
+        case HotkeyAction::NavFirst: return L"NavFirst";
+        case HotkeyAction::NavLast: return L"NavLast";
+        case HotkeyAction::ZoomIn: return L"ZoomIn";
+        case HotkeyAction::ZoomInFine: return L"ZoomInFine";
+        case HotkeyAction::ZoomOut: return L"ZoomOut";
+        case HotkeyAction::ZoomOutFine: return L"ZoomOutFine";
+        case HotkeyAction::Zoom100: return L"Zoom100";
+        case HotkeyAction::ZoomFit: return L"ZoomFit";
+        case HotkeyAction::RotateCW: return L"RotateCW";
+        case HotkeyAction::RotateCCW: return L"RotateCCW";
+        case HotkeyAction::FlipH: return L"FlipH";
+        case HotkeyAction::FlipV: return L"FlipV";
+        case HotkeyAction::ToggleAnimation: return L"ToggleAnimation";
+        case HotkeyAction::AnimNextFrame: return L"AnimNextFrame";
+        case HotkeyAction::AnimPrevFrame: return L"AnimPrevFrame";
+        case HotkeyAction::ToggleGallery: return L"ToggleGallery";
+        case HotkeyAction::ToggleInfoPanel: return L"ToggleInfoPanel";
+        case HotkeyAction::ToggleExifPanel: return L"ToggleExifPanel";
+        case HotkeyAction::ToggleFullscreen: return L"ToggleFullscreen";
+        case HotkeyAction::ToggleSpan: return L"ToggleSpan";
+        case HotkeyAction::OpenFile: return L"OpenFile";
+        case HotkeyAction::EditFile: return L"EditFile";
+        case HotkeyAction::RenameFile: return L"RenameFile";
+        case HotkeyAction::DeleteFile: return L"DeleteFile";
+        case HotkeyAction::CopyImage: return L"CopyImage";
+        case HotkeyAction::CopyPath: return L"CopyPath";
+        case HotkeyAction::ToggleCompare: return L"ToggleCompare";
+        case HotkeyAction::AlwaysOnTop: return L"AlwaysOnTop";
+        case HotkeyAction::ToggleDebugHud: return L"ToggleDebugHud";
+        case HotkeyAction::Print: return L"Print";
+        case HotkeyAction::ToggleOverlay: return L"ToggleOverlay";
+        case HotkeyAction::OverlayAlphaUp: return L"OverlayAlphaUp";
+        case HotkeyAction::OverlayAlphaDown: return L"OverlayAlphaDown";
+        case HotkeyAction::OverlayTogglePassthrough: return L"OverlayTogglePassthrough";
+        case HotkeyAction::Help: return L"Help";
+        case HotkeyAction::Exit: return L"Exit";
+        default: return L"None";
+    }
+}
+
+inline HotkeyAction StringToHotkeyAction(std::wstring_view sv) noexcept {
+    if (sv == L"NavNext") return HotkeyAction::NavNext;
+    if (sv == L"NavPrev") return HotkeyAction::NavPrev;
+    if (sv == L"NavFirst") return HotkeyAction::NavFirst;
+    if (sv == L"NavLast") return HotkeyAction::NavLast;
+    if (sv == L"ZoomIn") return HotkeyAction::ZoomIn;
+    if (sv == L"ZoomInFine") return HotkeyAction::ZoomInFine;
+    if (sv == L"ZoomOut") return HotkeyAction::ZoomOut;
+    if (sv == L"ZoomOutFine") return HotkeyAction::ZoomOutFine;
+    if (sv == L"Zoom100") return HotkeyAction::Zoom100;
+    if (sv == L"ZoomFit") return HotkeyAction::ZoomFit;
+    if (sv == L"RotateCW") return HotkeyAction::RotateCW;
+    if (sv == L"RotateCCW") return HotkeyAction::RotateCCW;
+    if (sv == L"FlipH") return HotkeyAction::FlipH;
+    if (sv == L"FlipV") return HotkeyAction::FlipV;
+    if (sv == L"ToggleAnimation") return HotkeyAction::ToggleAnimation;
+    if (sv == L"AnimNextFrame") return HotkeyAction::AnimNextFrame;
+    if (sv == L"AnimPrevFrame") return HotkeyAction::AnimPrevFrame;
+    if (sv == L"ToggleGallery") return HotkeyAction::ToggleGallery;
+    if (sv == L"ToggleInfoPanel") return HotkeyAction::ToggleInfoPanel;
+    if (sv == L"ToggleExifPanel") return HotkeyAction::ToggleExifPanel;
+    if (sv == L"ToggleFullscreen") return HotkeyAction::ToggleFullscreen;
+    if (sv == L"ToggleSpan") return HotkeyAction::ToggleSpan;
+    if (sv == L"OpenFile") return HotkeyAction::OpenFile;
+    if (sv == L"EditFile") return HotkeyAction::EditFile;
+    if (sv == L"RenameFile") return HotkeyAction::RenameFile;
+    if (sv == L"DeleteFile") return HotkeyAction::DeleteFile;
+    if (sv == L"CopyImage") return HotkeyAction::CopyImage;
+    if (sv == L"CopyPath") return HotkeyAction::CopyPath;
+    if (sv == L"ToggleCompare") return HotkeyAction::ToggleCompare;
+    if (sv == L"AlwaysOnTop") return HotkeyAction::AlwaysOnTop;
+    if (sv == L"ToggleDebugHud") return HotkeyAction::ToggleDebugHud;
+    if (sv == L"Print") return HotkeyAction::Print;
+    if (sv == L"ToggleOverlay") return HotkeyAction::ToggleOverlay;
+    if (sv == L"OverlayAlphaUp") return HotkeyAction::OverlayAlphaUp;
+    if (sv == L"OverlayAlphaDown") return HotkeyAction::OverlayAlphaDown;
+    if (sv == L"OverlayTogglePassthrough") return HotkeyAction::OverlayTogglePassthrough;
+    if (sv == L"Help") return HotkeyAction::Help;
+    if (sv == L"Exit") return HotkeyAction::Exit;
+    return HotkeyAction::None;
+}
+
+struct KeyCombo {
+    uint16_t virtualKey = 0;
+    uint8_t modifiers = 0; // Bit 0: Ctrl, Bit 1: Shift, Bit 2: Alt
+
+    bool IsEmpty() const noexcept {
+        return virtualKey == 0 ||
+               virtualKey == VK_CONTROL ||
+               virtualKey == VK_SHIFT ||
+               virtualKey == VK_MENU ||
+               virtualKey == VK_LCONTROL ||
+               virtualKey == VK_RCONTROL ||
+               virtualKey == VK_LSHIFT ||
+               virtualKey == VK_RSHIFT ||
+               virtualKey == VK_LMENU ||
+               virtualKey == VK_RMENU;
+    }
+
+    bool operator==(const KeyCombo& other) const noexcept {
+        return virtualKey == other.virtualKey && modifiers == other.modifiers;
+    }
+};
+
+struct HotkeyBinding {
+    HotkeyAction action;
+    KeyCombo combo;
+    KeyCombo defaultCombo;
+};
+
+extern std::array<HotkeyBinding, static_cast<size_t>(HotkeyAction::Count)> g_hotkeys;
+
+inline std::wstring_view VKToString(uint16_t vk) noexcept {
+    if (vk >= 'A' && vk <= 'Z') {
+        static const wchar_t chars[] = {
+            L'A', L'B', L'C', L'D', L'E', L'F', L'G', L'H', L'I', L'J', L'K', L'L', L'M',
+            L'N', L'O', L'P', L'Q', L'R', L'S', L'T', L'U', L'V', L'W', L'X', L'Y', L'Z'
+        };
+        return std::wstring_view(&chars[vk - 'A'], 1);
+    }
+    if (vk >= '0' && vk <= '9') {
+        static const wchar_t digits[] = { L'0', L'1', L'2', L'3', L'4', L'5', L'6', L'7', L'8', L'9' };
+        return std::wstring_view(&digits[vk - '0'], 1);
+    }
+    if (vk >= VK_NUMPAD0 && vk <= VK_NUMPAD9) {
+        static const std::wstring_view numpads[] = {
+            L"Numpad0", L"Numpad1", L"Numpad2", L"Numpad3", L"Numpad4", L"Numpad5", L"Numpad6", L"Numpad7", L"Numpad8", L"Numpad9"
+        };
+        return numpads[vk - VK_NUMPAD0];
+    }
+    if (vk >= VK_F1 && vk <= VK_F12) {
+        static const std::wstring_view fkeys[] = {
+            L"F1", L"F2", L"F3", L"F4", L"F5", L"F6", L"F7", L"F8", L"F9", L"F10", L"F11", L"F12"
+        };
+        return fkeys[vk - VK_F1];
+    }
+    switch (vk) {
+        case VK_LEFT: return L"Left";
+        case VK_RIGHT: return L"Right";
+        case VK_UP: return L"Up";
+        case VK_DOWN: return L"Down";
+        case VK_SPACE: return L"Space";
+        case VK_RETURN: return L"Enter";
+        case VK_ESCAPE: return L"Esc";
+        case VK_TAB: return L"Tab";
+        case VK_BACK: return L"Backspace";
+        case VK_DELETE: return L"Delete";
+        case VK_INSERT: return L"Insert";
+        case VK_HOME: return L"Home";
+        case VK_END: return L"End";
+        case VK_PRIOR: return L"PageUp";
+        case VK_NEXT: return L"PageDown";
+        case VK_OEM_PLUS: return L"+";
+        case VK_OEM_MINUS: return L"-";
+        case VK_OEM_COMMA: return L",";
+        case VK_OEM_PERIOD: return L".";
+        case VK_ADD: return L"Numpad+";
+        case VK_SUBTRACT: return L"Numpad-";
+        case VK_MULTIPLY: return L"Numpad*";
+        case VK_DIVIDE: return L"Numpad/";
+        case VK_MBUTTON: return L"MButton";
+        case VK_XBUTTON1: return L"XButton1";
+        case VK_XBUTTON2: return L"XButton2";
+        default: return L"";
+    }
+}
+
+inline uint16_t StringToVK(std::wstring_view sv) noexcept {
+    if (sv.length() == 1) {
+        wchar_t c = sv[0];
+        if (c >= L'A' && c <= L'Z') return c;
+        if (c >= L'0' && c <= L'9') return c;
+        if (c == L'+') return VK_OEM_PLUS;
+        if (c == L'-') return VK_OEM_MINUS;
+        if (c == L',') return VK_OEM_COMMA;
+        if (c == L'.') return VK_OEM_PERIOD;
+    }
+    if (sv.starts_with(L"F") && sv.length() > 1) {
+        std::wstring_view num = sv.substr(1);
+        if (num == L"1") return VK_F1;
+        if (num == L"2") return VK_F2;
+        if (num == L"3") return VK_F3;
+        if (num == L"4") return VK_F4;
+        if (num == L"5") return VK_F5;
+        if (num == L"6") return VK_F6;
+        if (num == L"7") return VK_F7;
+        if (num == L"8") return VK_F8;
+        if (num == L"9") return VK_F9;
+        if (num == L"10") return VK_F10;
+        if (num == L"11") return VK_F11;
+        if (num == L"12") return VK_F12;
+    }
+    if (sv.starts_with(L"Numpad")) {
+        std::wstring_view num = sv.substr(6);
+        if (num == L"0") return VK_NUMPAD0;
+        if (num == L"1") return VK_NUMPAD1;
+        if (num == L"2") return VK_NUMPAD2;
+        if (num == L"3") return VK_NUMPAD3;
+        if (num == L"4") return VK_NUMPAD4;
+        if (num == L"5") return VK_NUMPAD5;
+        if (num == L"6") return VK_NUMPAD6;
+        if (num == L"7") return VK_NUMPAD7;
+        if (num == L"8") return VK_NUMPAD8;
+        if (num == L"9") return VK_NUMPAD9;
+        if (num == L"+") return VK_ADD;
+        if (num == L"-") return VK_SUBTRACT;
+        if (num == L"*") return VK_MULTIPLY;
+        if (num == L"/") return VK_DIVIDE;
+    }
+    if (sv.starts_with(L"0x") || sv.starts_with(L"0X")) {
+        uint16_t val = 0;
+        for (size_t i = 2; i < sv.length(); ++i) {
+            wchar_t c = sv[i];
+            val *= 16;
+            if (c >= L'0' && c <= L'9') val += (c - L'0');
+            else if (c >= L'A' && c <= L'F') val += (10 + (c - L'A'));
+            else if (c >= L'a' && c <= L'f') val += (10 + (c - L'a'));
+            else return 0;
+        }
+        return val;
+    }
+    if (sv == L"Left") return VK_LEFT;
+    if (sv == L"Right") return VK_RIGHT;
+    if (sv == L"Up") return VK_UP;
+    if (sv == L"Down") return VK_DOWN;
+    if (sv == L"Space") return VK_SPACE;
+    if (sv == L"Enter") return VK_RETURN;
+    if (sv == L"Esc" || sv == L"Escape") return VK_ESCAPE;
+    if (sv == L"Tab") return VK_TAB;
+    if (sv == L"Backspace") return VK_BACK;
+    if (sv == L"Delete" || sv == L"Del") return VK_DELETE;
+    if (sv == L"Insert") return VK_INSERT;
+    if (sv == L"Home") return VK_HOME;
+    if (sv == L"End") return VK_END;
+    if (sv == L"PageUp" || sv == L"PgUp") return VK_PRIOR;
+    if (sv == L"PageDown" || sv == L"PgDn") return VK_NEXT;
+    if (sv == L"MButton" || sv == L"MiddleClick" || sv == L"MiddleButton" || sv == L"Middle") return VK_MBUTTON;
+    if (sv == L"XButton1" || sv == L"MouseBack" || sv == L"Back") return VK_XBUTTON1;
+    if (sv == L"XButton2" || sv == L"MouseForward" || sv == L"Forward") return VK_XBUTTON2;
+    return 0;
+}
+
+inline KeyCombo StringToKeyCombo(std::wstring_view sv) noexcept {
+    KeyCombo combo;
+    while (!sv.empty()) {
+        if (sv.starts_with(L"Ctrl+")) {
+            combo.modifiers |= 1;
+            sv.remove_prefix(5);
+        } else if (sv.starts_with(L"Shift+")) {
+            combo.modifiers |= 2;
+            sv.remove_prefix(6);
+        } else if (sv.starts_with(L"Alt+")) {
+            combo.modifiers |= 4;
+            sv.remove_prefix(4);
+        } else {
+            break;
+        }
+    }
+    combo.virtualKey = StringToVK(sv);
+    return combo;
+}
+
+inline std::wstring KeyComboToString(const KeyCombo& combo) {
+    if (combo.IsEmpty()) return L"None";
+    std::wstring s;
+    if (combo.modifiers & 1) s += L"Ctrl+";
+    if (combo.modifiers & 2) s += L"Shift+";
+    if (combo.modifiers & 4) s += L"Alt+";
+    
+    std::wstring_view vkStr = VKToString(combo.virtualKey);
+    if (!vkStr.empty()) {
+        s.append(vkStr.data(), vkStr.length());
+    } else {
+        wchar_t buf[16];
+        swprintf_s(buf, L"0x%X", combo.virtualKey);
+        s += buf;
+    }
+    return s;
+}
+
 
 /// <summary>
 /// Application configuration (for future settings menu)

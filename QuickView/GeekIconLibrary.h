@@ -79,6 +79,7 @@ namespace GeekIcons {
     extern const VectorIcon RestoreVector;         // 0xE923
     extern const VectorIcon ContactVector;         // 0xE706
     extern const VectorIcon PassthroughVector;     // 0xE962
+    extern const VectorIcon KeyboardVector;        // 0xE765
 
     // --- Batch 1: UI Overlays & Settings ---
     extern const VectorIcon CloseVector;          // 0xE711
@@ -171,6 +172,7 @@ namespace GeekIcons {
     inline IconGlyph Control          = &ControlVector;
     inline IconGlyph Image            = &ImageVector;
     inline IconGlyph Advanced         = &AdvancedVector;
+    inline IconGlyph Keyboard         = &KeyboardVector;
 
     // Standard Reuse
 } // namespace GeekIcons

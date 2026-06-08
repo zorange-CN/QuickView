@@ -1,4 +1,8 @@
 #pragma once
+#include <cstdint>
+#include <string>
+
+enum class HotkeyAction : uint8_t;
 
 /// <summary>
 /// Centralized string resources for easy localization
@@ -207,6 +211,12 @@ namespace AppStrings {
     // Settings UI
     extern const wchar_t* Settings_Tab_General;
     extern const wchar_t* Settings_Tab_About;
+    extern const wchar_t* Settings_Tab_Shortcuts;
+    extern const wchar_t* Settings_Hotkey_PressKey;
+    extern const wchar_t* Settings_Hotkey_Conflict;
+    extern const wchar_t* Settings_Hotkey_Restore;
+    extern const wchar_t* Settings_Hotkey_Restored;
+    extern const wchar_t* Settings_Hotkey_MouseTip;
     
     // Gallery Trigger Mode (Top Hover Gallery)
     extern const wchar_t* Settings_Header_GalleryTrigger;
@@ -569,4 +579,7 @@ namespace AppStrings {
     extern const wchar_t* Settings_Header_ThemeManagement;
     extern const wchar_t* Settings_Action_ExportTheme;
     extern const wchar_t* Settings_Action_ImportTheme;
+
+    // Hotkey Action Name resolver
+    std::wstring GetHotkeyActionName(::HotkeyAction action);
 }
