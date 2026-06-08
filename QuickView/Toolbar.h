@@ -2,6 +2,7 @@
 #include "pch.h"
 #include <vector>
 #include <string>
+#include <cstdint>
 #include "GeekGlass.h"
 #include "GeekIconLibrary.h"
 
@@ -49,6 +50,11 @@ struct ToolbarButton {
     bool isToggled = false; // For Lock/Exif/Raw
     bool isWarning = false; // For FixExtension
     bool isHovered = false;
+};
+
+// Responsive hide: a group of buttons hidden together at the same priority level
+struct ResponsiveHideGroup {
+    ToolbarButtonID ids[4]{}; // Up to 4 buttons per group, None-terminated
 };
 
 class Toolbar {
@@ -138,7 +144,8 @@ private:
 
     bool m_targetVisible = false;
     bool m_isPinned = false;
-    bool m_windowTooNarrow = false; // [Phase 3] Hide toolbar if window is too narrow
+    bool m_windowTooNarrow = false; // True only when even the last-priority buttons can't fit
+    uint64_t m_responsiveHiddenSet = 0; // Bitmask of ToolbarButtonID values hidden by responsive layout
     bool m_compareMode = false;
     bool m_comicMode = false;
     bool m_animMode = false;

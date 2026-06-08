@@ -168,7 +168,87 @@ void Toolbar::UpdateLayout(float winW, float winH) {
     return !isCompareButton(id) && id != ToolbarButtonID::AnimPlayPause && id != ToolbarButtonID::AnimPrevFrame && id != ToolbarButtonID::AnimNextFrame && id != ToolbarButtonID::AnimDirtyRect && !isAlwaysVisible(id);
   };
 
+  // --- Responsive Hide Priority Tables (per mode) ---
+  // Each table lists groups of buttons to hide in order of decreasing priority.
+  // The LAST group in each table is the "core" group — if it can't fit, hide the entire toolbar.
+  static constexpr ResponsiveHideGroup kNormalHideOrder[] = {
+      {ToolbarButtonID::Pin},
+      {ToolbarButtonID::FlipH},
+      {ToolbarButtonID::LockSize},
+      {ToolbarButtonID::Gallery},
+      {ToolbarButtonID::CompareToggle},
+      {ToolbarButtonID::Exif},
+      {ToolbarButtonID::RotateL, ToolbarButtonID::RotateR},
+      {ToolbarButtonID::Prev, ToolbarButtonID::Next},  // Core — hide => hide toolbar
+  };
+  static constexpr ResponsiveHideGroup kCompareHideOrder[] = {
+      {ToolbarButtonID::Pin},
+      {ToolbarButtonID::CompareOpen},
+      {ToolbarButtonID::CompareSwap},
+      {ToolbarButtonID::CompareDelete},
+      {ToolbarButtonID::CompareRawToggle},
+      {ToolbarButtonID::CompareZoomIn, ToolbarButtonID::CompareZoomOut},  // Zoom capsule group
+      {ToolbarButtonID::CompareInfo},
+      {ToolbarButtonID::CompareSyncPan},
+      {ToolbarButtonID::CompareSyncZoom},
+      {ToolbarButtonID::CompareLayout},
+      {ToolbarButtonID::CompareExit},  // Core
+  };
+  static constexpr ResponsiveHideGroup kAnimHideOrder[] = {
+      {ToolbarButtonID::Pin},
+      {ToolbarButtonID::LockSize},
+      {ToolbarButtonID::Exif},
+      {ToolbarButtonID::AnimDirtyRect},
+      {ToolbarButtonID::Prev, ToolbarButtonID::Next},
+      // AnimSpeed capsule hides when AnimNextFrame is hidden (they are visually adjacent)
+      {ToolbarButtonID::AnimPrevFrame, ToolbarButtonID::AnimNextFrame},
+      {ToolbarButtonID::AnimPlayPause},  // Core
+  };
+  static constexpr ResponsiveHideGroup kComicHideOrder[] = {
+      {ToolbarButtonID::Pin},
+      {ToolbarButtonID::LockSize},
+      {ToolbarButtonID::Gallery},
+      {ToolbarButtonID::CompareToggle},
+      {ToolbarButtonID::Exif},
+      {ToolbarButtonID::Prev, ToolbarButtonID::Next},  // Core
+  };
+  // Overlay mode: minimal buttons, less likely to overflow but still covered
+  static constexpr ResponsiveHideGroup kOverlayHideOrder[] = {
+      {ToolbarButtonID::Pin},
+      {ToolbarButtonID::LockSize},
+      {ToolbarButtonID::CompareZoomIn, ToolbarButtonID::CompareZoomOut},
+      {ToolbarButtonID::OverlayPassthrough},
+      {ToolbarButtonID::OverlayAlphaUp, ToolbarButtonID::OverlayAlphaDown},
+      {ToolbarButtonID::OverlayExit},  // Core
+  };
+
+  // Select the appropriate hide table for the current mode
+  const ResponsiveHideGroup* hideOrder = kNormalHideOrder;
+  int hideOrderCount = (int)std::size(kNormalHideOrder);
+  if (m_overlayMode) {
+      hideOrder = kOverlayHideOrder;
+      hideOrderCount = (int)std::size(kOverlayHideOrder);
+  } else if (m_animMode) {
+      hideOrder = kAnimHideOrder;
+      hideOrderCount = (int)std::size(kAnimHideOrder);
+  } else if (m_compareMode) {
+      hideOrder = kCompareHideOrder;
+      hideOrderCount = (int)std::size(kCompareHideOrder);
+  } else if (m_comicMode) {
+      hideOrder = kComicHideOrder;
+      hideOrderCount = (int)std::size(kComicHideOrder);
+  }
+
+  // Helper: check if a button ID is in the responsive hidden set
+  auto isResponsiveHidden = [this](ToolbarButtonID id) -> bool {
+      auto idx = static_cast<unsigned>(id);
+      return idx < 64 && (m_responsiveHiddenSet & (1ULL << idx)) != 0;
+  };
+
   auto isVisibleButton = [&](const ToolbarButton &btn) {
+    // Responsive hide check (applied on top of mode-based visibility)
+    if (isResponsiveHidden(btn.id)) return false;
+
     if (btn.id == ToolbarButtonID::Gallery && (winH < 450.0f || winW < 600.0f)) {
       return false;
     }
@@ -213,32 +293,57 @@ void Toolbar::UpdateLayout(float winW, float winH) {
     return true;
   };
 
-  // Count visible buttons
-  int visibleCount = 0;
-  bool hasCompareZoom = false;
-  bool hasAnimSpeed = m_animMode && !m_overlayMode;
-  for (const auto &btn : m_buttons) {
-    if (isVisibleButton(btn))
-      visibleCount++;
-    if ((m_compareMode || m_overlayMode) && (btn.id == ToolbarButtonID::CompareZoomIn || btn.id == ToolbarButtonID::CompareZoomOut)) {
-        if (isVisibleButton(btn)) hasCompareZoom = true;
+  // Helper: calculate total toolbar width for the current visible button set
+  auto calcTotalWidth = [&]() -> float {
+    int count = 0;
+    bool hasZoom = false;
+    bool hasSpeed = m_animMode && !m_overlayMode;
+    for (const auto &btn : m_buttons) {
+      if (isVisibleButton(btn)) count++;
+      if ((m_compareMode || m_overlayMode) && (btn.id == ToolbarButtonID::CompareZoomIn || btn.id == ToolbarButtonID::CompareZoomOut)) {
+        if (isVisibleButton(btn)) hasZoom = true;
+      }
+    }
+    // If AnimNextFrame is hidden (responsive), the speed capsule should also vanish
+    if (hasSpeed && isResponsiveHidden(ToolbarButtonID::AnimNextFrame)) hasSpeed = false;
+
+    float w = padX * 2 + (count * buttonSize);
+    if (count > 1) w += (count - 1) * gap;
+    if ((m_compareMode || m_overlayMode) && hasZoom) {
+      const float zoomGap = 2.0f * m_uiScale;
+      w += (56.0f * m_uiScale) + (zoomGap * 2.0f) - gap;
+    }
+    if (m_animMode && hasSpeed) {
+      const float speedGap = 2.0f * m_uiScale;
+      w += (56.0f * m_uiScale) + (speedGap * 2.0f) - gap;
+    }
+    return w;
+  };
+
+  // --- Responsive Hide Loop ---
+  m_responsiveHiddenSet = 0;
+  m_windowTooNarrow = false;
+  float totalW = calcTotalWidth();
+
+  if (totalW > winW) {
+    // Progressively hide groups until it fits or we exhaust all groups
+    for (int g = 0; g < hideOrderCount; ++g) {
+      // Mark all buttons in this group as responsively hidden
+      for (int k = 0; k < 4 && hideOrder[g].ids[k] != ToolbarButtonID::None; ++k) {
+        auto idx = static_cast<unsigned>(hideOrder[g].ids[k]);
+        if (idx < 64) m_responsiveHiddenSet |= (1ULL << idx);
+      }
+      totalW = calcTotalWidth();
+      if (totalW <= winW) break;  // Fits now
+
+      // If we just hid the last (core) group and it still doesn't fit → hide entire toolbar
+      if (g == hideOrderCount - 1) {
+        m_windowTooNarrow = true;
+      }
     }
   }
 
-  // Calculate total width: padding + buttons + gaps between buttons
-  float totalW = padX * 2 + (visibleCount * buttonSize);
-  if (visibleCount > 1)
-    totalW += (visibleCount - 1) * gap;
-  if ((m_compareMode || m_overlayMode) && hasCompareZoom) {
-    const float zoomGap = 2.0f * m_uiScale;
-    totalW += (56.0f * m_uiScale) + (zoomGap * 2.0f) - gap;
-  }
-  if (m_animMode && hasAnimSpeed) {
-    const float speedGap = 2.0f * m_uiScale;
-    totalW += (56.0f * m_uiScale) + (speedGap * 2.0f) - gap;
-  }
   m_minRequiredWidth = totalW + (PADDING_X * 2 * m_uiScale);
-  m_windowTooNarrow = (winW < m_minRequiredWidth);
 
   float startX = (winW - totalW) / 2.0f;
   float startY = winH - bottomMargin - buttonSize - padY * 2;
