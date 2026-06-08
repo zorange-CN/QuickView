@@ -1070,6 +1070,12 @@ void SettingsOverlay::BuildMenu() {
     };
     tabGeneral.items.push_back(itemSortDesc);
 
+    SettingsItem itemSortArchives = { AppStrings::Settings_Label_SortArchivesByNameAscending, OptionType::Toggle, &g_config.SortArchivesByNameAscending };
+    itemSortArchives.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
+        SaveConfig();
+    };
+    tabGeneral.items.push_back(itemSortArchives);
+
     tabGeneral.items.push_back({ AppStrings::Settings_Label_ConfirmDel, OptionType::Toggle, &g_config.ConfirmDelete });
     
     // [Phase 2] Cross-Monitor

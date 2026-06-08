@@ -101,7 +101,6 @@ public:
     // [Directory Watcher] Apply pending scan result from background thread (main thread only)
     void ApplyPendingScanResult();
 
-private:
     // Shared sort comparator for Entry vectors (used by Initialize and PerformDirectoryScan)
     struct SortEntry {
         std::wstring p;
@@ -112,7 +111,10 @@ private:
     };
 
     static void SortEntries(std::vector<SortEntry>& entries, int sortOrder, bool sortDesc);
+
+private:
     static std::wstring_view GetPhysicalHostPath(std::wstring_view vfsPath);
+    static std::vector<std::wstring> GetSortedSiblings(const std::filesystem::path& parentDir);
     std::wstring FindAdjacentFolderImage(bool next);
 
     // [Directory Watcher] Background directory monitoring

@@ -3689,6 +3689,7 @@ void SaveConfig() {
     WritePrivateProfileStringW(L"General", L"NavLoopMode", nullptr, iniPath.c_str());   // [Clean] Remove legacy key
     WritePrivateProfileStringW(L"General", L"SortOrder", std::to_wstring(g_config.SortOrder).c_str(), iniPath.c_str());
     WritePrivateProfileStringW(L"General", L"SortDescending", g_config.SortDescending ? L"1" : L"0", iniPath.c_str());
+    WritePrivateProfileStringW(L"General", L"SortArchivesByNameAscending", g_config.SortArchivesByNameAscending ? L"1" : L"0", iniPath.c_str());
     WritePrivateProfileStringW(L"General", L"ConfirmDelete", g_config.ConfirmDelete ? L"1" : L"0", iniPath.c_str());
     WritePrivateProfileStringW(L"General", L"PortableMode", g_config.PortableMode ? L"1" : L"0", iniPath.c_str());
     WritePrivateProfileStringW(L"General", L"UIScalePreset", std::to_wstring(g_config.UIScalePreset).c_str(), iniPath.c_str());
@@ -3865,6 +3866,7 @@ void LoadConfig() {
 
     g_config.SortOrder = GetPrivateProfileIntW(L"General", L"SortOrder", 0, iniPath.c_str());
     g_config.SortDescending = GetPrivateProfileIntW(L"General", L"SortDescending", 0, iniPath.c_str()) != 0;
+    g_config.SortArchivesByNameAscending = GetPrivateProfileIntW(L"General", L"SortArchivesByNameAscending", 1, iniPath.c_str()) != 0;
     g_config.ConfirmDelete = GetPrivateProfileIntW(L"General", L"ConfirmDelete", 1, iniPath.c_str()) != 0;
     g_config.PortableMode = GetPrivateProfileIntW(L"General", L"PortableMode", 0, iniPath.c_str()) != 0;
     int uiScalePreset = GetPrivateProfileIntW(L"General", L"UIScalePreset", -1, iniPath.c_str());
@@ -9340,16 +9342,12 @@ SKIP_EDGE_NAV:;
         }
 
         case IDM_NAV_LOOP: {
-            g_config.NavLoop = !g_config.NavLoop;
-            g_runtime.NavLoop = g_config.NavLoop;
-            SaveConfig();
+            g_runtime.NavLoop = !g_runtime.NavLoop;
             g_osd.Show(hwnd, g_runtime.NavLoop ? L"Navigation Loop: ON" : L"Navigation Loop: OFF", false);
             break;
         }
         case IDM_NAV_THROUGH: {
-            g_config.NavTraverse = !g_config.NavTraverse;
-            g_runtime.NavTraverse = g_config.NavTraverse;
-            SaveConfig();
+            g_runtime.NavTraverse = !g_runtime.NavTraverse;
             g_osd.Show(hwnd, g_runtime.NavTraverse ? L"Traverse Subfolders: ON" : L"Traverse Subfolders: OFF", false);
             break;
         }

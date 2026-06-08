@@ -311,9 +311,32 @@ target_link_libraries(QuickView PRIVATE
 find_package(GTest CONFIG REQUIRED)
 enable_testing()
 
-add_executable(ColorMathTests tests/ColorMathTests.cpp QuickView/ColorMath.cpp QuickView/pch.cpp)
-target_link_libraries(ColorMathTests PRIVATE GTest::gtest_main GTest::gtest d2d1.lib dwrite.lib windowscodecs.lib dxgi.lib d3d11.lib shlwapi.lib shell32.lib mscms.lib)
-target_include_directories(ColorMathTests PRIVATE QuickView)
-add_test(NAME ColorMathTests COMMAND ColorMathTests)
+add_executable(QuickViewTests 
+    tests/ColorMathTests.cpp 
+    tests/FileNavigatorTests.cpp 
+    QuickView/ColorMath.cpp 
+    QuickView/FileNavigator.cpp 
+    QuickView/ArchiveVFS.cpp 
+    QuickView/exif.cpp
+    QuickView/QuickViewETW.cpp
+    QuickView/pch.cpp
+)
+target_precompile_headers(QuickViewTests PRIVATE $<$<COMPILE_LANGUAGE:CXX>:pch.h>)
+target_link_libraries(QuickViewTests PRIVATE 
+    GTest::gtest_main 
+    GTest::gtest 
+    d2d1.lib 
+    dwrite.lib 
+    windowscodecs.lib 
+    dxgi.lib 
+    d3d11.lib 
+    shlwapi.lib 
+    shell32.lib 
+    mscms.lib
+    unrar-mini
+    ZLIB::ZLIB
+)
+target_include_directories(QuickViewTests PRIVATE QuickView third_party/unrar-mini)
+add_test(NAME QuickViewTests COMMAND QuickViewTests)
 
 # Force-define CXX features to bypass CMake's Clang 22 feature detection bug

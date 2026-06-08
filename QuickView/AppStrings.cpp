@@ -51,6 +51,7 @@ const wchar_t *Settings_Label_CheckUpdates = nullptr;
 const wchar_t *Settings_Label_NavLoopMode = nullptr;
 const wchar_t *Settings_Label_SortOrder = nullptr;
 const wchar_t *Settings_Label_SortDescending = nullptr;
+const wchar_t *Settings_Label_SortArchivesByNameAscending = nullptr;
 const wchar_t *Settings_Label_ConfirmDel = nullptr;
 const wchar_t *Settings_Label_Portable = nullptr;
 const wchar_t *Settings_Tooltip_Portable = nullptr;
@@ -522,6 +523,7 @@ struct LanguageTable {
     const wchar_t *Settings_Label_NavLoopMode;
     const wchar_t *Settings_Label_SortOrder;
     const wchar_t *Settings_Label_SortDescending;
+    const wchar_t *Settings_Label_SortArchivesByNameAscending;
     const wchar_t *Settings_Label_ConfirmDel;
     const wchar_t *Settings_Label_Portable;
     const wchar_t *Settings_Tooltip_Portable;
@@ -990,6 +992,7 @@ static const LanguageTable Table_EN = {
     L"Loop", // Settings_Label_NavLoopMode
     L"Sort Order", // Settings_Label_SortOrder
     L"Descending", // Settings_Label_SortDescending
+    L"Always sort archives by name", // Settings_Label_SortArchivesByNameAscending
     L"Confirm Delete", // Settings_Label_ConfirmDel
     L"Portable Mode / Cleanup", // Settings_Label_Portable
     L"Portable Mode / Registry Cleanup:\nWhen enabled, QuickView runs in " L"portable mode. It will automatically clean up existing registry " L"associations, disable automatic registry modification, and store " L"configuration files in the application directory instead of AppData.", // Settings_Tooltip_Portable
@@ -1458,6 +1461,7 @@ static const LanguageTable Table_CN = {
     L"循环播放", // Settings_Label_NavLoopMode
     L"列表排序方式", // Settings_Label_SortOrder
     L"降序", // Settings_Label_SortDescending
+    L"始终以文件名升序浏览存档文件", // Settings_Label_SortArchivesByNameAscending
     L"删除确认", // Settings_Label_ConfirmDel
     L"便携模式 / 清理", // Settings_Label_Portable
     L"便携模式与注册表清理：\n开启后，QuickView " L"将以便携方式运行。程序将自动清理已有的注册表关联，并禁用自动注册表修改功" L"能。同时，配置文件将存放在程序所在目录而非 AppData 目录。", // Settings_Tooltip_Portable
@@ -1926,6 +1930,7 @@ static const LanguageTable Table_TW = {
     L"循環導覽", // Settings_Label_NavLoopMode
     L"排序方式", // Settings_Label_SortOrder
     L"降冪", // Settings_Label_SortDescending
+    L"始終以檔名升序瀏覽封存檔案", // Settings_Label_SortArchivesByNameAscending
     L"刪除確認", // Settings_Label_ConfirmDel
     L"可攜式模式 / 清理", // Settings_Label_Portable
     L"可攜式模式與登錄檔清理：\n開啟後，QuickView " L"將以可攜式方式執行。程式将自動清理已有的登錄檔關聯，並禁用自動登錄檔修改功" L"能。同時，設定檔將存放在程式所在目錄而非 AppData 目錄。", // Settings_Tooltip_Portable
@@ -2394,6 +2399,7 @@ static const LanguageTable Table_JA = {
     L"ループナビゲーション", // Settings_Label_NavLoopMode
     L"並べ替え順序", // Settings_Label_SortOrder
     L"降順", // Settings_Label_SortDescending
+    L"常にアーカイブ内を名前順で表示", // Settings_Label_SortArchivesByNameAscending
     L"削除確認", // Settings_Label_ConfirmDel
     L"ポータブルモード / クリーンアップ", // Settings_Label_Portable
     L"ポータブルモードとレジストリのクリーンアップ：\n有効にすると、QuickView " L"はポータブルモードで動作します。既存のレジストリ関連付けを自動的にクリー" L"ンアップし、レジストリの自動変更を無効にします。また、設定ファイルは AppData " L"ではなくアプリケーションディレクトリに保存されます。", // Settings_Tooltip_Portable
@@ -2862,6 +2868,7 @@ static const LanguageTable Table_RU = {
     L"Циклическая навигация", // Settings_Label_NavLoopMode
     L"Порядок сортировки", // Settings_Label_SortOrder
     L"По убыванию", // Settings_Label_SortDescending
+    L"Всегда сортировать архивы по имени", // Settings_Label_SortArchivesByNameAscending
     L"Подтверждение удаления", // Settings_Label_ConfirmDel
     L"Портативный режим / Очистка", // Settings_Label_Portable
     L"Портативный режим и очистка реестра:\nПри включении QuickView работает в " L"портативном режиме. Он автоматически очистит существующие ассоциации в " L"реестре, отключит автоматическое изменение реестра и будет хранить файлы " L"конфигурации в каталоге приложения вместо AppData.", // Settings_Tooltip_Portable
@@ -3330,6 +3337,7 @@ static const LanguageTable Table_DE = {
     L"Endlosnavigation", // Settings_Label_NavLoopMode
     L"Sortierreihenfolge", // Settings_Label_SortOrder
     L"Absteigend", // Settings_Label_SortDescending
+    L"Archive immer nach Namen sortieren", // Settings_Label_SortArchivesByNameAscending
     L"Löschen bestätigen", // Settings_Label_ConfirmDel
     L"Portabler Modus / Bereinigung", // Settings_Label_Portable
     L"Portabler Modus und Registry-Bereinigung:\nWenn aktiviert, wird QuickView im " L"portablen Modus ausgeführt. Es bereinigt automatisch vorhandene " L"Registry-Verknüpfungen, deaktiviert automatische Registry-Änderungen und " L"speichert Konfigurationsdateien im Anwendungsverzeichnis anstatt in AppData.", // Settings_Tooltip_Portable
@@ -3798,6 +3806,7 @@ static const LanguageTable Table_ES = {
     L"Navegación en bucle", // Settings_Label_NavLoopMode
     L"Orden de clasificación", // Settings_Label_SortOrder
     L"Descendente", // Settings_Label_SortDescending
+    L"Ordenar archivos siempre por nombre", // Settings_Label_SortArchivesByNameAscending
     L"Confirmar eliminación", // Settings_Label_ConfirmDel
     L"Modo portátil / Limpieza", // Settings_Label_Portable
     L"Modo portátil y limpieza del registro:\nCuando está habilitado, QuickView se " L"ejecuta en modo portátil. Limpiará automáticamente las asociaciones de " L"registro existentes, deshabilitará la modificación automática del registro y " L"almacenará los archivos de configuración en el directorio de la aplicación en " L"lugar de AppData.", // Settings_Tooltip_Portable
@@ -4266,6 +4275,7 @@ static const LanguageTable Table_FR = {
     L"Loop", // Settings_Label_NavLoopMode
     L"Sort Order", // Settings_Label_SortOrder
     L"Descending", // Settings_Label_SortDescending
+    L"Toujours trier les archives par nom", // Settings_Label_SortArchivesByNameAscending
     L"Confirm Delete", // Settings_Label_ConfirmDel
     L"Portable Mode / Cleanup", // Settings_Label_Portable
     L"Portable Mode / Registry Cleanup:\nWhen enabled, QuickView runs in " L"portable mode. It will automatically clean up existing registry " L"associations, disable automatic registry modification, and store " L"configuration files in the application directory instead of AppData.", // Settings_Tooltip_Portable
@@ -4734,6 +4744,7 @@ void Apply(const LanguageTable& t) {
   Settings_Label_NavLoopMode = t.Settings_Label_NavLoopMode;
   Settings_Label_SortOrder = t.Settings_Label_SortOrder;
   Settings_Label_SortDescending = t.Settings_Label_SortDescending;
+  Settings_Label_SortArchivesByNameAscending = t.Settings_Label_SortArchivesByNameAscending;
   Settings_Label_ConfirmDel = t.Settings_Label_ConfirmDel;
   Settings_Label_Portable = t.Settings_Label_Portable;
   Settings_Tooltip_Portable = t.Settings_Tooltip_Portable;

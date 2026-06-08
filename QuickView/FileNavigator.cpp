@@ -1,6 +1,8 @@
 #include "pch.h"
 #include "FileNavigator.h"
 
+extern AppConfig g_config;
+
 // [Directory Watcher] Custom window message posted when background scan completes
 // defined in header: constexpr UINT WM_NAVIGATOR_DIR_CHANGED = WM_APP + 50;
 
@@ -91,6 +93,10 @@ void FileNavigator::Initialize(const std::wstring& currentPath, HWND hwnd) {
                 std::wstring ext = entry.path().extension().wstring();
                 std::transform(ext.begin(), ext.end(), ext.begin(), [](wchar_t c){ return std::towlower(c); });
 
+                // Skip archive container files from the flat folder slideshow playlist
+                bool isArchiveExt = (ext == L".cbz" || ext == L".zip" || ext == L".cbr" || ext == L".rar");
+                if (isArchiveExt) continue;
+
                 for (const auto& supp : QuickView::SUPPORTED_EXTENSIONS) {
                     if (ext == supp) {
                         m_files.push_back(entry.path().wstring());
@@ -146,6 +152,11 @@ void FileNavigator::Initialize(const std::wstring& currentPath, HWND hwnd) {
     int sortOrder = g_runtime.SortOrder;
     bool sortDesc = g_runtime.SortDescending;
 
+    if (m_archive && m_archive->IsValid() && g_config.SortArchivesByNameAscending) {
+        sortOrder = 1;      // Force sort by Name
+        sortDesc = false;   // Force Ascending
+    }
+
     SortEntries(entries, sortOrder, sortDesc);
     
     // Write back
@@ -169,7 +180,7 @@ void FileNavigator::Initialize(const std::wstring& currentPath, HWND hwnd) {
         std::wstring currentFull = isVfsInput ? currentPath : p.wstring();
 
         // Fix initial page load for Archive VFS
-        if (m_archive && m_archive->IsValid() && (isVfsInput || currentFull == m_archivePath)) {
+        if (m_archive && m_archive->IsValid() && !isVfsInput && currentFull == m_archivePath) {
             if (!m_files.empty()) {
                 m_currentIndex = 0; // Default to first page in archive
             }
@@ -195,23 +206,60 @@ void FileNavigator::Initialize(const std::wstring& currentPath, HWND hwnd) {
 std::wstring FileNavigator::Next(bool /*unused*/) {
     if (m_files.empty()) return L"";
 
-    if (m_currentIndex >= (int)m_files.size() - 1) {
-        if (g_runtime.NavTraverse) {
-            // Through folders
+    if (g_runtime.NavTraverse) {
+        bool shouldTraverse = false;
+        
+        // Case 1: We are at the end of the current playlist
+        if (m_currentIndex >= (int)m_files.size() - 1) {
+            shouldTraverse = true;
+        } else {
+            // Case 2: The next sibling in the parent directory is a container (folder/archive)
+            std::wstring currentFile = m_files[m_currentIndex];
+            std::wstring physicalCurrent = std::wstring(GetPhysicalHostPath(currentFile));
+            
+            namespace fs = std::filesystem;
+            fs::path currentPath(physicalCurrent);
+            fs::path parentDir = currentPath.parent_path();
+            
+            std::vector<std::wstring> siblings = GetSortedSiblings(parentDir);
+            
+            auto it = std::find(siblings.begin(), siblings.end(), physicalCurrent);
+            int idx = (it == siblings.end()) ? -1 : (int)std::distance(siblings.begin(), it);
+            
+            if (idx != -1 && idx < (int)siblings.size() - 1) {
+                std::wstring nextSibling = siblings[idx + 1];
+                bool isContainer = false;
+                if (fs::is_directory(nextSibling)) {
+                    isContainer = true;
+                } else {
+                    std::wstring nextExt = fs::path(nextSibling).extension().wstring();
+                    std::transform(nextExt.begin(), nextExt.end(), nextExt.begin(), [](wchar_t c){ return std::towlower(c); });
+                    if (nextExt == L".cbz" || nextExt == L".zip" || nextExt == L".cbr" || nextExt == L".rar") {
+                        isContainer = true;
+                    }
+                }
+                
+                if (isContainer) {
+                    shouldTraverse = true;
+                }
+            }
+        }
+        
+        if (shouldTraverse) {
             std::wstring nextFolderImg = FindAdjacentFolderImage(true);
             if (!nextFolderImg.empty()) {
                 m_crossFolderMessage = L">>> Entering [" + std::filesystem::path(nextFolderImg).parent_path().filename().wstring() + L"] >>>";
                 return nextFolderImg;
             }
         }
+    }
 
+    if (m_currentIndex >= (int)m_files.size() - 1) {
         if (g_runtime.NavLoop) {
-            // Loop
             m_hitEnd = true; // Signal OSD
             m_currentIndex = 0;
             return m_files[m_currentIndex];
         } else {
-            // Stop at end
             m_hitEnd = true;
             return L"";
         }
@@ -225,23 +273,60 @@ std::wstring FileNavigator::Next(bool /*unused*/) {
 std::wstring FileNavigator::Previous(bool /*unused*/) {
     if (m_files.empty()) return L"";
 
-    if (m_currentIndex <= 0) {
-        if (g_runtime.NavTraverse) {
-            // Through folders
+    if (g_runtime.NavTraverse) {
+        bool shouldTraverse = false;
+        
+        // Case 1: We are at the beginning of the current playlist
+        if (m_currentIndex <= 0) {
+            shouldTraverse = true;
+        } else {
+            // Case 2: The previous sibling in the parent directory is a container (folder/archive)
+            std::wstring currentFile = m_files[m_currentIndex];
+            std::wstring physicalCurrent = std::wstring(GetPhysicalHostPath(currentFile));
+            
+            namespace fs = std::filesystem;
+            fs::path currentPath(physicalCurrent);
+            fs::path parentDir = currentPath.parent_path();
+            
+            std::vector<std::wstring> siblings = GetSortedSiblings(parentDir);
+            
+            auto it = std::find(siblings.begin(), siblings.end(), physicalCurrent);
+            int idx = (it == siblings.end()) ? -1 : (int)std::distance(siblings.begin(), it);
+            
+            if (idx > 0) {
+                std::wstring prevSibling = siblings[idx - 1];
+                bool isContainer = false;
+                if (fs::is_directory(prevSibling)) {
+                    isContainer = true;
+                } else {
+                    std::wstring prevExt = fs::path(prevSibling).extension().wstring();
+                    std::transform(prevExt.begin(), prevExt.end(), prevExt.begin(), [](wchar_t c){ return std::towlower(c); });
+                    if (prevExt == L".cbz" || prevExt == L".zip" || prevExt == L".cbr" || prevExt == L".rar") {
+                        isContainer = true;
+                    }
+                }
+                
+                if (isContainer) {
+                    shouldTraverse = true;
+                }
+            }
+        }
+        
+        if (shouldTraverse) {
             std::wstring prevFolderImg = FindAdjacentFolderImage(false);
             if (!prevFolderImg.empty()) {
                 m_crossFolderMessage = L"<<< Entering [" + std::filesystem::path(prevFolderImg).parent_path().filename().wstring() + L"] <<<";
                 return prevFolderImg;
             }
         }
+    }
 
+    if (m_currentIndex <= 0) {
         if (g_runtime.NavLoop) {
-            // Loop
             m_hitEnd = true; // Signal OSD
             m_currentIndex = (int)m_files.size() - 1;
             return m_files[m_currentIndex];
         } else {
-            // Stop at start
             m_hitEnd = true;
             return L"";
         }
@@ -386,34 +471,49 @@ void FileNavigator::ApplyPendingScanResult() {
 }
 
 void FileNavigator::SortEntries(std::vector<SortEntry>& entries, int sortOrder, bool sortDesc) {
-    std::sort(entries.begin(), entries.end(), [sortOrder, sortDesc](const SortEntry& a, const SortEntry& b){
+    // Helper to get pointer to null-terminated file/entry name substring to avoid dynamic allocations
+    auto getSortNamePtr = [](const std::wstring& path) -> LPCWSTR {
+        size_t lastPipe = path.find_last_of(L'|');
+        if (lastPipe != std::wstring::npos) {
+            return path.c_str() + lastPipe + 1;
+        }
+        size_t lastSlash = path.find_last_of(L"\\/");
+        if (lastSlash != std::wstring::npos) {
+            return path.c_str() + lastSlash + 1;
+        }
+        return path.c_str();
+    };
+
+    std::sort(entries.begin(), entries.end(), [sortOrder, sortDesc, &getSortNamePtr](const SortEntry& a, const SortEntry& b){
         int cmp = 0;
+        LPCWSTR nameA = getSortNamePtr(a.p);
+        LPCWSTR nameB = getSortNamePtr(b.p);
         switch (sortOrder) {
             case 1: // Name
             case 0: // Auto (Use Name Natural Sort)
-                cmp = StrCmpLogicalW(a.p.c_str(), b.p.c_str());
+                cmp = StrCmpLogicalW(nameA, nameB);
                 break;
             case 2: // Modified
                 if (a.m < b.m) cmp = -1;
                 else if (a.m > b.m) cmp = 1;
-                else cmp = StrCmpLogicalW(a.p.c_str(), b.p.c_str()); // Fallback
+                else cmp = StrCmpLogicalW(nameA, nameB); // Fallback
                 break;
             case 3: // Date Taken
                 if (a.exifDate.empty() && !b.exifDate.empty()) cmp = 1; // Empty goes last
                 else if (!a.exifDate.empty() && b.exifDate.empty()) cmp = -1;
                 else {
                     cmp = a.exifDate.compare(b.exifDate);
-                    if (cmp == 0) cmp = StrCmpLogicalW(a.p.c_str(), b.p.c_str());
+                    if (cmp == 0) cmp = StrCmpLogicalW(nameA, nameB);
                 }
                 break;
             case 4: // Size
                 if (a.s < b.s) cmp = -1;
                 else if (a.s > b.s) cmp = 1;
-                else cmp = StrCmpLogicalW(a.p.c_str(), b.p.c_str());
+                else cmp = StrCmpLogicalW(nameA, nameB);
                 break;
             case 5: // Type
                 cmp = StrCmpLogicalW(a.t.c_str(), b.t.c_str());
-                if (cmp == 0) cmp = StrCmpLogicalW(a.p.c_str(), b.p.c_str());
+                if (cmp == 0) cmp = StrCmpLogicalW(nameA, nameB);
                 break;
         }
 
@@ -430,94 +530,99 @@ std::wstring_view FileNavigator::GetPhysicalHostPath(std::wstring_view vfsPath) 
     return vfsPath;
 }
 
-std::wstring FileNavigator::FindAdjacentFolderImage(bool next) {
-    if (m_files.empty()) return L"";
-
+__declspec(noinline) std::vector<std::wstring> FileNavigator::GetSortedSiblings(const std::filesystem::path& parentDir) {
+    std::vector<std::wstring> siblings;
+    std::error_code ec;
     namespace fs = std::filesystem;
-
-    // Determine logical "current container" (directory or archive)
-    fs::path currentContainer;
-    if (m_archive && m_archive->IsValid()) {
-        currentContainer = m_archivePath;
-    } else {
-        currentContainer = fs::path(m_files[0]).parent_path();
-    }
-
-    // 1. Through Subfolders: Only if current is a real directory
-    if (next && fs::is_directory(currentContainer)) {
-        std::error_code ec;
-        std::vector<std::wstring> subfolders;
-        for (const auto& entry : fs::directory_iterator(currentContainer, ec)) {
-            if (entry.is_directory(ec)) {
-                subfolders.push_back(entry.path().wstring());
-            } else if (entry.is_regular_file(ec)) {
-                std::wstring ext = entry.path().extension().wstring();
-                std::transform(ext.begin(), ext.end(), ext.begin(), [](wchar_t c){ return std::towlower(c); });
-                if (ext == L".cbz" || ext == L".zip" || ext == L".cbr" || ext == L".rar") {
-                    subfolders.push_back(entry.path().wstring());
+    for (const auto& entry : fs::directory_iterator(parentDir, ec)) {
+        if (entry.is_directory(ec)) {
+            siblings.push_back(entry.path().wstring());
+        } else if (entry.is_regular_file(ec)) {
+            std::wstring ext = entry.path().extension().wstring();
+            std::transform(ext.begin(), ext.end(), ext.begin(), [](wchar_t c){ return std::towlower(c); });
+            bool isArchive = (ext == L".cbz" || ext == L".zip" || ext == L".cbr" || ext == L".rar");
+            if (isArchive) {
+                siblings.push_back(entry.path().wstring());
+                continue;
+            }
+            for (const auto& supp : QuickView::SUPPORTED_EXTENSIONS) {
+                if (ext == supp) {
+                    siblings.push_back(entry.path().wstring());
+                    break;
                 }
             }
         }
-        if (!subfolders.empty()) {
-            std::sort(subfolders.begin(), subfolders.end(), [](const std::wstring& a, const std::wstring& b) {
-                return StrCmpLogicalW(a.c_str(), b.c_str()) < 0;
-            });
-            for (const auto& sub : subfolders) {
-                FileNavigator tempNav;
-                tempNav.Initialize(sub);
-                if (tempNav.Count() > 0) return tempNav.First();
-            }
-        }
     }
+    std::sort(siblings.begin(), siblings.end(), [](const std::wstring& a, const std::wstring& b) {
+        return StrCmpLogicalW(a.c_str(), b.c_str()) < 0;
+    });
+    return siblings;
+}
 
-    // 2. Siblings navigation: Find next folder/archive in the parent directory
-    fs::path parentDir = currentContainer.parent_path();
-    if (parentDir.empty() || parentDir == currentContainer) return L"";
+std::wstring FileNavigator::FindAdjacentFolderImage(bool next) {
+    if (m_files.empty() || m_currentIndex < 0 || m_currentIndex >= (int)m_files.size()) return L"";
 
-    std::vector<std::wstring> siblings;
-    std::error_code ec_fold;
-    for (const auto& entry : fs::directory_iterator(parentDir, ec_fold)) {
-        if (entry.is_directory(ec_fold)) {
-            siblings.push_back(entry.path().wstring());
-        } else if (entry.is_regular_file(ec_fold)) {
-            std::wstring ext = entry.path().extension().wstring();
-            std::transform(ext.begin(), ext.end(), ext.begin(), [](wchar_t c){ return std::towlower(c); });
-            if (ext == L".cbz" || ext == L".zip" || ext == L".cbr" || ext == L".rar") {
-                siblings.push_back(entry.path().wstring());
-            }
-        }
-    }
+    namespace fs = std::filesystem;
+    std::wstring currentFile = m_files[m_currentIndex];
+    std::wstring currentPhysical = std::wstring(GetPhysicalHostPath(currentFile));
 
+    fs::path currentPath(currentPhysical);
+    fs::path parentDir = currentPath.parent_path();
+    if (parentDir.empty() || parentDir == currentPath) return L"";
+
+    std::vector<std::wstring> siblings = GetSortedSiblings(parentDir);
     if (siblings.empty()) return L"";
 
-    std::sort(siblings.begin(), siblings.end(), [](const std::wstring& a, const std::wstring& b){
-         return StrCmpLogicalW(a.c_str(), b.c_str()) < 0;
-    });
-
-    std::wstring currentStr = currentContainer.wstring();
-    auto it = std::find(siblings.begin(), siblings.end(), currentStr);
+    std::wstring physicalStr = currentPath.wstring();
+    auto it = std::find(siblings.begin(), siblings.end(), physicalStr);
     int idx = (it == siblings.end()) ? -1 : (int)std::distance(siblings.begin(), it);
 
-    int startIdx = idx;
-    while (true) {
-        if (next) idx++; else idx--;
+    if (idx == -1) return L"";
 
-        // Boundary logic
-        if (idx < 0 || idx >= (int)siblings.size()) {
-            if (g_runtime.NavLoop) {
-                idx = (idx < 0) ? (int)siblings.size() - 1 : 0;
-            } else {
-                return L""; 
+    int nextIdx = next ? idx + 1 : idx - 1;
+    
+    // Boundary logic
+    if (nextIdx < 0 || nextIdx >= (int)siblings.size()) {
+        if (g_runtime.NavLoop) {
+            nextIdx = (nextIdx < 0) ? (int)siblings.size() - 1 : 0;
+        } else {
+            return L"";
+        }
+    }
+
+    int startIdx = nextIdx;
+    while (true) {
+        std::wstring sib = siblings[nextIdx];
+        bool isContainer = false;
+        if (fs::is_directory(sib)) {
+            isContainer = true;
+        } else {
+            std::wstring sibExt = fs::path(sib).extension().wstring();
+            std::transform(sibExt.begin(), sibExt.end(), sibExt.begin(), [](wchar_t c){ return std::towlower(c); });
+            if (sibExt == L".cbz" || sibExt == L".zip" || sibExt == L".cbr" || sibExt == L".rar") {
+                isContainer = true;
             }
         }
-        
-        if (idx == startIdx) break; 
 
-        FileNavigator tempNav;
-        tempNav.Initialize(siblings[idx]);
-        if (tempNav.Count() > 0) {
-             return next ? tempNav.First() : tempNav.Last();
+        if (isContainer) {
+            FileNavigator tempNav;
+            tempNav.Initialize(sib);
+            if (tempNav.Count() > 0) {
+                return next ? tempNav.First() : tempNav.Last();
+            }
+        } else {
+            return sib;
         }
+
+        if (next) nextIdx++; else nextIdx--;
+        if (nextIdx < 0 || nextIdx >= (int)siblings.size()) {
+            if (g_runtime.NavLoop) {
+                nextIdx = (nextIdx < 0) ? (int)siblings.size() - 1 : 0;
+            } else {
+                return L"";
+            }
+        }
+        if (nextIdx == startIdx) break;
     }
 
     return L"";
@@ -532,6 +637,10 @@ FileNavigator::DirectoryScanResult FileNavigator::PerformDirectoryScan() {
         if (entry.is_regular_file(ec)) {
             std::wstring ext = entry.path().extension().wstring();
             std::transform(ext.begin(), ext.end(), ext.begin(), [](wchar_t c){ return std::towlower(c); });
+
+            // Skip archive container files from the flat folder slideshow playlist
+            bool isArchiveExt = (ext == L".cbz" || ext == L".zip" || ext == L".cbr" || ext == L".rar");
+            if (isArchiveExt) continue;
 
             for (const auto& supp : QuickView::SUPPORTED_EXTENSIONS) {
                 if (ext == supp) {
