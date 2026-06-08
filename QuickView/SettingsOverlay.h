@@ -145,6 +145,7 @@ private:
                      bool isDisabled = false);
     void DrawComboBox(ID2D1DeviceContext* pRT, const D2D1_RECT_F& rect, int selectedIdx, const std::vector<std::wstring>& options, bool isOpen);
     void DrawComboDropdown(ID2D1DeviceContext* pRT); 
+    D2D1_RECT_F GetComboDropdownRect(const SettingsItem* item) const;
     void RenderUpdateToast(ID2D1DeviceContext* pRT, float hudX, float hudY, float hudW, float hudH);
     void RenderTooltip(ID2D1DeviceContext* pRT);
 

@@ -197,11 +197,11 @@ void GalleryOverlay::Update(float deltaTime, HWND hwnd) {
     if ((g_config.GalleryTriggerMode == 0 || g_config.GalleryTriggerMode == 1) && 
         m_mode == GalleryMode::Filmstrip && m_bottomHintHover && m_gridProgress < 0.01f) {
         m_expandHoverTimer += deltaTime;
-        if (m_expandHoverTimer >= 0.40f) { // 400ms delay, giving user clear perception of pause/hover
+        if (m_expandHoverTimer >= 0.50f) { // 500ms delay, giving user clear perception of pause/hover
             SetMode(GalleryMode::FullGrid);
             m_expandHoverTimer = 0.0f;
-            repaintNeeded = true;
         }
+        repaintNeeded = true;
     } else {
         m_expandHoverTimer = 0.0f;
     }

@@ -31,7 +31,6 @@ extern std::wstring& g_imagePath;
 extern FileNavigator& g_navigator;
 extern Toolbar g_toolbar; // [Fix] Allow Settings to update toolbar state directly
 extern HelpOverlay g_helpOverlay;
-extern void SaveConfig();
 
 namespace {
 
@@ -1014,7 +1013,6 @@ void SettingsOverlay::BuildMenu() {
     };
     itemLang.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
         AppStrings::SetLanguage((AppStrings::Language)g_config.Language);
-        SaveConfig();
         // Force resource recreation to apply new font size
         overlay->m_brushBg.Reset();
         
@@ -2316,7 +2314,6 @@ void SettingsOverlay::SetVisible(bool visible) {
         }
     } else {
         // ... (Cleanup if needed)
-        SaveConfig();
         if (m_hwnd) {
              extern void AdjustWindowForOverlay(HWND hwnd, bool isClosed);
              if (!m_showUpdateToast) AdjustWindowForOverlay(m_hwnd, true);
@@ -3539,22 +3536,10 @@ SettingsAction SettingsOverlay::OnMouseMove(float x, float y) {
 
     // 0. Active Combo Logic (Priority)
     if (m_pActiveCombo) {
+        D2D1_RECT_F dropRect = GetComboDropdownRect(m_pActiveCombo);
         const float s = m_uiScale;
-        float controlX = m_pActiveCombo->rect.left + LABEL_COLUMN_WIDTH * s;
-        float controlW = m_pActiveCombo->rect.right - controlX;
-        float dropY = m_pActiveCombo->rect.bottom;
         float itemH = ITEM_HEIGHT * s;
         int count = (int)m_pActiveCombo->options.size();
-        int maxItems = 8;
-        int visibleItems = (count > maxItems) ? maxItems : count;
-        float dropH = visibleItems * itemH;
-        
-        bool expandUp = (dropY + dropH > m_windowHeight - 10.0f * s);
-        if (expandUp) {
-            dropY = m_pActiveCombo->rect.top - dropH;
-        }
-        
-        D2D1_RECT_F dropRect = D2D1::RectF(controlX, dropY, controlX + controlW, dropY + dropH);
         
         if (x >= dropRect.left && x <= dropRect.right && y >= dropRect.top && y <= dropRect.bottom) {
              g_currentCursor = ::LoadCursor(NULL, IDC_HAND);
@@ -3741,22 +3726,10 @@ SettingsAction SettingsOverlay::OnLButtonDown(float x, float y) {
 
     // 3. Active Combo Processing
     if (m_pActiveCombo) {
+        D2D1_RECT_F dropRect = GetComboDropdownRect(m_pActiveCombo);
         const float s = m_uiScale;
-        float controlX = m_pActiveCombo->rect.left + LABEL_COLUMN_WIDTH * s;
-        float controlW = m_pActiveCombo->rect.right - controlX;
-        float dropY = m_pActiveCombo->rect.bottom;
         float itemH = ITEM_HEIGHT * s;
         int count = (int)m_pActiveCombo->options.size();
-        int maxItems = 8;
-        int visibleItems = (count > maxItems) ? maxItems : count;
-        float dropH = visibleItems * itemH;
-        
-        bool expandUp = (dropY + dropH > m_windowHeight - 10.0f * s);
-        if (expandUp) {
-            dropY = m_pActiveCombo->rect.top - dropH;
-        }
-        
-        D2D1_RECT_F dropRect = D2D1::RectF(controlX, dropY, controlX + controlW, dropY + dropH);
         
         // Click inside Dropdown?
         if (x >= dropRect.left && x <= dropRect.right && y >= dropRect.top && y <= dropRect.bottom) {
@@ -4012,29 +3985,44 @@ void SettingsOverlay::DrawComboBox(ID2D1DeviceContext* pRT, const D2D1_RECT_F& r
         pRT, *(isOpen ? Icons::ComboUp : Icons::ComboDown), arrowIconRect, m_brushTextDim.Get());
 }
 
+D2D1_RECT_F SettingsOverlay::GetComboDropdownRect(const SettingsItem* item) const {
+    if (!item) return D2D1::RectF(0, 0, 0, 0);
+
+    const float s = m_uiScale;
+    float controlX = item->rect.left + LABEL_COLUMN_WIDTH * s;
+    float controlW = item->rect.right - controlX;
+    float dropY = item->rect.bottom;
+
+    float itemH = ITEM_HEIGHT * s;
+    int count = (int)item->options.size();
+    int maxItems = 8;
+    int visibleItems = (count > maxItems) ? maxItems : count;
+    float dropH = visibleItems * itemH;
+
+    // Check if expanding downwards would overflow the HUD bottom
+    const float hudBottom = m_hudY + HUD_HEIGHT * s;
+    if (dropY + dropH > hudBottom) {
+        // Expand upwards: place dropdown list directly above the combobox (matching row boundaries)
+        dropY = item->rect.top - dropH;
+    }
+
+    return D2D1::RectF(controlX, dropY, controlX + controlW, dropY + dropH);
+}
+
 void SettingsOverlay::DrawComboDropdown(ID2D1DeviceContext* pRT) {
     if (!m_pActiveCombo) return;
     const auto palette = GetSettingsThemePalette();
     
-    const float s = m_uiScale;
-    float controlX = m_pActiveCombo->rect.left + LABEL_COLUMN_WIDTH * s;
-
-    float controlW = m_pActiveCombo->rect.right - controlX;
-    float dropY = m_pActiveCombo->rect.bottom;
+    D2D1_RECT_F dropRect = GetComboDropdownRect(m_pActiveCombo);
+    float controlX = dropRect.left;
+    float controlW = dropRect.right - controlX;
+    float dropY = dropRect.top;
     
+    const float s = m_uiScale;
     float itemH = ITEM_HEIGHT * s;
     int count = (int)m_pActiveCombo->options.size();
     int maxItems = 8;
     int visibleItems = (count > maxItems) ? maxItems : count;
-    
-    float dropH = visibleItems * itemH;
-    
-    bool expandUp = (dropY + dropH > m_windowHeight - 10.0f * s);
-    if (expandUp) {
-        dropY = m_pActiveCombo->rect.top - dropH;
-    }
-    
-    D2D1_RECT_F dropRect = D2D1::RectF(controlX, dropY, controlX + controlW, dropY + dropH);
     
     // Shadow / Background
     pRT->FillRectangle(dropRect, m_brushControlBg.Get()); // Opaque

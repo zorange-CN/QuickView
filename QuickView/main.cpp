@@ -3827,9 +3827,6 @@ void SaveConfig() {
     // Legacy cleanup
     WritePrivateProfileStringW(L"General", L"NavLoopMode", nullptr, iniPath.c_str());
     WritePrivateProfileStringW(L"General", L"LoopNavigation", nullptr, iniPath.c_str());
-    
-    // Flush cache to force write to disk
-    WritePrivateProfileStringW(nullptr, nullptr, nullptr, iniPath.c_str());
 }
 
 void LoadConfig() {
@@ -6559,8 +6556,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
                   // Mode 0: Wide auto hover zone (400px wide, 20px high)
                   inGalleryTriggerZone = (pt.y >= 0 && pt.y < 20.0f * g_uiScale && pt.x >= cx - 200.0f * g_uiScale && pt.x <= cx + 200.0f * g_uiScale);
               } else if (g_config.GalleryTriggerMode == 1) {
-                  // Mode 1: Hotspot Hover. Trigger ONLY when mouse is near the center button (60px wide, 40px high)
-                  inGalleryTriggerZone = (pt.y >= 0 && pt.y < 40.0f * g_uiScale && pt.x >= cx - 30.0f * g_uiScale && pt.x <= cx + 30.0f * g_uiScale);
+                  // Mode 1: Hotspot Hover. Trigger ONLY when mouse is near the center button (comfort area symmetry: 30px wide, 32px high)
+                  float iconSize = 18.0f * g_uiScale;
+                  float iconY = 8.0f * g_uiScale;
+                  float clickHalfW = iconSize / 2.0f + 6.0f * g_uiScale;
+                  float clickMaxY = iconY + iconSize + 6.0f * g_uiScale;
+                  inGalleryTriggerZone = (pt.y >= 0 && pt.y <= clickMaxY && pt.x >= cx - clickHalfW && pt.x <= cx + clickHalfW);
               }
               
               if (!g_gallery.IsVisible()) {
