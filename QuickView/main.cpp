@@ -1006,6 +1006,9 @@ bool g_isInSizeMove = false;
 static float s_resizeInitialAbsoluteScale = 1.0f;
 static bool s_maintainAbsoluteScale = false;
 static bool s_resizeStartedWithBorders = false;
+static bool s_resizeSnapLocked = false;        // Currently snapped to 100% during border resize
+static float s_resizeSnapTarget = 1.0f;        // True 100% scale (accounts for downscaled surfaces)
+static float s_resizePrevTotalScale = 0.0f;    // Previous frame's totalScale for crossing detection
 
 // [v3.1.5] Auto-Lock State for Unified Scaling Logic (< 200x200)
 
@@ -5938,6 +5941,17 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
                 s_resizeInitialAbsoluteScale = baseFit * GetPaneContext(PaneSlot::Primary).view.Zoom;
                 s_maintainAbsoluteScale = (abs(GetPaneContext(PaneSlot::Primary).view.Zoom - 1.0f) > 0.001f);
                 s_resizeStartedWithBorders = (GetPaneContext(PaneSlot::Primary).view.Zoom < 0.999f);
+
+                // [Border Snap] Initialize 100% snap state
+                s_resizeSnapLocked = false;
+                s_resizePrevTotalScale = s_resizeInitialAbsoluteScale;
+
+                // Calculate true 100% snap target (same logic as CalculateTargetZoom)
+                s_resizeSnapTarget = 1.0f;
+                if (GetPaneContext(PaneSlot::Primary).metadata.Width > 0 && vs.VisualSize.width > 0) {
+                    float origW = (float)(vs.IsRotated90 ? GetPaneContext(PaneSlot::Primary).metadata.Height : GetPaneContext(PaneSlot::Primary).metadata.Width);
+                    if (origW > 0) s_resizeSnapTarget = origW / vs.VisualSize.width;
+                }
             }
         } else {
             s_maintainAbsoluteScale = false;
@@ -5955,6 +5969,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
         }
         g_isInSizeMove = false;
         s_maintainAbsoluteScale = false;
+        s_resizeSnapLocked = false;
         return 0;
     }
     case WM_WINDOWPOSCHANGED: {
@@ -6379,6 +6394,98 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
         }
         return 0;
 
+    case WM_SIZING: {
+        // [Border Snap] Snap window rect to 100% image scale during edge drag
+        if (!g_config.EnableZoomSnapDamping) break;
+        if (!GetPaneContext(PaneSlot::Primary).resource) break;
+        if (s_maintainAbsoluteScale) break; // Don't interfere with manual zoom
+
+        RECT* pRect = (RECT*)lParam;
+
+        // Compute border overhead from current window
+        RECT rcWin, rcClient;
+        GetWindowRect(hwnd, &rcWin);
+        GetClientRect(hwnd, &rcClient);
+        int borderW = (rcWin.right - rcWin.left) - rcClient.right;
+        int borderH = (rcWin.bottom - rcWin.top) - rcClient.bottom;
+
+        // Proposed client dimensions
+        int proposedClientW = (pRect->right - pRect->left) - borderW;
+        int proposedClientH = (pRect->bottom - pRect->top) - borderH;
+        if (proposedClientW <= 0 || proposedClientH <= 0) break;
+
+        // Image visual dimensions
+        VisualState vs = GetVisualState();
+        if (vs.VisualSize.width <= 0 || vs.VisualSize.height <= 0) break;
+
+        // Gallery bar compensation
+        float galleryH = (g_gallery.IsPinned() && g_gallery.IsVisible()) ? g_gallery.GetVisualHeight((float)proposedClientH) : 0.0f;
+        float effClientH = (float)proposedClientH - galleryH;
+        if (effClientH < 1.0f) effClientH = 1.0f;
+
+        // Compute fitScale for proposed dimensions (same as ComputeBaseFitScaleForVisual)
+        float scaleW = (float)proposedClientW / vs.VisualSize.width;
+        float scaleH = effClientH / vs.VisualSize.height;
+        float proposedTotalScale = std::min(scaleW, scaleH);
+        bool widthConstrains = (scaleW <= scaleH);
+
+        const float SNAP_THRESHOLD = 0.05f * s_resizeSnapTarget;
+        const float ESCAPE_THRESHOLD = 0.08f * s_resizeSnapTarget;
+
+        // Snap state machine
+        if (s_resizeSnapLocked) {
+            if (abs(proposedTotalScale - s_resizeSnapTarget) > ESCAPE_THRESHOLD) {
+                s_resizeSnapLocked = false;
+            }
+        }
+
+        if (!s_resizeSnapLocked) {
+            bool shouldSnap = false;
+            if ((s_resizePrevTotalScale < s_resizeSnapTarget && proposedTotalScale > s_resizeSnapTarget) ||
+                (s_resizePrevTotalScale > s_resizeSnapTarget && proposedTotalScale < s_resizeSnapTarget)) {
+                shouldSnap = true;
+            }
+            else if (abs(proposedTotalScale - s_resizeSnapTarget) < SNAP_THRESHOLD) {
+                shouldSnap = true;
+            }
+            if (shouldSnap) {
+                s_resizeSnapLocked = true;
+            }
+        }
+
+        if (s_resizeSnapLocked) {
+            // Determine if the dragged edge controls the constraining dimension
+            bool dragAffectsW = (wParam == WMSZ_LEFT || wParam == WMSZ_RIGHT ||
+                                 wParam == WMSZ_TOPLEFT || wParam == WMSZ_TOPRIGHT ||
+                                 wParam == WMSZ_BOTTOMLEFT || wParam == WMSZ_BOTTOMRIGHT);
+            bool dragAffectsH = (wParam == WMSZ_TOP || wParam == WMSZ_BOTTOM ||
+                                 wParam == WMSZ_TOPLEFT || wParam == WMSZ_TOPRIGHT ||
+                                 wParam == WMSZ_BOTTOMLEFT || wParam == WMSZ_BOTTOMRIGHT);
+
+            bool snapped = false;
+            if (widthConstrains && dragAffectsW) {
+                int targetWinW = (int)(vs.VisualSize.width * s_resizeSnapTarget) + borderW;
+                if (wParam == WMSZ_LEFT || wParam == WMSZ_TOPLEFT || wParam == WMSZ_BOTTOMLEFT)
+                    pRect->left = pRect->right - targetWinW;
+                else
+                    pRect->right = pRect->left + targetWinW;
+                snapped = true;
+            } else if (!widthConstrains && dragAffectsH) {
+                int targetWinH = (int)(vs.VisualSize.height * s_resizeSnapTarget + galleryH) + borderH;
+                if (wParam == WMSZ_TOP || wParam == WMSZ_TOPLEFT || wParam == WMSZ_TOPRIGHT)
+                    pRect->top = pRect->bottom - targetWinH;
+                else
+                    pRect->bottom = pRect->top + targetWinH;
+                snapped = true;
+            }
+
+            if (!snapped) s_resizeSnapLocked = false;
+        }
+
+        s_resizePrevTotalScale = s_resizeSnapLocked ? s_resizeSnapTarget : proposedTotalScale;
+        return TRUE;
+    }
+
     case WM_SIZE: {
         static bool s_wasMinimized = false;
         if (wParam == SIZE_MAXIMIZED) {
@@ -6454,6 +6561,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
                 // [Refactor] Use Centralized SyncDCompState
                 RECT rc; GetClientRect(hwnd, &rc);
                 SyncDCompState(hwnd, (float)rc.right, (float)rc.bottom);
+            }
+
+            // [Border Snap] Show zoom OSD during interactive border resize
+            if (g_isInSizeMove && GetPaneContext(PaneSlot::Primary).resource) {
+                float ts = GetCurrentTotalScale(hwnd);
+                ShowZoomOsd(hwnd, ts);
             }
 
             
