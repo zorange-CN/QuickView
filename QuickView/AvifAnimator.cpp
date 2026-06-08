@@ -33,6 +33,7 @@ public:
         avifRGBImageSetDefaults(&m_rgb, m_decoder->image);
         m_rgb.format = AVIF_RGB_FORMAT_BGRA;
         m_rgb.depth = 8;
+        m_rgb.alphaPremultiplied = AVIF_TRUE;
         
         if (avifRGBImageAllocatePixels(&m_rgb) != AVIF_RESULT_OK) return false;
         

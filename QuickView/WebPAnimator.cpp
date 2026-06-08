@@ -73,13 +73,32 @@ public:
         int y_offset = m_iter.y_offset;
         
         if (m_iter.blend_method == WEBP_MUX_NO_BLEND) {
-            // Overwrite
+            // Overwrite (with alpha premultiplication)
             for (int y = 0; y < h; y++) {
-                memcpy(m_canvas.data() + (y_offset + y) * (m_width * 4) + x_offset * 4,
-                       rgba + y * (w * 4), w * 4);
+                uint8_t* dstRow = m_canvas.data() + (y_offset + y) * (m_width * 4) + x_offset * 4;
+                const uint8_t* srcRow = rgba + y * (w * 4);
+                for (int x = 0; x < w; x++) {
+                    uint8_t a = srcRow[x*4 + 3];
+                    if (a == 255) {
+                        dstRow[x*4+0] = srcRow[x*4+0];
+                        dstRow[x*4+1] = srcRow[x*4+1];
+                        dstRow[x*4+2] = srcRow[x*4+2];
+                        dstRow[x*4+3] = 255;
+                    } else if (a == 0) {
+                        dstRow[x*4+0] = 0;
+                        dstRow[x*4+1] = 0;
+                        dstRow[x*4+2] = 0;
+                        dstRow[x*4+3] = 0;
+                    } else {
+                        dstRow[x*4+0] = static_cast<uint8_t>((srcRow[x*4+0] * a + 127) / 255);
+                        dstRow[x*4+1] = static_cast<uint8_t>((srcRow[x*4+1] * a + 127) / 255);
+                        dstRow[x*4+2] = static_cast<uint8_t>((srcRow[x*4+2] * a + 127) / 255);
+                        dstRow[x*4+3] = a;
+                    }
+                }
             }
         } else {
-            // Alpha Blend (SRC_OVER)
+            // Alpha Blend (SRC_OVER) - src is straight BGRA, dst is premultiplied BGRA
             for (int y = 0; y < h; y++) {
                 uint8_t* dstRow = m_canvas.data() + (y_offset + y) * (m_width * 4) + x_offset * 4;
                 const uint8_t* srcRow = rgba + y * (w * 4);
@@ -92,11 +111,14 @@ public:
                         dstRow[x*4+3] = 255;
                     } else if (a > 0) {
                         uint8_t inv_a = 255 - a;
-                        dstRow[x*4+0] = (srcRow[x*4+0] * 255 + dstRow[x*4+0] * inv_a) / 255;
-                        dstRow[x*4+1] = (srcRow[x*4+1] * 255 + dstRow[x*4+1] * inv_a) / 255;
-                        dstRow[x*4+2] = (srcRow[x*4+2] * 255 + dstRow[x*4+2] * inv_a) / 255;
-                        uint32_t outA = a + dstRow[x*4+3] * inv_a / 255;
-                        dstRow[x*4+3] = std::min(255u, outA);
+                        uint32_t src_b = (srcRow[x*4+0] * a + 127) / 255;
+                        uint32_t src_g = (srcRow[x*4+1] * a + 127) / 255;
+                        uint32_t src_r = (srcRow[x*4+2] * a + 127) / 255;
+
+                        dstRow[x*4+0] = static_cast<uint8_t>(std::min<int>(255, src_b + (dstRow[x*4+0] * inv_a + 127) / 255));
+                        dstRow[x*4+1] = static_cast<uint8_t>(std::min<int>(255, src_g + (dstRow[x*4+1] * inv_a + 127) / 255));
+                        dstRow[x*4+2] = static_cast<uint8_t>(std::min<int>(255, src_r + (dstRow[x*4+2] * inv_a + 127) / 255));
+                        dstRow[x*4+3] = static_cast<uint8_t>(std::min<int>(255, a + (dstRow[x*4+3] * inv_a + 127) / 255));
                     }
                 }
             }

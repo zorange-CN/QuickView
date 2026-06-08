@@ -90,7 +90,7 @@ public:
         // Copy from accumulation buffer
         // Note: libjxl output was RGBA (from pixFmt), we want BGRA.
         // Copy row by row to handle potential stride differences between accumulation buffer and frame.
-        int accStride = (frame->width * 4 + 15) & ~15; 
+        int accStride = frame->width * 4; 
         for (int y = 0; y < frame->height; ++y) {
             memcpy(frame->pixels + (size_t)y * frame->stride, m_accumulationBuffer + (size_t)y * accStride, (size_t)frame->width * 4);
         }
