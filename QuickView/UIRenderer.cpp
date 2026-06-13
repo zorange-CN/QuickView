@@ -837,7 +837,8 @@ void UIRenderer::DrawOSD(ID2D1DeviceContext* dc, HWND hwnd) {
     const float s = m_uiScale;
     // Background brushes
     ComPtr<ID2D1SolidColorBrush> bgBrush, textBrush;
-    dc->CreateSolidColorBrush(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.7f * m_osdOpacity), &bgBrush);
+    D2D1_COLOR_F bgColor = IsLightThemeActive() ? D2D1::ColorF(0.95f, 0.95f, 0.95f, 0.85f * m_osdOpacity) : D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.7f * m_osdOpacity);
+    dc->CreateSolidColorBrush(bgColor, &bgBrush);
     
     // [Fix] Theme-aware OSD Text: Automatically flip White text to Dark Grey in Light Mode
     D2D1_COLOR_F finalOsdColor = m_osdColor;
@@ -1240,8 +1241,8 @@ void UIRenderer::DrawWindowControls(ID2D1DeviceContext* dc, HWND hwnd) {
     if (g_gallery.IsVisible()) return;
     if (!m_showControls && m_winCtrlHover == -1) return;
     const float s = m_uiScale;
-    float btnW = 38.0f * s;
-    float btnH = 28.0f * s;
+    float btnW = 32.0f * s;
+    float btnH = 32.0f * s;
 
     // Do not draw if there is not even enough space for the buttons
     if (m_width < btnW * 4) return;
@@ -1258,13 +1259,84 @@ void UIRenderer::DrawWindowControls(ID2D1DeviceContext* dc, HWND hwnd) {
         yOffset = (float)(frameY + paddedBorder);
     }
     
-    float rightEdge = (float)m_width - xOffset;
-    D2D1_RECT_F closeRect = D2D1::RectF(rightEdge - btnW, yOffset, rightEdge, btnH + yOffset);
-    D2D1_RECT_F maxRect = D2D1::RectF(rightEdge - btnW * 2, yOffset, rightEdge - btnW, btnH + yOffset);
-    D2D1_RECT_F minRect = D2D1::RectF(rightEdge - btnW * 3, yOffset, rightEdge - btnW * 2, btnH + yOffset);
-    D2D1_RECT_F pinRect = D2D1::RectF(rightEdge - btnW * 4, yOffset, rightEdge - btnW * 3, btnH + yOffset);
-    D2D1_RECT_F sampleRect = D2D1::RectF(pinRect.left, pinRect.top, closeRect.right, closeRect.bottom);
-    const AdaptiveUiPalette palette = BuildAdaptivePalette(EstimateRectLuminance(sampleRect), &m_windowControlsAdaptiveBlend);
+    // Designer Dynamic Island Margins & Padding
+    float marginX = 4.0f * s; // Extremely close to the edge
+    float marginY = 4.0f * s;
+    float padX = 2.0f * s;
+    float padY = 2.0f * s;
+    
+    // Position buttons honoring the window border (xOffset/yOffset)
+    float rightEdge = (float)m_width - xOffset - marginX - padX;
+    float topEdge = yOffset + marginY + padY;
+
+    D2D1_RECT_F closeRect = D2D1::RectF(rightEdge - btnW, topEdge, rightEdge, btnH + topEdge);
+    D2D1_RECT_F maxRect = D2D1::RectF(rightEdge - btnW * 2, topEdge, rightEdge - btnW, btnH + topEdge);
+    D2D1_RECT_F minRect = D2D1::RectF(rightEdge - btnW * 3, topEdge, rightEdge - btnW * 2, btnH + topEdge);
+    D2D1_RECT_F pinRect = D2D1::RectF(rightEdge - btnW * 4, topEdge, rightEdge - btnW * 3, btnH + topEdge);
+    
+    // True Pill Shape (Perfect semicircles on ends)
+    D2D1_RECT_F capsuleRect = D2D1::RectF(
+        pinRect.left - padX,
+        pinRect.top - padY, 
+        closeRect.right + padX, 
+        closeRect.bottom + padY
+    );
+    float cornerRadius = (capsuleRect.bottom - capsuleRect.top) * 0.5f;
+
+    bool isLight = IsLightThemeActive();
+    bool glassDrawn = false;
+    if (m_bgCommandList) {
+        auto& geekGlass = GetGlassEngine("WindowControls");
+        geekGlass.InitializeResources(dc);
+        QuickView::UI::GeekGlass::GeekGlassConfig config;
+        config.theme = isLight ? QuickView::UI::GeekGlass::ThemeMode::Light : QuickView::UI::GeekGlass::ThemeMode::Dark;
+        config.panelBounds = capsuleRect;
+        config.cornerRadius = cornerRadius;
+        config.enableGeekGlass = g_config.EnableGeekGlass;
+        config.tintProfile = g_config.GlassTintProfile;
+        config.customTintColor = D2D1::ColorF(g_config.GlassCustomTintR, g_config.GlassCustomTintG, g_config.GlassCustomTintB, g_config.GlassTintAlpha);
+        config.tintAlpha = g_config.GlassTintAlpha;
+        config.specularOpacity = g_config.GlassSpecularOpacity;
+        config.blurStandardDeviation = g_config.GlassBlurSigma * s;
+        // Window controls need high visibility, slightly more opaque
+        float capsuleOpacity = (g_config.GlassPanelsOpacity / 100.0f) * 0.8f;
+        config.opacity = std::min(1.0f, capsuleOpacity);
+        config.shadowOpacity = g_config.GlassShadowOpacity * 1.5f;
+        config.pBackgroundCommandList = m_bgCommandList.Get();
+        config.backgroundTransform = m_compEngine ? m_compEngine->GetScreenTransform() : D2D1::Matrix3x2F::Identity();
+        
+        if (g_config.EnableGeekGlass) {
+            // Material Booster Layer for contrast
+            ComPtr<ID2D1SolidColorBrush> boosterBrush;
+            D2D1_COLOR_F fillerBase = isLight ? D2D1::ColorF(0.95f, 0.95f, 0.97f, 1.0f) : D2D1::ColorF(0.04f, 0.04f, 0.04f, 1.0f);
+            float baseAlpha = 0.25f * config.opacity;
+            dc->CreateSolidColorBrush(D2D1::ColorF(fillerBase.r, fillerBase.g, fillerBase.b, baseAlpha), &boosterBrush);
+            dc->FillRoundedRectangle(D2D1::RoundedRect(capsuleRect, cornerRadius, cornerRadius), boosterBrush.Get());
+            
+            geekGlass.DrawGeekGlassPanel(dc, config);
+            
+            // Replaced ugly 3D Toppings with a designer 1px subtle inner glow border
+            ComPtr<ID2D1SolidColorBrush> borderBrush;
+            D2D1_COLOR_F borderColor = isLight ? D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.08f) : D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.15f);
+            dc->CreateSolidColorBrush(borderColor, &borderBrush);
+            dc->DrawRoundedRectangle(D2D1::RoundedRect(capsuleRect, cornerRadius, cornerRadius), borderBrush.Get(), 1.0f * s);
+            
+            glassDrawn = true;
+        }
+    }
+    
+    if (!glassDrawn) {
+        ComPtr<ID2D1SolidColorBrush> bgBrush;
+        D2D1_COLOR_F fallbackBg = isLight ? D2D1::ColorF(0.95f, 0.95f, 0.95f, 0.65f) : D2D1::ColorF(0.1f, 0.1f, 0.1f, 0.65f);
+        dc->CreateSolidColorBrush(fallbackBg, &bgBrush);
+        dc->FillRoundedRectangle(D2D1::RoundedRect(capsuleRect, cornerRadius, cornerRadius), bgBrush.Get());
+        
+        // Add a subtle border
+        ComPtr<ID2D1SolidColorBrush> borderBrush;
+        D2D1_COLOR_F borderColor = isLight ? D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.08f) : D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.15f);
+        dc->CreateSolidColorBrush(borderColor, &borderBrush);
+        dc->DrawRoundedRectangle(D2D1::RoundedRect(capsuleRect, cornerRadius, cornerRadius), borderBrush.Get(), 1.0f * s);
+    }
     
     // [NEW] Cache hit rects for HitTestWindowControls
     m_winCloseRect = closeRect;
@@ -1272,27 +1344,58 @@ void UIRenderer::DrawWindowControls(ID2D1DeviceContext* dc, HWND hwnd) {
     m_winMinRect = minRect;
     m_winPinRect = pinRect;
     
-    // Hover backgrounds
+    // Hover backgrounds (Glow / Halo Effect)
+    auto DrawHover = [&](const D2D1_RECT_F& r, D2D1_COLOR_F color) {
+        float cx = (r.left + r.right) * 0.5f;
+        float cy = (r.top + r.bottom) * 0.5f;
+        // The capsule height is 36px (32 + 2*padY).
+        // A radius of 0.5f * 32 = 16px (diameter 32px) ensures the glow stays perfectly inside the capsule.
+        float radius = std::min(r.right - r.left, r.bottom - r.top) * 0.5f;
+        
+        ComPtr<ID2D1GradientStopCollection> stops;
+        D2D1_GRADIENT_STOP stopData[2];
+        stopData[0].position = 0.0f;
+        stopData[0].color = color;
+        stopData[1].position = 1.0f;
+        stopData[1].color = D2D1::ColorF(color.r, color.g, color.b, 0.0f); // fade to transparent
+        
+        dc->CreateGradientStopCollection(stopData, 2, D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP, &stops);
+        
+        if (stops) {
+            ComPtr<ID2D1RadialGradientBrush> radialBrush;
+            D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES radialProps = D2D1::RadialGradientBrushProperties(
+                D2D1::Point2F(cx, cy),
+                D2D1::Point2F(0, 0),
+                radius,
+                radius
+            );
+            dc->CreateRadialGradientBrush(radialProps, stops.Get(), &radialBrush);
+            if (radialBrush) {
+                dc->FillEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy), radius, radius), radialBrush.Get());
+            }
+        }
+    };
+
     if (m_winCtrlHover == 0) {
-        ComPtr<ID2D1SolidColorBrush> redBrush;
-        dc->CreateSolidColorBrush(D2D1::ColorF(0.9f, 0.1f, 0.1f), &redBrush);
-        dc->FillRectangle(closeRect, redBrush.Get());
-    } else if (m_winCtrlHover >= 1 && m_winCtrlHover <= 3) {
-        ComPtr<ID2D1SolidColorBrush> grayBrush;
-        dc->CreateSolidColorBrush(palette.hoverFill, &grayBrush);
-        if (m_winCtrlHover == 1) dc->FillRectangle(maxRect, grayBrush.Get());
-        else if (m_winCtrlHover == 2) dc->FillRectangle(minRect, grayBrush.Get());
-        else if (m_winCtrlHover == 3) dc->FillRectangle(pinRect, grayBrush.Get());
+        // macOS Red
+        DrawHover(closeRect, D2D1::ColorF(1.0f, 0.37f, 0.34f, 0.85f));
+    } else if (m_winCtrlHover == 1) {
+        // macOS Green
+        DrawHover(maxRect, D2D1::ColorF(0.15f, 0.79f, 0.25f, 0.85f));
+    } else if (m_winCtrlHover == 2) {
+        // Vibrant Blue for Min
+        DrawHover(minRect, D2D1::ColorF(0.0f, 0.48f, 1.0f, 0.85f));
+    } else if (m_winCtrlHover == 3) {
+        // macOS Yellow for Pin
+        DrawHover(pinRect, D2D1::ColorF(1.0f, 0.74f, 0.18f, 0.85f));
     }
 
-    ComPtr<ID2D1SolidColorBrush> foregroundBrush, shadowBrush, accentBrush;
-    dc->CreateSolidColorBrush(palette.foreground, &foregroundBrush);
-    dc->CreateSolidColorBrush(palette.shadow, &shadowBrush);
-    dc->CreateSolidColorBrush(palette.accent, &accentBrush);
+    ComPtr<ID2D1SolidColorBrush> foregroundBrush, accentBrush;
+    dc->CreateSolidColorBrush(isLight ? D2D1::ColorF(D2D1::ColorF::Black) : D2D1::ColorF(D2D1::ColorF::White), &foregroundBrush);
+    dc->CreateSolidColorBrush(D2D1::ColorF(0.2f, 0.6f, 1.0f), &accentBrush);
     
     auto DrawIcon = [&](Icons::IconGlyph icon, D2D1_RECT_F rect, ID2D1Brush* brush, float iconScale) {
         if (!icon) return;
-
         const float w = rect.right - rect.left;
         const float h = rect.bottom - rect.top;
         const float side = (std::min)(w, h) * iconScale;
@@ -1300,19 +1403,7 @@ void UIRenderer::DrawWindowControls(ID2D1DeviceContext* dc, HWND hwnd) {
         const float cy = (rect.top + rect.bottom) * 0.5f;
         D2D1_RECT_F iconRect = D2D1::RectF(cx - side * 0.5f, cy - side * 0.5f, cx + side * 0.5f, cy + side * 0.5f);
         
-        // 4-way shadow
-        float offset = 0.55f * s;
-        D2D1_RECT_F r1 = iconRect; r1.left -= offset; r1.right -= offset; r1.top -= offset; r1.bottom -= offset;
-        D2D1_RECT_F r2 = iconRect; r2.left += offset; r2.right += offset; r2.top -= offset; r2.bottom -= offset;
-        D2D1_RECT_F r3 = iconRect; r3.left -= offset; r3.right -= offset; r3.top += offset; r3.bottom += offset;
-        D2D1_RECT_F r4 = iconRect; r4.left += offset; r4.right += offset; r4.top += offset; r4.bottom += offset;
-        
-        QuickView::UI::GeekIconRenderer::DrawVectorIcon(dc, *icon, r1, shadowBrush.Get());
-        QuickView::UI::GeekIconRenderer::DrawVectorIcon(dc, *icon, r2, shadowBrush.Get());
-        QuickView::UI::GeekIconRenderer::DrawVectorIcon(dc, *icon, r3, shadowBrush.Get());
-        QuickView::UI::GeekIconRenderer::DrawVectorIcon(dc, *icon, r4, shadowBrush.Get());
-        
-        // Foreground
+        // Zero-cost abstraction: direct rendering without 4-way shadow
         QuickView::UI::GeekIconRenderer::DrawVectorIcon(dc, *icon, iconRect, brush);
     };
     
@@ -1322,7 +1413,12 @@ void UIRenderer::DrawWindowControls(ID2D1DeviceContext* dc, HWND hwnd) {
     
     DrawIcon(Icons::Minimize, minRect, foregroundBrush.Get(), 0.43f);
     DrawIcon((IsZoomed(hwnd) || m_isFullscreen) ? Icons::Restore : Icons::Maximize, maxRect, foregroundBrush.Get(), 0.43f);
-    DrawIcon(Icons::ExitToolbar, closeRect, foregroundBrush.Get(), 0.43f);
+    
+    // For close button, if hovered, make icon white for contrast against red circle
+    ComPtr<ID2D1SolidColorBrush> whiteBrush;
+    dc->CreateSolidColorBrush(D2D1::ColorF(1.0f, 1.0f, 1.0f, 1.0f), &whiteBrush);
+    ID2D1Brush* closeBrush = (m_winCtrlHover == 0) ? whiteBrush.Get() : foregroundBrush.Get();
+    DrawIcon(Icons::ExitToolbar, closeRect, closeBrush, 0.43f);
 }
 
 void UIRenderer::DrawBorderIndicators(ID2D1DeviceContext* dc) {

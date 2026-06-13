@@ -97,7 +97,7 @@ void GeekGlassEngine::CreateOrUpdateBrushes(ID2D1RenderTarget* pRT, const GeekGl
     bool isLight = (config.theme == ThemeMode::Light);
     
     // 1. Base Tint Brush
-    if (config.tintProfile == 1) { // Custom
+    if (config.tintProfile == 1 && config.enableGeekGlass) { // Custom
         D2D1_COLOR_F tint = config.customTintColor;
         pRT->CreateSolidColorBrush(tint, &m_baseTintBrush);
     } else { // Auto
@@ -257,7 +257,6 @@ void GeekGlassEngine::DrawGeekGlassPanel(ID2D1RenderTarget* pRT, const GeekGlass
     // Bypass all expensive GPU effects (Blur, Crop, Scale) when disabled.
     if (!config.enableGeekGlass) {
         if (m_baseTintBrush) {
-            // Note: tintAlpha here is g_config.GlassTintAlpha (85% defaults for trad mode)
             pRT->FillRoundedRectangle(roundedRect, m_baseTintBrush.Get());
         }
         return; 

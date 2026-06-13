@@ -302,7 +302,6 @@ private:
     D2D1_RECT_F m_winMaxRect = {};
     D2D1_RECT_F m_winMinRect = {};
     D2D1_RECT_F m_winPinRect = {};
-    float m_windowControlsAdaptiveBlend = 0.0f;
     float m_compactInfoAdaptiveBlend = 0.0f;
     
     // 脏标记
