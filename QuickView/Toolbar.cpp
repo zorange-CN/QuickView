@@ -608,7 +608,8 @@ void Toolbar::Render(ID2D1RenderTarget *pRT) {
       float barY = m_bgRect.rect.top - 1.0f * m_uiScale; // Draw outside the background rectangle
       if (m_animProgressHover) barY -= 1.0f * m_uiScale; // Shift up slightly when hovered
       float barW = barRight - barLeft;
-      float fillW = barW * m_animProgress;
+      float displayProgress = m_isDraggingProgress ? m_animSeekHoverProgress : m_animProgress;
+      float fillW = barW * displayProgress;
       float lineThickness = m_animProgressHover ? 4.0f * m_uiScale : 2.0f * m_uiScale;
       float halfH = lineThickness * 0.5f;
       float cornerRadius = halfH;

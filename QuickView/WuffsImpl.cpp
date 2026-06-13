@@ -48,7 +48,9 @@ typedef unsigned long uLongf;
 #include <cstring>
 #include <malloc.h>
 #include <vector>
-
+#include <thread>
+#include <shared_mutex>
+#include <stop_token>
 
 namespace WuffsLoader {
 
@@ -740,6 +742,12 @@ public:
       m_lastRect = {};
 
       m_isAnimated = true; // For now.
+      
+      // Start Background Indexer
+      m_indexerThread = std::jthread([this](std::stop_token st) {
+          BackgroundIndexer(st);
+      });
+
       return true;
     }
 
@@ -765,10 +773,7 @@ public:
             }
         }
 
-        // Save snapshot BEFORE decode_frame_config (so restore puts us right before a new frame)
-        if (m_currentIndex % 20 == 0) {
-            SaveSnapshot(m_currentIndex);
-        }
+        // Save snapshot is now handled by the background indexer
 
         // Decode Frame Config
         while (true) {
@@ -877,8 +882,14 @@ public:
             return GetNextFrame(); // wait, GetNextFrame advances to current+1
         }
         
+        uint32_t bestIndex = 0;
+        if (m_currentIndex <= targetIndex) {
+            bestIndex = m_currentIndex;
+        }
+
         // Find closest snapshot <= targetIndex
         int bestSnap = -1;
+        std::shared_lock<std::shared_mutex> lock(m_snapshotMutex);
         for (int i = (int)m_snapshots.size() - 1; i >= 0; i--) {
             if (m_snapshots[i].index <= targetIndex) {
                 bestSnap = i;
@@ -886,7 +897,7 @@ public:
             }
         }
         
-        if (bestSnap >= 0) {
+        if (bestSnap >= 0 && m_snapshots[bestSnap].index > bestIndex) {
             // Restore snapshot
             auto& snap = m_snapshots[bestSnap];
             m_currentIndex = snap.index;
@@ -896,13 +907,26 @@ public:
             m_lastRect = snap.lastRect;
             if (m_isGif) memcpy(&m_gifDec, snap.decoderState.data(), sizeof(m_gifDec));
             else if (m_isPng) memcpy(&m_pngDec, snap.decoderState.data(), sizeof(m_pngDec));
-        } else {
-            // No snapshot, must restart from 0
-            // Re-initialize!
-            Initialize(m_mappedFile, PixelFormat::BGRA8888);
+        } else if (m_currentIndex > targetIndex) {
+            // We need to rewind, but no snapshot was closer than 0.
+            // Re-initialize foreground decoder only (do not clear background indexer)
+            wuffs_base__status status;
+            m_src.meta.ri = 0; // Rewind IO
+            m_src.meta.wi = std::min(m_mappedFile->size(), (size_t)1048576);
+            m_src.meta.closed = (m_src.meta.wi == m_mappedFile->size());
+            if (m_isGif) {
+                status = wuffs_gif__decoder__initialize(&m_gifDec, sizeof(m_gifDec), WUFFS_VERSION, WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED);
+                wuffs_gif__decoder__decode_image_config(&m_gifDec, &m_ic, &m_src);
+            } else if (m_isPng) {
+                status = wuffs_png__decoder__initialize(&m_pngDec, sizeof(m_pngDec), WUFFS_VERSION, WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED);
+                wuffs_png__decoder__decode_image_config(&m_pngDec, &m_ic, &m_src);
+            }
+            memset(m_canvas.data(), 0, m_canvas.size());
             m_currentIndex = 0;
-            m_snapshots.clear();
+            m_lastDisposal = FrameDisposalMode::Unspecified;
+            m_lastRect = {};
         }
+        lock.unlock();
         
         // Fast-forward WITHOUT memory allocation & pixel copying
         while (m_currentIndex < targetIndex) {
@@ -930,21 +954,136 @@ private:
         Rect lastRect;
     };
     
-    void SaveSnapshot(uint32_t index) {
-        Snapshot snap;
-        snap.index = index;
-        snap.canvas = m_canvas;
-        snap.srcState = m_src;
-        snap.lastDisposal = m_lastDisposal;
-        snap.lastRect = m_lastRect;
+    void BackgroundIndexer(std::stop_token st) {
+        wuffs_gif__decoder bgGifDec;
+        wuffs_png__decoder bgPngDec;
+        wuffs_base__io_buffer bgSrc = m_src; // Copy initial io_buffer state
+        bgSrc.meta.ri = 0; // Restart from 0
+        
+        wuffs_base__status status;
+        wuffs_base__image_config ic;
         if (m_isGif) {
-            snap.decoderState.resize(sizeof(wuffs_gif__decoder));
-            memcpy(snap.decoderState.data(), &m_gifDec, sizeof(wuffs_gif__decoder));
+            status = wuffs_gif__decoder__initialize(&bgGifDec, sizeof(bgGifDec), WUFFS_VERSION, WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED);
+            if (!wuffs_base__status__is_ok(&status)) return;
+            wuffs_gif__decoder__decode_image_config(&bgGifDec, &ic, &bgSrc);
         } else if (m_isPng) {
-            snap.decoderState.resize(sizeof(wuffs_png__decoder));
-            memcpy(snap.decoderState.data(), &m_pngDec, sizeof(wuffs_png__decoder));
+            status = wuffs_png__decoder__initialize(&bgPngDec, sizeof(bgPngDec), WUFFS_VERSION, WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED);
+            if (!wuffs_base__status__is_ok(&status)) return;
+            wuffs_png__decoder__decode_image_config(&bgPngDec, &ic, &bgSrc);
+        } else {
+            return;
         }
-        m_snapshots.push_back(std::move(snap));
+
+        std::vector<uint8_t> bgCanvas(m_canvas.size(), 0);
+        std::vector<uint8_t> bgWorkbuf(m_workbuf.size());
+        wuffs_base__pixel_buffer bgPb;
+        wuffs_base__pixel_config bgIc = m_ic.pixcfg;
+        wuffs_base__pixel_buffer__set_from_slice(&bgPb, &bgIc, wuffs_base__make_slice_u8(bgCanvas.data(), bgCanvas.size()));
+
+        uint32_t bgCurrentIndex = 0;
+        FrameDisposalMode bgLastDisposal = FrameDisposalMode::Unspecified;
+        Rect bgLastRect = {};
+        
+        uint32_t snapshotInterval = 20;
+        size_t memoryLimit = 256 * 1024 * 1024; // 256MB
+        size_t currentMemory = 0;
+
+        while (!st.stop_requested()) {
+            if (bgCurrentIndex > 0) {
+                if (bgLastDisposal == FrameDisposalMode::RestoreBackground) {
+                    int safeLeft = std::max(0, bgLastRect.left);
+                    int safeTop = std::max(0, bgLastRect.top);
+                    int safeRight = std::min((int)m_width, bgLastRect.right);
+                    int safeBottom = std::min((int)m_height, bgLastRect.bottom);
+                    for (int y = safeTop; y < safeBottom; y++) {
+                        uint8_t* row = bgCanvas.data() + (y * m_width * 4) + safeLeft * 4;
+                        memset(row, 0, (safeRight - safeLeft) * 4);
+                    }
+                }
+            }
+
+            if (bgCurrentIndex % snapshotInterval == 0) {
+                Snapshot snap;
+                snap.index = bgCurrentIndex;
+                snap.canvas = bgCanvas;
+                snap.srcState = bgSrc;
+                snap.lastDisposal = bgLastDisposal;
+                snap.lastRect = bgLastRect;
+                if (m_isGif) {
+                    snap.decoderState.resize(sizeof(wuffs_gif__decoder));
+                    memcpy(snap.decoderState.data(), &bgGifDec, sizeof(wuffs_gif__decoder));
+                } else if (m_isPng) {
+                    snap.decoderState.resize(sizeof(wuffs_png__decoder));
+                    memcpy(snap.decoderState.data(), &bgPngDec, sizeof(wuffs_png__decoder));
+                }
+                
+                size_t snapSize = snap.canvas.size() + snap.decoderState.size();
+                
+                std::unique_lock<std::shared_mutex> lock(m_snapshotMutex);
+                m_snapshots.push_back(std::move(snap));
+                currentMemory += snapSize;
+                
+                if (currentMemory > memoryLimit) {
+                    std::vector<Snapshot> newSnapshots;
+                    currentMemory = 0;
+                    for (size_t i = 0; i < m_snapshots.size(); i += 2) {
+                        newSnapshots.push_back(std::move(m_snapshots[i]));
+                        currentMemory += newSnapshots.back().canvas.size() + newSnapshots.back().decoderState.size();
+                    }
+                    m_snapshots = std::move(newSnapshots);
+                    snapshotInterval *= 2;
+                }
+                lock.unlock();
+            }
+
+            wuffs_base__frame_config fc = {};
+            while (true) {
+                if (st.stop_requested()) return;
+                if (m_isGif) status = wuffs_gif__decoder__decode_frame_config(&bgGifDec, &fc, &bgSrc);
+                else if (m_isPng) status = wuffs_png__decoder__decode_frame_config(&bgPngDec, &fc, &bgSrc);
+                
+                if (wuffs_base__status__is_ok(&status)) break;
+                if (status.repr == wuffs_base__suspension__short_read && !bgSrc.meta.closed) {
+                    size_t next = std::min(m_mappedFile->size(), bgSrc.meta.wi + 1048576);
+                    bgSrc.meta.wi = next;
+                    bgSrc.meta.closed = (next == m_mappedFile->size());
+                    continue;
+                }
+                return;
+            }
+
+            wuffs_base__pixel_blend blendMode = WUFFS_BASE__PIXEL_BLEND__SRC_OVER;
+            if (wuffs_base__frame_config__overwrite_instead_of_blend(&fc)) blendMode = WUFFS_BASE__PIXEL_BLEND__SRC;
+
+            while (true) {
+                if (st.stop_requested()) return;
+                if (m_isGif) status = wuffs_gif__decoder__decode_frame(&bgGifDec, &bgPb, &bgSrc, blendMode, wuffs_base__make_slice_u8(bgWorkbuf.data(), bgWorkbuf.size()), nullptr);
+                else if (m_isPng) status = wuffs_png__decoder__decode_frame(&bgPngDec, &bgPb, &bgSrc, blendMode, wuffs_base__make_slice_u8(bgWorkbuf.data(), bgWorkbuf.size()), nullptr);
+                
+                if (wuffs_base__status__is_ok(&status)) break;
+                if (status.repr == wuffs_base__suspension__short_read && !bgSrc.meta.closed) {
+                    size_t next = std::min(m_mappedFile->size(), bgSrc.meta.wi + 1048576);
+                    bgSrc.meta.wi = next;
+                    bgSrc.meta.closed = (next == m_mappedFile->size());
+                    continue;
+                }
+                return;
+            }
+
+            uint8_t d = wuffs_base__frame_config__disposal(&fc);
+            if (d == WUFFS_BASE__ANIMATION_DISPOSAL__RESTORE_BACKGROUND) bgLastDisposal = FrameDisposalMode::RestoreBackground;
+            else if (d == WUFFS_BASE__ANIMATION_DISPOSAL__RESTORE_PREVIOUS) bgLastDisposal = FrameDisposalMode::RestorePrevious;
+            else bgLastDisposal = FrameDisposalMode::Keep;
+            
+            wuffs_base__rect_ie_u32 bounds = wuffs_base__frame_config__bounds(&fc);
+            bgLastRect.left = bounds.min_incl_x;
+            bgLastRect.top = bounds.min_incl_y;
+            bgLastRect.right = bounds.max_excl_x;
+            bgLastRect.bottom = bounds.max_excl_y;
+
+            bgCurrentIndex++;
+            if (bgCurrentIndex > m_knownTotalFrames) m_knownTotalFrames = bgCurrentIndex;
+        }
     }
 
     std::shared_ptr<QuickView::MappedFile> m_mappedFile;
@@ -974,6 +1113,8 @@ private:
     Rect m_lastRect;
 
     std::vector<Snapshot> m_snapshots;
+    std::shared_mutex m_snapshotMutex;
+    std::jthread m_indexerThread;
 };
 
 std::unique_ptr<IAnimationDecoder> CreateWuffsAnimator() {

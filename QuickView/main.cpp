@@ -156,6 +156,66 @@ bool g_isDraggingAnimSeek = false;
 bool g_windowSizeRestoredFromConfig = false;
 static WINDOWPLACEMENT g_savedWindowPlacement = { sizeof(WINDOWPLACEMENT), 0, 0, {0,0}, {0,0}, {0,0,0,0} };
 
+#include <mutex>
+#include <condition_variable>
+#include <thread>
+
+struct AsyncSeekRequest {
+    float targetProgress = -1.0f;
+    std::shared_ptr<QuickView::IAnimationDecoder> animator;
+    HWND hwnd = nullptr;
+};
+
+static std::mutex g_asyncSeekMutex;
+static std::condition_variable g_asyncSeekCV;
+static AsyncSeekRequest g_asyncSeekReq;
+static bool g_asyncSeekThreadStarted = false;
+float g_pendingAsyncSeekTarget = -1.0f;
+
+std::mutex g_animatorMutex;
+
+struct AsyncSeekResult {
+    std::shared_ptr<QuickView::RawImageFrame> nextFrame;
+    float requestedProgress = -1.0f;
+};
+static AsyncSeekResult g_asyncSeekRes;
+static std::mutex g_asyncSeekResMutex;
+
+static void EnsureAsyncSeekThread() {
+    if (g_asyncSeekThreadStarted) return;
+    g_asyncSeekThreadStarted = true;
+    std::thread([]() {
+        while (true) {
+            AsyncSeekRequest req;
+            {
+                std::unique_lock<std::mutex> lock(g_asyncSeekMutex);
+                g_asyncSeekCV.wait(lock, []{ return g_asyncSeekReq.targetProgress >= 0.0f; });
+                req = g_asyncSeekReq;
+                g_asyncSeekReq.targetProgress = -1.0f; // Consume
+            }
+            
+            if (req.animator && req.hwnd) {
+                uint32_t total = req.animator->GetTotalFrames();
+                if (total > 1) {
+                    uint32_t targetFrame = (uint32_t)(std::round(req.targetProgress * (total - 1)));
+                    std::shared_ptr<QuickView::RawImageFrame> nextFrame;
+                    {
+                        std::lock_guard<std::mutex> animLock(g_animatorMutex);
+                        nextFrame = req.animator->SeekToFrame(targetFrame);
+                    }
+                    
+                    {
+                        std::lock_guard<std::mutex> resLock(g_asyncSeekResMutex);
+                        g_asyncSeekRes.nextFrame = nextFrame;
+                        g_asyncSeekRes.requestedProgress = req.targetProgress;
+                    }
+                    PostMessageW(req.hwnd, WM_APP + 22, 0, 0); // WM_ANIM_SEEK_READY
+                }
+            }
+        }
+    }).detach();
+}
+
 namespace {
 enum class PreferredAppMode {
     Default,
@@ -6015,6 +6075,38 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
         return 0;
     }
 
+    // [Async Anim Seek]
+    case WM_APP + 22: { // WM_ANIM_SEEK_READY
+        extern float g_pendingAsyncSeekTarget;
+        g_pendingAsyncSeekTarget = -1.0f; // Clear pending state
+        
+        std::shared_ptr<QuickView::RawImageFrame> nextFrame;
+        float prog = 0.0f;
+        {
+            std::lock_guard<std::mutex> resLock(g_asyncSeekResMutex);
+            nextFrame = g_asyncSeekRes.nextFrame;
+            prog = g_asyncSeekRes.requestedProgress;
+        }
+        
+        if (nextFrame && nextFrame->pixels) {
+            ComPtr<ID2D1Bitmap> newBitmap;
+            if (SUCCEEDED(g_renderEngine->UploadRawFrameToGPU(*nextFrame, &newBitmap))) {
+                GetPaneContext(PaneSlot::Primary).resource.bitmap = newBitmap;
+                GetPaneContext(PaneSlot::Primary).resource.frameMeta = nextFrame->frameMeta;
+
+                // Update Surface but defer DComp Commit to OnPaint to avoid stuttering
+                RenderImageToDComp(hwnd, GetPaneContext(PaneSlot::Primary).resource, true);
+                RequestRepaint(PaintLayer::Image | PaintLayer::Dynamic | PaintLayer::Static);
+                
+                // Only overwrite progress if user isn't currently dragging
+                if (!g_isDraggingAnimSeek) {
+                    g_toolbar.SetAnimProgress(prog);
+                }
+            }
+        }
+        return 0;
+    }
+
     // [HEIC] HEVC Video Extensions missing — prompt user to install
     case WM_APP + 99: {
         std::vector<DialogButton> buttons = {
@@ -6187,11 +6279,16 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
                 return 0;
             }
             
-            auto nextFrame = GetPaneContext(PaneSlot::Primary).resource.animator->GetNextFrame();
-            if (!nextFrame || !nextFrame->pixels) {
-                // EOF: Loop back to frame 0
-                QV_LOG("Anim_Playback", TraceLoggingString("EOF Looping", "Action"));
-                nextFrame = GetPaneContext(PaneSlot::Primary).resource.animator->SeekToFrame(0);
+            std::shared_ptr<QuickView::RawImageFrame> nextFrame;
+            {
+                extern std::mutex g_animatorMutex;
+                std::lock_guard<std::mutex> lock(g_animatorMutex);
+                nextFrame = GetPaneContext(PaneSlot::Primary).resource.animator->GetNextFrame();
+                if (!nextFrame || !nextFrame->pixels) {
+                    // EOF: Loop back to frame 0
+                    QV_LOG("Anim_Playback", TraceLoggingString("EOF Looping", "Action"));
+                    nextFrame = GetPaneContext(PaneSlot::Primary).resource.animator->SeekToFrame(0);
+                }
             }
             
             if (nextFrame && nextFrame->pixels) {
@@ -6211,13 +6308,14 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
                     
                     // Update Surface but defer DComp Commit to OnPaint to avoid stuttering
                     RenderImageToDComp(hwnd, GetPaneContext(PaneSlot::Primary).resource, true);
-                    RequestRepaint(PaintLayer::Image | PaintLayer::Dynamic); 
+                    RequestRepaint(PaintLayer::Image | PaintLayer::Dynamic | PaintLayer::Static); 
                 } else {
                     QV_LOG("Anim_Playback", TraceLoggingString("UploadFailed", "Action"));
                 }
             } else {
-                QV_LOG("Anim_Playback", TraceLoggingString("SeekNull Stopping", "Action"));
+                // If it fails permanently, pause
                 KillTimer(hwnd, IDT_ANIMATION);
+                g_animPlaying = false;
             }
             return 0;
         }
@@ -11718,8 +11816,11 @@ void OnPaint(HWND hwnd) {
         bool supportsDirtyRect = hasAnim ? GetPaneContext(PaneSlot::Primary).resource.animator->SupportsDirtyRect() : false;
         g_toolbar.SetAnimationMode(hasAnim, hasAnim && g_animPlaying, g_showAnimDirtyRect, supportsDirtyRect);
         if (hasAnim && animState.TotalFrames > 1) {
-            float progress = (float)animState.CurrentFrameIndex / (float)(animState.TotalFrames - 1);
-            g_toolbar.SetAnimProgress(progress);
+            extern float g_pendingAsyncSeekTarget;
+            if (g_pendingAsyncSeekTarget < 0.0f) {
+                float progress = (float)animState.CurrentFrameIndex / (float)(animState.TotalFrames - 1);
+                g_toolbar.SetAnimProgress(progress);
+            }
             g_toolbar.SetAnimFrameInfo(animState.CurrentFrameIndex, animState.TotalFrames);
         }
         {
@@ -12016,7 +12117,12 @@ void HandleAnimFrameStep(HWND hwnd, bool forward) {
         target = (current > 0) ? current - 1 : total - 1;
     }
     
-    auto nextFrame = GetPaneContext(PaneSlot::Primary).resource.animator->SeekToFrame(target);
+    std::shared_ptr<QuickView::RawImageFrame> nextFrame;
+    {
+        extern std::mutex g_animatorMutex;
+        std::lock_guard<std::mutex> lock(g_animatorMutex);
+        nextFrame = GetPaneContext(PaneSlot::Primary).resource.animator->SeekToFrame(target);
+    }
     if (nextFrame && nextFrame->pixels) {
         ComPtr<ID2D1Bitmap> newBitmap;
         if (SUCCEEDED(g_renderEngine->UploadRawFrameToGPU(*nextFrame, &newBitmap))) {
@@ -12028,10 +12134,11 @@ void HandleAnimFrameStep(HWND hwnd, bool forward) {
                 SyncDCompState(hwnd, (float)rc.right, (float)rc.bottom, false);
                 g_compEngine->Commit();
             }
-            RequestRepaint(PaintLayer::Dynamic);
+            RequestRepaint(PaintLayer::Image | PaintLayer::Dynamic | PaintLayer::Static);
         }
     }
 }
+
 
 void PerformAnimSeek(HWND hwnd, float targetProgress) {
     if (!GetPaneContext(PaneSlot::Primary).resource.animator) return;
@@ -12045,20 +12152,21 @@ void PerformAnimSeek(HWND hwnd, float targetProgress) {
         g_osd.Show(hwnd, AppStrings::OSD_AnimPaused, true);
     }
 
-    uint32_t targetFrame = (uint32_t)(std::round(targetProgress * (total - 1)));
-    auto nextFrame = GetPaneContext(PaneSlot::Primary).resource.animator->SeekToFrame(targetFrame);
-    if (nextFrame && nextFrame->pixels) {
-        ComPtr<ID2D1Bitmap> newBitmap;
-        if (SUCCEEDED(g_renderEngine->UploadRawFrameToGPU(*nextFrame, &newBitmap))) {
-            GetPaneContext(PaneSlot::Primary).resource.bitmap = newBitmap;
-            GetPaneContext(PaneSlot::Primary).resource.frameMeta = nextFrame->frameMeta;
-
-            // Update Surface but defer DComp Commit to OnPaint to avoid stuttering
-            RenderImageToDComp(hwnd, GetPaneContext(PaneSlot::Primary).resource, true);
-            RequestRepaint(PaintLayer::Image | PaintLayer::Dynamic);
-            g_toolbar.SetAnimProgress(targetProgress); // Visual feedback
-        }
+    // UI Update immediately without blocking
+    extern float g_pendingAsyncSeekTarget;
+    g_pendingAsyncSeekTarget = targetProgress;
+    g_toolbar.SetAnimProgress(targetProgress);
+    RequestRepaint(PaintLayer::Static);
+    
+    EnsureAsyncSeekThread();
+    
+    {
+        std::lock_guard<std::mutex> lock(g_asyncSeekMutex);
+        g_asyncSeekReq.targetProgress = targetProgress;
+        g_asyncSeekReq.animator = GetPaneContext(PaneSlot::Primary).resource.animator;
+        g_asyncSeekReq.hwnd = hwnd;
     }
+    g_asyncSeekCV.notify_one();
 }
 
 bool HandleHotkeyAction(HWND hwnd, HotkeyAction action) {
