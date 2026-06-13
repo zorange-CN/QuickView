@@ -6924,7 +6924,14 @@ SKIP_EDGE_NAV:;
         if (g_isDraggingAnimSeek) {
             float prog = 0;
             if (g_toolbar.GetAnimSeekTarget(prog)) {
-                PerformAnimSeek(hwnd, prog);
+                static DWORD lastSeekTime = 0;
+                DWORD curTime = GetTickCount();
+                if (curTime - lastSeekTime >= 33) {
+                    PerformAnimSeek(hwnd, prog);
+                    lastSeekTime = curTime;
+                } else {
+                    g_toolbar.SetAnimProgress(prog);
+                }
                 RequestRepaint(PaintLayer::Static);
             }
         }

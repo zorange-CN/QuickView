@@ -592,6 +592,7 @@ public:
           // [BUGFIX] Verify actual animated GIF via Application Extension or
           // multiple Image Descriptors
           bool hasAnim = false;
+          int image_count = 0;
           const uint8_t *p = data;
           size_t offset = 13; // Header (6) + LSD (7)
           if (size > 13) {
@@ -599,7 +600,6 @@ public:
             if (lsd_packed & 0x80) { // Global Color Table Flag
               offset += 3 * (2 << (lsd_packed & 0x07));
             }
-            int image_count = 0;
             while (offset < size) {
               uint8_t block_type = p[offset++];
               if (block_type == 0x3B) { // Trailer
@@ -608,7 +608,6 @@ public:
                 image_count++;
                 if (image_count > 1) {
                   hasAnim = true;
-                  break;
                 }
                 if (offset + 9 > size)
                   break;
@@ -644,6 +643,7 @@ public:
           }
           if (hasAnim) {
             m_isGif = true;
+            m_knownTotalFrames = image_count;
           } else {
             return false; // Fallback to static GIF fast-path
           }
@@ -662,6 +662,7 @@ public:
           if (wuffs_base__status__is_ok(&status)) {
             // [BUGFIX] Verify actual APNG via acTL chunk presence before IDAT
             bool hasAcTL = false;
+            uint32_t apng_frames = 0;
             const uint8_t *p = data;
             size_t offset = 8; // Skip PNG signature
             while (offset + 12 <= size) {
@@ -673,6 +674,10 @@ public:
 
               if (chunk_type == 0x6163544C) { // 'acTL'
                 hasAcTL = true;
+                if (offset + 12 <= size) {
+                  apng_frames = (p[offset + 8] << 24) | (p[offset + 9] << 16) |
+                                (p[offset + 10] << 8) | p[offset + 11];
+                }
                 break;
               } else if (chunk_type == 0x49444154 ||
                          chunk_type == 0x49454E44) { // 'IDAT' or 'IEND'
@@ -680,8 +685,9 @@ public:
               }
               offset += 12 + chunk_len;
             }
-            if (hasAcTL) {
+            if (hasAcTL && apng_frames > 1) {
               m_isPng = true;
+              m_knownTotalFrames = apng_frames;
             } else {
               return false; // Fallback to static PNG fast-path
             }
@@ -730,11 +736,14 @@ public:
         workbuf_len = wuffs_png__decoder__workbuf_len(&m_pngDec).max_incl;
       m_workbuf.resize((size_t)workbuf_len);
 
+      m_lastDisposal = FrameDisposalMode::Unspecified;
+      m_lastRect = {};
+
       m_isAnimated = true; // For now.
       return true;
     }
 
-    std::shared_ptr<RawImageFrame> GetNextFrame() override {
+    bool DecodeFrameInternal(bool copyPixels, std::shared_ptr<RawImageFrame>& outFrame) {
         wuffs_base__status status;
         wuffs_base__frame_config fc = {};
 
@@ -774,12 +783,10 @@ public:
                 continue;
             }
             // End of animation or error
-            return nullptr;
+            return false;
         }
 
         // Determine blend mode from frame config
-        // APNG: blend_op=SOURCE -> overwrite (SRC), blend_op=OVER -> alpha blend (SRC_OVER)
-        // GIF: always SRC_OVER (transparency via disposal, not alpha blending)
         wuffs_base__pixel_blend blendMode = WUFFS_BASE__PIXEL_BLEND__SRC_OVER;
         if (wuffs_base__frame_config__overwrite_instead_of_blend(&fc)) {
             blendMode = WUFFS_BASE__PIXEL_BLEND__SRC;
@@ -802,53 +809,66 @@ public:
                 m_src.meta.closed = (next == m_mappedFile->size());
                 continue;
             }
-            return nullptr;
+            return false;
         }
 
-        // Build shared frame wrapper
-        auto frame = std::make_shared<RawImageFrame>();
-        
-        size_t bufSize = m_canvas.size();
-        frame->pixels = (uint8_t*)_aligned_malloc(bufSize, 64);
-        frame->memoryDeleter = QuickView::MemoryDeleter::FromAlignedFree();
-        memcpy(frame->pixels, m_canvas.data(), bufSize);
-        
-        frame->width = m_width;
-        frame->height = m_height;
-        frame->stride = m_width * 4; // Canvas stride is always width * 4
-        frame->format = PixelFormat::BGRA8888;
-        frame->quality = DecodeQuality::Full;
-        
-        // Extract Meta
-        auto& meta = frame->frameMeta;
-        meta.index = m_currentIndex;
-        
-        wuffs_base__flicks ticks = wuffs_base__frame_config__duration(&fc);
-        meta.delayMs = (uint32_t)(ticks / (WUFFS_BASE__FLICKS_PER_SECOND / 1000));
-        if (meta.delayMs == 0) meta.delayMs = 100; // Fallback
-        
+        // Extract Meta and Disposal
         uint8_t d = wuffs_base__frame_config__disposal(&fc);
-        if (d == WUFFS_BASE__ANIMATION_DISPOSAL__RESTORE_BACKGROUND) meta.disposal = FrameDisposalMode::RestoreBackground;
-        else if (d == WUFFS_BASE__ANIMATION_DISPOSAL__RESTORE_PREVIOUS) meta.disposal = FrameDisposalMode::RestorePrevious;
-        else meta.disposal = FrameDisposalMode::Keep;
+        FrameDisposalMode nextDisposal = FrameDisposalMode::Keep;
+        if (d == WUFFS_BASE__ANIMATION_DISPOSAL__RESTORE_BACKGROUND) nextDisposal = FrameDisposalMode::RestoreBackground;
+        else if (d == WUFFS_BASE__ANIMATION_DISPOSAL__RESTORE_PREVIOUS) nextDisposal = FrameDisposalMode::RestorePrevious;
         
         wuffs_base__rect_ie_u32 bounds = wuffs_base__frame_config__bounds(&fc);
-        meta.rcLeft = bounds.min_incl_x;
-        meta.rcTop = bounds.min_incl_y;
-        meta.rcRight = bounds.max_excl_x;
-        meta.rcBottom = bounds.max_excl_y;
-        meta.isDelta = true;
-        
-        m_lastDisposal = meta.disposal;
-        m_lastRect.left = meta.rcLeft;
-        m_lastRect.top = meta.rcTop;
-        m_lastRect.right = meta.rcRight;
-        m_lastRect.bottom = meta.rcBottom;
-        
+        m_lastDisposal = nextDisposal;
+        m_lastRect.left = bounds.min_incl_x;
+        m_lastRect.top = bounds.min_incl_y;
+        m_lastRect.right = bounds.max_excl_x;
+        m_lastRect.bottom = bounds.max_excl_y;
+
+        if (copyPixels) {
+            // Build shared frame wrapper
+            auto frame = std::make_shared<RawImageFrame>();
+            
+            size_t bufSize = m_canvas.size();
+            frame->pixels = (uint8_t*)_aligned_malloc(bufSize, 64);
+            frame->memoryDeleter = QuickView::MemoryDeleter::FromAlignedFree();
+            memcpy(frame->pixels, m_canvas.data(), bufSize);
+            
+            frame->width = m_width;
+            frame->height = m_height;
+            frame->stride = m_width * 4; // Canvas stride is always width * 4
+            frame->format = PixelFormat::BGRA8888;
+            frame->quality = DecodeQuality::Full;
+            
+            // Extract Meta
+            auto& meta = frame->frameMeta;
+            meta.index = m_currentIndex;
+            
+            wuffs_base__flicks ticks = wuffs_base__frame_config__duration(&fc);
+            meta.delayMs = (uint32_t)(ticks / (WUFFS_BASE__FLICKS_PER_SECOND / 1000));
+            if (meta.delayMs == 0) meta.delayMs = 100; // Fallback
+            meta.disposal = nextDisposal;
+            meta.rcLeft = bounds.min_incl_x;
+            meta.rcTop = bounds.min_incl_y;
+            meta.rcRight = bounds.max_excl_x;
+            meta.rcBottom = bounds.max_excl_y;
+            meta.isDelta = true;
+            
+            outFrame = frame;
+        }
+
         m_currentIndex++;
         if (m_currentIndex > m_knownTotalFrames) m_knownTotalFrames = m_currentIndex;
         
-        return frame;
+        return true;
+    }
+
+    std::shared_ptr<RawImageFrame> GetNextFrame() override {
+        std::shared_ptr<RawImageFrame> frame;
+        if (DecodeFrameInternal(true, frame)) {
+            return frame;
+        }
+        return nullptr;
     }
 
     std::shared_ptr<RawImageFrame> SeekToFrame(uint32_t targetIndex) override {
@@ -872,6 +892,8 @@ public:
             m_currentIndex = snap.index;
             memcpy(m_canvas.data(), snap.canvas.data(), m_canvas.size());
             m_src = snap.srcState;
+            m_lastDisposal = snap.lastDisposal;
+            m_lastRect = snap.lastRect;
             if (m_isGif) memcpy(&m_gifDec, snap.decoderState.data(), sizeof(m_gifDec));
             else if (m_isPng) memcpy(&m_pngDec, snap.decoderState.data(), sizeof(m_pngDec));
         } else {
@@ -882,14 +904,13 @@ public:
             m_snapshots.clear();
         }
         
-        // Fast-forward
-        std::shared_ptr<RawImageFrame> lastFrame = nullptr;
+        // Fast-forward WITHOUT memory allocation & pixel copying
         while (m_currentIndex < targetIndex) {
-            lastFrame = GetNextFrame();
-            if (!lastFrame) break; // Error or EOF
+            std::shared_ptr<RawImageFrame> dummy;
+            if (!DecodeFrameInternal(false, dummy)) break; // Error or EOF
         }
         
-        // Return target frame
+        // Return target frame WITH memory allocation
         return GetNextFrame();
     }
 
@@ -898,11 +919,15 @@ public:
     bool SupportsDirtyRect() const override { return true; }
 
 private:
+    struct Rect { int left = 0; int top = 0; int right = 0; int bottom = 0; };
+
     struct Snapshot {
         uint32_t index;
         std::vector<uint8_t> canvas;
         std::vector<uint8_t> decoderState;
         wuffs_base__io_buffer srcState;
+        FrameDisposalMode lastDisposal;
+        Rect lastRect;
     };
     
     void SaveSnapshot(uint32_t index) {
@@ -910,6 +935,8 @@ private:
         snap.index = index;
         snap.canvas = m_canvas;
         snap.srcState = m_src;
+        snap.lastDisposal = m_lastDisposal;
+        snap.lastRect = m_lastRect;
         if (m_isGif) {
             snap.decoderState.resize(sizeof(wuffs_gif__decoder));
             memcpy(snap.decoderState.data(), &m_gifDec, sizeof(wuffs_gif__decoder));
@@ -944,7 +971,7 @@ private:
     
     // Disposal State
     FrameDisposalMode m_lastDisposal = FrameDisposalMode::Unspecified;
-    struct Rect { int left = 0; int top = 0; int right = 0; int bottom = 0; } m_lastRect;
+    Rect m_lastRect;
 
     std::vector<Snapshot> m_snapshots;
 };

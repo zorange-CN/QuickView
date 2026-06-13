@@ -340,4 +340,14 @@ target_link_libraries(QuickViewTests PRIVATE
 target_include_directories(QuickViewTests PRIVATE QuickView third_party/unrar-mini)
 add_test(NAME QuickViewTests COMMAND QuickViewTests)
 
+# ============================================================================
+# IDE IntelliSense & Build Environment Helper (Inject Adaptive SDK Include Paths)
+# ============================================================================
+if(WIN32 AND ADAPTIVE_MSVC_INCLUDE_PATHS)
+    target_include_directories(QuickView SYSTEM PRIVATE ${ADAPTIVE_MSVC_INCLUDE_PATHS})
+    if(TARGET QuickViewTests)
+        target_include_directories(QuickViewTests SYSTEM PRIVATE ${ADAPTIVE_MSVC_INCLUDE_PATHS})
+    endif()
+endif()
+
 # Force-define CXX features to bypass CMake's Clang 22 feature detection bug
