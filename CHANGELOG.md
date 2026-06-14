@@ -1,5 +1,56 @@
 # Changelog
 
+## [6.8.0] - The Dynamic Island, Filmstrip Evolution & Footprint Shrink
+**Release Date**: 2026-06-14
+
+### ✨ Features & UX
+- **Floating 'Dynamic Island' Window Controls (#199)**:
+  - Redesigned top-right window controls into a floating capsule pill inspired by macOS styling, featuring soft glow hover effects.
+  - Reduced caption buttons size to optimize screen real estate and geometry layouts.
+- **Top-Hover Filmstrip Gallery**:
+  - Implemented top-hover filmstrip gallery mode with comprehensive UX refinements.
+  - Added custom settings to choose trigger modes (Hover, Pinned, Disabled) via ComboBox.
+  - Implemented smooth auto-centering scroll animations for the active thumbnail in the filmstrip.
+  - Fixed visual gaps and zoom anchor offsets when the gallery is pinned.
+  - Restored horizontal auto-scrolling and resolved cropped selection borders.
+- **Dual-Mode Slideshow (#198)**:
+  - Integrated Slideshow with two modes: Normal Fullscreen and Picasa-style Spotlight mode (dimming background with soft blur).
+- **Responsive Toolbar Layout (#194)**:
+  - Dynamically hides toolbar buttons based on window dimensions and active display modes.
+- **Window Resize Magnetic Snap (#90)**:
+  - Implemented 100% magnetic snapping to screen edges during window border resizing.
+- **Animation Playback & Seek Scrubbing**:
+  - Implemented asynchronous, debounced animation seeking for zero-latency frame scrubbing on the timeline.
+  - Fixed frame counts and distortion issues on large GIF seeking (#197).
+- **Custom Keyboard Shortcuts & Rebinding**:
+  - Implemented fully customizable hotkeys support. Users can rebind all core actions and shortcuts directly in the Settings menu.
+- **Settings & Mapping Adjustments**:
+  - Localized restore buttons, optimized default hotkeys, and mapped multi-function mouse side-buttons (#191).
+  - Added setting to always sort archive directories by name in ascending order, fixing boundary navigation (#193).
+
+### ⚡ Performance & Architecture
+- **Binary Footprint Compression (Size Optimization)**:
+  - Eliminated C++ stream dependencies (`<iostream>`, etc.) saving ~18.5 KB in binary size.
+  - Consolidated localization string tables to eliminate template code duplication, saving 10.5 KB.
+  - Compressed static vector icon coordinates to `int16_t` format, reducing binary size by 54 KB.
+  - Re-architected `FileNavigator`, devirtualized controllers, and replaced `std::function` callbacks with lightweight C-style function pointers.
+- **Core Refactoring**:
+  - Decoupled and extracted `CompareController`, `DialogController`, `ZoomAnimation`, and `AppContext`.
+  - Integrated `ColorMath` and resolved Clang 22 feature detection and test compilation issues.
+  - Resolved `PaneContext` callback leaks and reset logic in `main.cpp`.
+  - Removed `/MERGE:.rdata=.text` from Release-LTO configuration to fix minidump debugging symbols.
+
+### 🐛 Bug Fixes & Decoders
+- **Memory & Crash Fixes**:
+  - Implemented Hybrid Memory Allocation Strategy to optimize Tile and HeavyLane logic.
+  - Resolved memory access violation crashes during rapid image switching.
+  - Updated `unrar-mini` submodule for v6.2.11 compatibility.
+- **HDR & File Pipelines**:
+  - Fixed HDR metadata propagation loss in virtual/archive memory decode pipelines.
+  - Fixed missing context flags in `LoadToFrameFromMemory` that prevented HDR float decodes from archive files.
+- **Format Rendering Fixes**:
+  - Resolved transparent shadow rendering issues in WebP/AVIF and image distortion in JXL (#195).
+
 ## [6.2.10] - The Ultimate Pipeline, Archive Evolution & Watcher System
 **Release Date**: 2026-06-01
 

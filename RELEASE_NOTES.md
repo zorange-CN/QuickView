@@ -1,59 +1,43 @@
-# QuickView v6.2.10 - High-Performance HDR, Comic Evolution & Watcher System
-**Release Date**: 2026-06-01
+# QuickView v6.8.0 - Dynamic Island, Filmstrip Gallery, Custom Hotkeys & Size Optimization
+**Release Date**: 2026-06-14
 
-QuickView v6.2.10 is a major architectural milestone. This release features a complete overhaul of the rendering pipeline, deep virtualized comic archive support, an automated real-time directory watcher, ICC color-gamut warnings, digital drawing overlay support, and a high-performance Clang compilation matrix.
+QuickView v6.8.0 introduces redesigned window controls, an interactive filmstrip gallery, dual-mode slideshows, fully customizable hotkeys, and substantial binary size optimizations.
 
-*Note: Press **F1** at any time to open the interactive Shortcut & Help overlay to review the latest operations and features.*
+### 🏝️ Floating 'Dynamic Island' Window Controls
+The window controls have been redesigned for a cleaner interface.
+- **Floating Capsule Pill (#199)**: Replaces traditional window controls with a floating pill-shaped widget in the top-right corner. Includes hover glow transitions.
+- **Compact Size**: Reduced the size of caption buttons to maximize screen space for images.
 
-### 🔍 Robust Directory Auto-Scanning (#192)
-QuickView now automatically refreshes the image list when files are added, deleted, or renamed in the active directory.
-- **Background Directory Watcher**: Implemented a dedicated background monitoring thread utilizing native `FindFirstChangeNotificationW` to listen to directory activities in real-time.
-- **300ms Event Debouncer**: Employs a robust debouncer that groups rapid file-system notifications to prevent UI stuttering and thread contention during event storms.
-- **Safe Index Reconciliation**: Changes are dispatched safely back to the main thread via standard Windows messages, guaranteeing thread-safe, 0-lock list synchronization and immediate visual hot-reloads.
+### 🎞️ Interactive Filmstrip Gallery
+The filmstrip gallery has been redesigned with improved controls and animations.
+- **Top-Hover Trigger**: Hover near the top edge to expand the filmstrip gallery. The trigger mode can be set to Hover, Pinned, or Disabled via the Settings menu.
+- **Auto-Centering Scroll**: Selecting a thumbnail triggers a smooth scrolling animation that aligns the item to the center of the bar.
+- **Visual Refinements**: Corrected visual gaps when pinned, fixed zoom anchor offsets, and restored smooth horizontal auto-scrolling.
 
-### 📚 Zero-Overhead Comic & Archive VFS (#186)
-You can now scan and browse image archives with zero overhead.
-- **DOD Virtual File System**: Features a high-performance Data-Oriented Design (DOD) VFS that extracts and reads `.zip`, `.rar`, `.cbz`, and `.cbr` archives directly in memory with 0-disk writing.
-- **Comic Dual Page Mode**: Smart adjacent page stitching with dynamic scale adjustments for a seamless double-spread comic book viewing experience.
-- **High-Performance Unrar**: Integrates a single-threaded custom `unrar-mini` engine for lightning-fast archive traversal.
+### 📺 Dual-Mode Slideshow (#198)
+- **Spotlight Mode**: Added a slideshow mode inspired by Picasa Spotlight, which dims the background and focuses on the active image.
+- **Normal Mode**: Standard fullscreen slideshow functionality.
 
-### 🌈 Next-Gen HDR Pipeline (#131)
-HDR handling has been reworked around standard luminance semantics for PQ/HLG, scRGB, scene-linear images, and gain-map content.
-- **HLG inverse OETF & CPU system gamma 1.2**: Corrected HLG inverse OETF decoding math and added CPU-side OOTF system gamma scaling (1.2) for perfect accuracy with untagged and HLG-native sources.
-- **Branchless GPU HLG Math**: Ported fully vectorized, branchless lerp-step shaders to accelerate HLG-to-linear conversion directly on the GPU.
-- **Microsoft Advanced Color scRGB Exposure Routing**: Fully aligned tone-mapping parameters with Microsoft scRGB standard guidelines (absolute HDR at gain 1.0, SDR/relative elements scaled correctly by `SdrWhite / 80.0`).
-- **Smart Spline Tone-Map Passthrough**: Added automated spline bypass detection. When an HDR image's peak fits completely within the screen's luminance boundaries, the spline shader is dynamically bypassed in favor of a zero-overhead colorimetric clip, saving precious GPU cycles.
-- **64bpp FP16 and PQ Splines**: Switched the entire composition pipeline to high-precision 64bpp FP16 linear color space. Integrates scientific-grade **libplacebo-style Spline tone-mapping** in PQ space.
-- **BT.2408 Exposure Gain & Highlight Desaturation**: Reduces washed-out tones and color clipping with standard-aware exposure gain routing and high-dynamic color space desaturation.
-- **Reinhard Extended Perceptual Mapping**: Includes customizable Reinhard perceptual scaling parameters with user-friendly sliders in the Settings panel.
-- **Highway SIMD Acceleration**: SIMD-accelerated HDR peak luminance estimation for FP16 and U16 imagery.
-- **AVIF & JXL HDR Polish**: JXL half-float output and AVIF EOTF handling improve HDR color and luminance consistency.
+### ⌨️ Fully Customizable Hotkeys
+- **Custom Keyboard Mapping**: Added support for completely customizing and rebinding all core keyboard shortcuts and navigation hotkeys directly within the Settings menu.
 
-### 🎨 Gamut Warning & Soft-Proof Comparison
-Color management is now fully professional.
-- **65x65x65 3D LUT Gamut Warning**: Real-time identification of out-of-gamut pixels in soft-proofing mode using high-precision LUT analysis.
-- **Soft-Proof Compare Integration**: When soft-proofing is enabled and you enter **Compare Mode (C Key)**, QuickView now automatically triggers a side-by-side comparison of the original image versus the soft-proofed image (with target ICC rendering profile applied).
-- **1s Debounce Buffer**: Optimized the gamut warnings with a debouncer to guarantee 0-latency scrolling.
+### 📐 UI/UX Adjustments & Window Snapping
+- **Magnetic Snapping (#90)**: Window borders now snap to screen edges (100% magnetic snap) when resized.
+- **Responsive Toolbar (#194)**: Toolbar buttons automatically hide based on the window width and active mode.
+- **Timeline Scrubbing**: Implemented debounced asynchronous seeking for animated formats, providing smooth scrubbing without timeline lag. Fixed frame count and distortion issues on large GIF seeking (#197).
+- **Extended Mouse Mapping (#191)**: Added support for mapping multi-function mouse side buttons in settings.
+- **Archive Sorting (#193)**: Added an option to always sort archives by name ascending.
 
-### 📐 Draggable EXIF Info Panel & Tracing Overlay Mode
-- **Draggable EXIF Overlay (#179)**: EXIF Info Panel is now fully draggable across the screen, with automatic screen bounds confinement and layout memory persistence across sessions.
-- **Overlay (Tracing) Mode**: Semi-transparent background mode powered by DirectComposition node transparency.
-  - **Mouse Click-Through**: Toggleable mouse passthrough (`WM_EX_TRANSPARENT`) allows digital artists to overlay reference drawings directly over their favorite drawing canvases.
-  - **Shortcuts**: Press `Ctrl + Shift + O` to toggle Tracing Mode, `Alt + Up/Down Arrow` to adjust opacity, and `Shift + Esc` to exit click-through.
+### ⚡ Footprint Compression & Size Optimizations
+We reduced the binary size of the standalone executable by removing redundant templates and dependencies.
+- **C++ Stream Elimination**: Removed `<iostream>` dependencies, saving approximately 18.5 KB.
+- **Localization Deduplication**: Consolidated localization string tables, saving 10.5 KB by preventing template duplication.
+- **Vector Icon Compression**: Compressed static vector icon coordinates to 16-bit integers, saving 54 KB.
+- **Code Devirtualization**: Replaced `std::function` callbacks with C-style function pointers and devirtualized core controllers to reduce overhead.
+- **LTO Debug Fix**: Removed obsolete compiler flags (`/MERGE:.rdata=.text`) from Link-Time Optimization (LTO) builds to fix minidump crash debugging.
 
-### 🛠️ Clang-cl & CMake Build Overhaul (#177)
-QuickView has completely abandoned legacy MSVC solutions for a modern, cross-platform build system.
-- **CMake & Ninja Matrix**: Built using CMake and the ultra-fast Ninja compiler backend.
-- **Clang-cl and LTO**: Optimized with `clang-cl.exe` utilizing Full Link-Time Optimization (LTO) and zero-exception (`-fno-exceptions`) flags, leading to massive standalone executable footprint compression and improved execution speeds.
-- **Static Single Binary**: Packaged with a custom `x64-windows-static-clang` triplet to ensure zero runtime dependencies.
-
-### ⚡ Underlying Performance & Instructions
-- **GeekGlass Context Menu Tuning**: Skipped D2D effect initialization inside DWM acrylic-blurred context menus, avoiding massive runtime WARP JIT memory allocations and rendering spikes.
-- **stb_image.h to v2.30**: Synchronized stb image libraries to the latest stable v2.30 and eliminated CodeQL integer overflow warnings in core image loading routines.
-- **Modern CPU Acceleration**: Extended Highway SIMD implementations to take full advantage of modern **AVX-512 (AVX3)** and emerging **AVX10.2** vector lanes.
-- **Memory Engine Arena**: Specialized memory arenas and VFS block pools to eliminate heap fragmentation during prefetch and caching.
-- **Fluid UI Animations**: Switched thumbnail animations to use a dedicated asynchronous `PostMessage` loop to maintain 60fps responsiveness.
-- **Fast-Lane Boot (#172)**: Streamlined window creation and thread startup for an instantaneous boot cycle.
-
-### 🤝 Acknowledgments
-A special thank you to all the community developers and contributors who reported issues, shared complex HDR samples, and assisted in testing archive parsing.
+### 🐛 Decoding & Memory Fixes
+- **Hybrid Allocation**: Implemented a hybrid memory allocator to balance preloading and tile rendering.
+- **Access Violations**: Fixed crashes when rapidly switching images.
+- **HDR in Archives**: Resolved an issue where HDR images decoded from ZIP/RAR archives lost their peak luminance metadata or failed to render in float format.
+- **WebP, AVIF & JXL (#195)**: Fixed shadow transparency glitches in WebP/AVIF and image distortion in JPEG XL.

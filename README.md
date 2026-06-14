@@ -70,91 +70,30 @@ QuickView supports almost all modern and professional image formats:
 
 ---
 
-# QuickView v6.2.10 - High-Performance HDR, Comic Evolution & Watcher System
-**Release Date**: 2026-06-01
+# QuickView v6.8.0 - Dynamic Island, Filmstrip Gallery & Custom Hotkeys
+**Release Date**: 2026-06-14
 
 *💡 Tip: Press **F1** at any time to open the interactive Shortcut & Help overlay to review all commands and operations.*
 
-### 🔍 Robust Directory Auto-Scanning (#192)
-- **Background Watcher**: Real-time folder monitoring utilizing Windows native `FindFirstChangeNotificationW` to detect file system creations, deletions, and renames.
-- **300ms Event Debouncer**: Intelligently groups rapid-fire OS change notifications to maintain UI fluidness and zero-stutter navigation.
-- **Main-Thread Reconciliation**: Multi-threaded notifications reconcile safely on the main thread via system event messages for 100% thread-safe dynamic list reloading.
+### 🏝️ Floating 'Dynamic Island' Window Controls
+- **Capsule Design**: Replaced window controls with a floating top-right capsule widget featuring soft hover glow effects.
+- **Maximized Viewport**: Compact caption buttons maximize display area for image content.
 
-### 🛠️ Toolchain Migration & Compile Optimization (#177)
-- **Clang-cl + Ninja Matrix**: Switched fully to the CMake-driven **Clang-cl** toolchain with the Ninja compilation backend, deprecating legacy Visual Studio `.sln` and `.vcxproj` files.
-- **Link-Time Optimization (LTO)**: Built with Full LTO (`-flto=full`), aggressive inlining (`-inline-threshold=250`), and zero-exception policies (`/EHs-c-`), shrinking the standalone executable footprint to the extreme.
-- **x64-windows-static-clang**: Implemented custom triplet to compile an entirely static binary with zero external runtime DLL dependencies.
+### 🎞️ Top-Hover Filmstrip Gallery
+- **Trigger Options**: Configurable gallery visibility (Hover, Pinned, or Disabled) via dropdown settings.
+- **Center-Align Scroll**: Selected thumbnails trigger a smooth scrolling animation to align the item to the viewport center.
 
-### 📚 Comic Mode & Zero-Overhead Archive VFS (#186)
-- **Zero-Unpack Engine**: Direct, instantaneous browsing of `.zip`, `.rar`, `.cbz`, and `.cbr` archives directly in memory using a zero-overhead Data-Oriented Design (DOD) VFS. No disk space is consumed.
-- **Comic Dual Page Mode**: Automatically stitches adjacent pages side-by-side with smart dynamic scaling, providing an immersive double-page comic book experience. Fully localized toolbar tooltips included.
-- **Single-Threaded Unrar Acceleration**: Features custom, high-speed `unrar-mini` memory-mapped decoding.
+### 📺 Picasa Spotlight Slideshow
+- **Dual Modes**: Supported standard fullscreen slideshow and a new Spotlight mode (dims background to focus on active image).
 
-### 🌈 High-Precision FP16 HDR Pipeline (#131)
-- **HLG OETF & OOTF Corrections**: Fixed HLG inverse OETF math and applied CPU-side OOTF system gamma 1.2; accelerated HLG conversions directly in shaders with branchless vectorization.
-- **Advanced scRGB Exposure Routing**: Fully aligned dynamic exposure calculations with Microsoft Advanced Color rules (absolute HDR at gain 1.0, relative SDR/linear scaled by `SdrWhite/80`).
-- **Smart Spline Tone-Map Passthrough**: Dynamically skips spline-curve evaluation in favor of a clean colorimetric clip when image highlights completely fit within the display's peak brightness.
-- **64bpp FP16 linear space**: Complete migration of the composition pipeline to 64bpp half-floats and GPU matrix transforms, preventing color clipping.
-- **libplacebo PQ Splines**: Ported professional-grade scientific Spline tone-mapping mapped in PQ space.
-- **Highlight Desaturation & BT.2408**: BT.2408-inspired exposure gain routing and highlight gamut compression to reduce washed-out colors while preserving HDR headroom.
-- **Advanced JXL & AVIF HDR**: JXL half-float output and AVIF EOTF handling improve HDR color and luminance consistency.
-- **Customizable Reinhard Extended**: Upgraded HDR perceptual mapping with customizable parameters editable via standard sliders in the Settings panel.
+### ⌨️ Custom Keyboard Mapping
+- **Custom Hotkeys**: Fully customizable hotkeys support. Users can rebind all core actions and navigation shortcuts directly in the Settings menu.
 
-### 🎨 Gamut Warning & Soft-Proof Comparison
-- **65x65x65 3D LUT**: Highly precise, GPU-accelerated gamut warning overlay mapping color space transformations.
-- **Soft-Proof Compare Integration**: Entering **Compare Mode (C)** while soft-proofing is active automatically compares the image before (original) and after (with soft-proofing ICC applied) side-by-side.
-- **1s Debouncer**: Debounced rendering calculations to keep image switching absolutely fluid.
-
-### 📐 Draggable EXIF Panel & Tracing Overlay Mode
-- **Draggable EXIF Overlay (#179)**: The EXIF Info Panel is now fully draggable and restorable, remembering its exact placement across program restarts.
-- **Overlay (Tracing) Mode**: Renders the main window in semi-transparent mode via DirectComposition.
-  - **Mouse Click-Through**: Pass mouse events (`WM_EX_TRANSPARENT`) straight to background apps. Perfect for digital artists to reference and trace templates.
-  - **Shortcuts**: `Ctrl + Shift + O` to toggle Tracing Mode, `Alt + Up/Down Arrow` to adjust opacity, `Shift + Esc` to exit mouse passthrough.
-
----
-
-# QuickView v5.0.0 - The Advanced Color & Architecture Update
-**Release Date**: 2026-04-05
-
-### 🚀 Google Highway & ARM64 Support
-- **Universal Acceleration**: Migrated all core SIMD operators to **Google Highway**, enabling high-performance execution on everything from older **SSE4** CPUs to modern **AVX-512**.
-- **Native ARM64 Port**: Full, native support for Windows on ARM architectures (NEON SIMD) with zero performance compromise.
-
-### 🌈 Beyond SDR: The HDR Pipeline
-- **scRGB Linear Pipeline**: A complete architectural shift to a 32-bit floating-point linear rendering pipeline, preserving extreme color precision and dynamic range.
-- **Ultra HDR GPU Composition**: Native hardware-accelerated support for **Gain Maps** (Google/Samsung/Apple), delivering true-to-life brightness on HDR displays.
-- **Tone Mapping v2**: Advanced HDR-to-SDR roll-off mapping for consistent results on legacy monitors.
-
-### 🎨 Color Management & Soft Proofing
-- **Hardware CMS**: Deep integration of ICC profile management directly into the GPU pipeline.
-- **Soft Proofing**: Professional simulation of output profiles (CMYK, Printer, Grayscale) with real-time HUD toggles.
-- **V4 Profile Support**: Robust handling of ICC v4 and Compact ICC profiles.
-
-### 🧭 Advanced Navigation (#118)
-# QuickView v5.2.1 - The Animation & Personalization Update
-**Release Date**: 2026-04-15
-
-### 🎬 Full Animation Support (#92)
-- **Universal Playback**: High-performance support for `.gif`, `.webp`, `.apng`, and `.avifs` animations.
-- **Frame Inspector**: Pause animations and traverse frame-by-frame using `Alt + Left/Right` to analyze motion or extract specific keyframes.
-
-### 🛠️ Professional Tools: Dirty Rect
-- **Visual Refresh Debugging**: Introduced the **Dirty Rect** tool for professional designers and developers. It visualizes the exact region currently being decoded and refreshed by the GPU.
-- **Toggleable UI**: Enable the "Show Dirty Rect button" in `Settings > Visuals > Professional Tools`.
-<br><img src="ScreenShot/Dirty_Rect.gif" alt="Dirty Rect Debugging" width="100%" style="border-radius: 6px; margin-top: 10px;">
-
-### 🎨 Deep Personalization & Themes (#129)
-- **Dark/Light Mode**: Full support for system-synchronized or manual Dark/Light UI modes.
-- **Accent Color Control**: Customize the UI highlight color to match your Windows accent or personal preference.
-- **Ambient Dimmer**: Added a configurable immersion overlay that dims the background when menus or galleries are active, enhancing visual focus.
-
-### 🌈 HDR & Advanced Color (#131)
-- **16-bit scRGB Pipeline**: Fully resolved "washed out" colors on HDR displays by migrating to a native scRGB float pipeline.
-- **Automatic CMS**: Smart ICC profile detection and GPU-accelerated color space conversion.
-
-### 🧭 Navigation & Input (#132)
-- **Right-Click Drag Zoom**: Professional-grade zooming by holding the right mouse button and dragging vertically.
-- **Smart Initial Scale (#127)**: Resolved blurring on 1080p displays by ensuring pixel-perfect initial alignment.
+### ⚡ Binary Footprint Optimization
+- **Stream Elimination**: Removed `<iostream>` dependency, saving ~18.5 KB.
+- **Localization Compression**: Deduplicated translation templates, saving ~10.5 KB.
+- **Icon Coordinates**: Compressed vector coordinate data to 16-bit integers, saving 54 KB.
+- **Zero Overhead Callbacks**: Devirtualized controllers and replaced `std::function` with C-style function pointers.
 
 ---
 
@@ -172,14 +111,16 @@ QuickView leverages **Multi-Threaded Decoding** for modern formats like **JXL** 
 * **Debug HUD:** Press `F12` to see real-time performance metrics (Decode time, Render time, Memory usage). *(First time use: Please enable Debug Mode in **Settings > Advanced**)*
   <br><img src="ScreenShot/DebugHUD.png" alt="Debug HUD" width="100%" style="border-radius: 6px; margin-top: 10px;">
 
-### 2. 🎛️ Visual Control Center
-> *No more manual .ini editing.*
+### 2. 🎛️ Visual Control & Themes
+> *Customize your personal viewing experience.*
 
 <img src="ScreenShot/settings_ui.png" alt="Settings UI" width="100%" style="border-radius: 6px;">
 
 A fully hardware-accelerated **Settings Dashboard**.
 * **Granular Control:** Tweak mouse behaviors (Pan vs. Drag), zoom sensitivity, and loop rules.
-* **Visual Personalization:** Adjust UI transparency and background grid in real-time.
+* **Custom Hotkeys:** Fully customizable hotkeys support. Map and rebind core actions and shortcuts directly in Settings.
+* **Personalized Themes:** Dark, Light, and System-Sync UI modes with granular control over Accent Colors.
+* **Ambient Dimmer:** Configurable dimming overlay that darkens the background when menus or galleries are active.
 * **Portable Mode:** One-click toggle to switch config storage between AppData (System) and Program Folder (USB Stick).
 
 ### 3. 🔄 Seamless Updates
@@ -219,6 +160,26 @@ QuickView 5.0 introduces a world-class color management suite.
 *   **True HDR Panel:** SIMD-accelerated peak luminance estimation and "HDR Pro" structural metadata (MaxCLL/FALL).
 *   **Global Soft Proofing:** Instantly preview how your photos will look when printed or converted to specialized color spaces.
 *   **Linear workflow:** 32-bit internal pipeline ensures zero banding and absolute precision.
+
+### 7. 📚 Comic Mode & Zero-Overhead VFS
+> *Virtual archive browsing with zero disk impact.*
+
+Integrated lightweight `unrar-mini` memory engine and a high-performance Data-Oriented Design (DOD) Virtual File System (VFS).
+*   **Zero-Unpack Memory Stream:** Scan and read `.zip`, `.rar`, `.cbz`, and `.cbr` archives directly in memory. Protects SSD lifespan.
+*   **Comic Dual Page Mode:** Stitches adjacent pages side-by-side with smart dynamic scaling, providing an immersive double-page comic book experience.
+
+### 8. 🎬 Full Animation Support & Dirty Rect
+> *Engineered for players, designers, and developers.*
+
+*   **Universal Playback:** High-performance playback for `.gif`, `.webp`, `.apng`, and `.avifs` animation formats.
+*   **Frame Inspector:** Traverse animations frame-by-frame with `Alt + Left/Right` controls.
+*   **Dirty Rect Visualizer:** Real-time highlight boxes outlining the exact canvas regions decoded and refreshed by the GPU.
+
+### 9. 📐 Tracing Mode & Mouse Click-Through
+> *Specially tailored for digital artists and animators.*
+
+*   **Tracing Overlay (Tracing Mode):** Highly customizable semi-transparent window using DirectComposition with dynamic opacity adjustment shortcuts.
+*   **Mouse Click-Through:** Pass mouse interactions straight to background drawing software (`WM_EX_TRANSPARENT`) while overlaying reference images.
 
 ---
 
@@ -282,7 +243,7 @@ If you prefer a standard Windows installation (includes a deep uninstallation to
 *   **Manual**: Download the `QuickView_Installer_*.exe` from [**Releases**](https://github.com/justnullname/QuickView/releases).
 *   **Command Line**:
     ```powershell
-    winget install QuickView
+    winget install justnullname.QuickView
     ```
 
 ---
