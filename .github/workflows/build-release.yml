@@ -19,6 +19,8 @@ jobs:
             preset: Release-LTO
           - platform: ARM64
             preset: ARM64-Release-LTO
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/vcpkg-archives
 
     steps:
       - name: Checkout Repository
@@ -37,7 +39,7 @@ jobs:
           path: |
             out/build/${{ matrix.preset }}/vcpkg_installed
             ${{ github.workspace }}/third_party/vcpkg/installed
-            ${{ env.LOCALAPPDATA }}/vcpkg/archives
+            ${{ github.workspace }}/vcpkg-archives
           key: vcpkg-${{ matrix.platform }}-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
             vcpkg-${{ matrix.platform }}-
