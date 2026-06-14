@@ -598,8 +598,6 @@ void UIRenderer::RenderStaticLayer(ID2D1DeviceContext* dc, HWND hwnd) {
     // [Fix] Clear surface before drawing to prevent "ghosting" of previous state (e.g. pinned vs unpinned background)
     dc->Clear(D2D1::ColorF(0, 0, 0, 0));
 
-
-
     // [Geek Glass] Initialize lazily here (we have valid context on the UI static layer)
     m_geekGlass.InitializeResources(dc);
     ComPtr<ID2D1SolidColorBrush> whiteBrush, blackBrush, accentBrush;

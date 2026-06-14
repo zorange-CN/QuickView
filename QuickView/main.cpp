@@ -143,6 +143,7 @@ static const wchar_t* g_szClassName = L"QuickViewClass";
 static const wchar_t* g_szWindowTitle = L"QuickView 2026";
 void HandleAnimFrameStep(HWND hwnd, bool forward); // [v10.5] fwd decl
 void PerformAnimSeek(HWND hwnd, float targetProgress);
+void RequestRepaint(QuickView::PaintLayer layer);
 static std::unique_ptr<CRenderEngine> g_renderEngine;
 static std::unique_ptr<CImageLoader> g_imageLoader;
 std::unique_ptr<ImageEngine> g_imageEngine;
@@ -277,7 +278,6 @@ static ComPtr<ID2D1Bitmap> g_ghostBitmap; // For Cross-Fade
 static bool g_animPlaying = true;
 static int g_animInspectorFrame = -1; // -1 means playing normally
 static bool g_showAnimDirtyRect = false; // [v10.5] Dirty rect debug overlay
-#define IDT_ANIMATION 105
 OSDState g_osd; // Removed static, explicitly Global
 bool g_pendingRegistryCheck = false;
 static const UINT_PTR TIMER_ID_REGISTRY_CHECK = 993;
@@ -330,6 +330,22 @@ RuntimeConfig g_runtime;
 SlideshowState g_slideshowState;
 bool HandleHotkeyAction(HWND hwnd, HotkeyAction action);
 bool g_preserveViewStateOnNextLoad = false;
+
+// Toggle slideshow play/pause state (shared by toolbar button + hotkey handlers)
+static void ToggleSlideshowPlayback(HWND hwnd) {
+    g_slideshowState.IsPlaying = !g_slideshowState.IsPlaying;
+    if (g_slideshowState.IsPlaying) {
+        int interval = (int)(g_config.SlideshowIntervalMs / g_toolbar.GetAnimSpeedMult());
+        SetTimer(hwnd, IDT_SLIDESHOW, interval, nullptr);
+        g_toolbar.SetSlideshowMode(true, true);
+        g_osd.Show(hwnd, AppStrings::OSD_SlideshowResumed, true);
+    } else {
+        KillTimer(hwnd, IDT_SLIDESHOW);
+        g_toolbar.SetSlideshowMode(true, false);
+        g_osd.Show(hwnd, AppStrings::OSD_SlideshowPaused, true);
+    }
+    RequestRepaint(QuickView::PaintLayer::Static);
+}
 ViewState g_preservedViewState;
 int g_renderExifOrientation = 1; // Exif orientation baked into the bitmap surface
 static ThumbnailManager g_thumbMgr;
@@ -6279,13 +6295,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
     }
 
     case WM_TIMER: {
-        if (wParam == 106) { // IDT_SLIDESHOW
+        if (wParam == IDT_SLIDESHOW) {
             if (g_slideshowState.IsActive && g_slideshowState.IsPlaying) {
                 if (CheckUnsavedChanges(hwnd)) {
                     Navigate(hwnd, 1);
                 }
             } else {
-                KillTimer(hwnd, 106);
+                KillTimer(hwnd, IDT_SLIDESHOW);
             }
             return 0;
         }
@@ -8272,17 +8288,7 @@ SKIP_EDGE_NAV:;
                 // [v10.5] Animation Toolbar Buttons
                 case ToolbarButtonID::AnimPlayPause:
                     if (g_slideshowState.IsActive) {
-                        g_slideshowState.IsPlaying = !g_slideshowState.IsPlaying;
-                        if (g_slideshowState.IsPlaying) {
-                            int interval = (int)(g_config.SlideshowIntervalMs / g_toolbar.GetAnimSpeedMult());
-                            SetTimer(hwnd, 106, interval, nullptr);
-                            g_toolbar.SetSlideshowMode(true, true);
-                            g_osd.Show(hwnd, AppStrings::OSD_SlideshowResumed, true);
-                        } else {
-                            KillTimer(hwnd, 106);
-                            g_toolbar.SetSlideshowMode(true, false);
-                            g_osd.Show(hwnd, AppStrings::OSD_SlideshowPaused, true);
-                        }
+                        ToggleSlideshowPlayback(hwnd);
                     } else {
                         HandleHotkeyAction(hwnd, HotkeyAction::ToggleAnimation);
                     }
@@ -8291,7 +8297,7 @@ SKIP_EDGE_NAV:;
                 case ToolbarButtonID::AnimSpeedDown:
                     if (g_slideshowState.IsActive && g_slideshowState.IsPlaying) {
                         int interval = (int)(g_config.SlideshowIntervalMs / g_toolbar.GetAnimSpeedMult());
-                        SetTimer(hwnd, 106, interval, nullptr);
+                        SetTimer(hwnd, IDT_SLIDESHOW, interval, nullptr);
                     }
                     RequestRepaint(PaintLayer::Static);
                     break;
@@ -12286,7 +12292,7 @@ bool HandleHotkeyAction(HWND hwnd, HotkeyAction action) {
 
     if (g_slideshowState.IsActive && action != HotkeyAction::ToggleSlideshow && action != HotkeyAction::ToggleAnimation) {
         g_slideshowState.Reset();
-        KillTimer(hwnd, 106); // IDT_SLIDESHOW
+        KillTimer(hwnd, IDT_SLIDESHOW);
         g_osd.Show(hwnd, AppStrings::OSD_SlideshowStopped, true);
         g_toolbar.SetSlideshowMode(false, false);
         ApplyWindowTheme(hwnd); // Restore normal window theme
@@ -12418,18 +12424,7 @@ bool HandleHotkeyAction(HWND hwnd, HotkeyAction action) {
 
     case HotkeyAction::ToggleAnimation:
         if (g_slideshowState.IsActive) {
-            g_slideshowState.IsPlaying = !g_slideshowState.IsPlaying;
-            if (g_slideshowState.IsPlaying) {
-                int interval = (int)(g_config.SlideshowIntervalMs / g_toolbar.GetAnimSpeedMult());
-                SetTimer(hwnd, 106, interval, nullptr);
-                g_toolbar.SetSlideshowMode(true, true);
-                g_osd.Show(hwnd, AppStrings::OSD_SlideshowResumed, true);
-            } else {
-                KillTimer(hwnd, 106);
-                g_toolbar.SetSlideshowMode(true, false);
-                g_osd.Show(hwnd, AppStrings::OSD_SlideshowPaused, true);
-            }
-            RequestRepaint(PaintLayer::Static);
+            ToggleSlideshowPlayback(hwnd);
         } else if (GetPaneContext(PaneSlot::Primary).resource.animator) {
             g_animPlaying = !g_animPlaying;
             if (g_animPlaying) {
@@ -12649,14 +12644,14 @@ bool HandleHotkeyAction(HWND hwnd, HotkeyAction action) {
             }
             g_slideshowState.IsPlaying = true;
             g_slideshowState.HasTimer = true;
-            g_slideshowState.TimerId = 106; // IDT_SLIDESHOW
+            g_slideshowState.TimerId = IDT_SLIDESHOW;
             g_slideshowState.WasGalleryPinned = g_gallery.IsPinned();
             if (g_config.SlideshowImmersiveMode == 1) {
                 g_gallery.SetPinned(true);
                 g_gallery.Open(GetPaneContext(PaneSlot::Primary).navigator.Index(), GalleryMode::Filmstrip);
             }
             int interval = (int)(g_config.SlideshowIntervalMs / g_toolbar.GetAnimSpeedMult());
-            SetTimer(hwnd, 106, interval, nullptr);
+            SetTimer(hwnd, IDT_SLIDESHOW, interval, nullptr);
             g_osd.Show(hwnd, AppStrings::OSD_SlideshowStarted, true);
             if (!g_isFullScreen) {
                 SendMessage(hwnd, WM_COMMAND, IDM_FULLSCREEN, 0);
@@ -12665,7 +12660,7 @@ bool HandleHotkeyAction(HWND hwnd, HotkeyAction action) {
         } else {
             bool wasPinned = g_slideshowState.WasGalleryPinned;
             g_slideshowState.Reset();
-            KillTimer(hwnd, 106);
+            KillTimer(hwnd, IDT_SLIDESHOW);
             if (g_config.SlideshowImmersiveMode == 1) {
                 g_gallery.SetPinned(wasPinned);
                 if (!wasPinned) {

@@ -1633,7 +1633,7 @@ void SettingsOverlay::BuildMenu() {
         if (g_slideshowState.IsActive && g_slideshowState.IsPlaying) {
             HWND hwnd = GetActiveWindow();
             int interval = (int)(g_config.SlideshowIntervalMs / g_toolbar.GetAnimSpeedMult());
-            SetTimer(hwnd, 106, interval, nullptr);
+            SetTimer(hwnd, IDT_SLIDESHOW, interval, nullptr);
         }
     };
     tabVisuals.items.push_back(itemSlideInterval);

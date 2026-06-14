@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "pch.h"
 #include <string>
 #include <cwchar>
@@ -766,7 +766,6 @@ struct AnimationPlaybackState {
     bool ShowDirtyRect = false;
 
     // System
-    int NumDecodingThreads = 0;         
     uint32_t CurrentFrameIndex = 0;
     uint32_t TotalFrames = 1;
     uint32_t CurrentFrameDelayTime = 0;
@@ -810,6 +809,10 @@ struct AnimationPlaybackState {
         }
 };
 extern AnimationPlaybackState g_animationState;
+
+// Timer IDs
+inline constexpr UINT_PTR IDT_ANIMATION = 105;
+inline constexpr UINT_PTR IDT_SLIDESHOW = 106;
 
 // Slideshow state
 struct SlideshowState {

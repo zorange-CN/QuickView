@@ -496,7 +496,7 @@ void CompareController::EnterMode(HWND hwnd) {
     if (IsActive() || !GetPaneContext(PaneSlot::Primary).resource) return;
     if (g_slideshowState.IsActive) {
         g_slideshowState.Reset();
-        KillTimer(hwnd, 106);
+        KillTimer(hwnd, IDT_SLIDESHOW);
         g_toolbar.SetSlideshowMode(false, false);
     }
     if (GetPaneContext(PaneSlot::Primary).metadata.Width > 8192 || GetPaneContext(PaneSlot::Primary).metadata.Height > 8192) {
