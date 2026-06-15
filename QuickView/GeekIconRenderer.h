@@ -13,6 +13,11 @@ public:
         ID2D1Brush* brush,
         float rotationAngle = 0.0f
     );
+
+    static void DrawLogo(
+        ID2D1RenderTarget* dc,
+        const D2D1_RECT_F& rect
+    );
 };
 
 } // namespace QuickView::UI::Menu

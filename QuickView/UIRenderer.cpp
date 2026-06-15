@@ -1,20 +1,18 @@
-#include "CompareController.h"
-#include "DialogController.h"
 #include "UIRenderer.h"
 #include "AppStrings.h"
+#include "CompareController.h"
 #include "DebugMetrics.h"
-#include "Toolbar.h"
-#include "GalleryOverlay.h"
-#include "SettingsOverlay.h"
-#include "HelpOverlay.h"
+#include "DialogController.h"
 #include "EditState.h"
+#include "GalleryOverlay.h"
+#include "HelpOverlay.h"
 #include "ImageLoaderSimd.h"
-#include <vector>
-#include <psapi.h>
+#include "SettingsOverlay.h"
+#include "Toolbar.h"
 #include <algorithm>
 #include <cmath>
-
-#pragma comment(lib, "psapi.lib")
+#include <d2d1effects.h>
+#include <vector>
 
 #include "ImageEngine.h" // [v3.1] Access for HasEmbeddedThumb
 #include "GeekIconRenderer.h"
@@ -112,6 +110,9 @@ void UIRenderer::SetUIScale(float scale) {
     m_osdFormat.Reset();
     m_debugFormat.Reset();
     m_panelFormat.Reset();
+    m_welcomeTitleFormat.Reset();
+    m_welcomeSubtitleFormat.Reset();
+    m_welcomeBtnFormat.Reset();
     MarkStaticDirty();
     MarkDynamicDirty();
     MarkGalleryDirty();
@@ -134,10 +135,29 @@ void UIRenderer::UpdateViewState(const ViewState& viewState) {
 }
 
 void UIRenderer::UpdateHoverState(POINT mousePos, int hoverRowIndex) {
-    bool changed = (m_hoverRowIndex != hoverRowIndex);
-    m_lastMousePos = mousePos;
-    m_hoverRowIndex = hoverRowIndex;
-    if (changed) MarkStaticDirty();  // Tooltip/hover highlight change
+  m_lastMousePos = mousePos;
+
+  if (g_imagePath.empty() && !g_gallery.IsVisible()) {
+    int oldHover = m_hoverWelcomeBtn;
+    if (PointInRect((float)mousePos.x, (float)mousePos.y,
+                    m_welcomeOpenFileRect)) {
+      m_hoverWelcomeBtn = 1;
+    } else if (PointInRect((float)mousePos.x, (float)mousePos.y,
+                           m_welcomeOpenFolderRect)) {
+      m_hoverWelcomeBtn = 2;
+    } else {
+      m_hoverWelcomeBtn = 0;
+    }
+    if (m_hoverWelcomeBtn != oldHover) {
+      MarkStaticDirty();
+    }
+    return;
+  }
+
+  bool changed = (m_hoverRowIndex != hoverRowIndex);
+  m_hoverRowIndex = hoverRowIndex;
+  if (changed)
+    MarkStaticDirty(); // Tooltip/hover highlight change
 }
 
 void UIRenderer::UpdateAnimationState(const AnimationPlaybackState& animState) {
@@ -162,7 +182,20 @@ HitTestResult UIRenderer::HitTest(float x, float y) {
     
     // Every hit test should start by resetting the hover state
     m_hoverRowIndex = -1;
-    
+
+    // Welcome Screen Hit Testing (Cold start empty state)
+    if (g_imagePath.empty() && !g_gallery.IsVisible()) {
+      if (PointInRect(x, y, m_welcomeOpenFileRect)) {
+        result.type = UIHitResult::WelcomeOpenFile;
+        return result;
+      }
+      if (PointInRect(x, y, m_welcomeOpenFolderRect)) {
+        result.type = UIHitResult::WelcomeOpenFolder;
+        return result;
+      }
+      return result;
+    }
+
     // Only hit test if info panel OR HUD is visible
     bool hudVisible = IsCompareModeActive() && g_runtime.ShowCompareInfo;
     if (!g_runtime.ShowInfoPanel && !hudVisible) return result;
@@ -492,6 +525,42 @@ void UIRenderer::EnsureTextFormats() {
             m_panelFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
         }
     }
+
+    if (!m_welcomeTitleFormat) {
+      m_dwriteFactory->CreateTextFormat(
+          L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_BOLD,
+          DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 24.0f * s,
+          L"en-us", &m_welcomeTitleFormat);
+      if (m_welcomeTitleFormat) {
+        m_welcomeTitleFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+        m_welcomeTitleFormat->SetParagraphAlignment(
+            DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+      }
+    }
+
+    if (!m_welcomeSubtitleFormat) {
+      m_dwriteFactory->CreateTextFormat(
+          L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+          DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 13.0f * s,
+          L"zh-cn", &m_welcomeSubtitleFormat);
+      if (m_welcomeSubtitleFormat) {
+        m_welcomeSubtitleFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+        m_welcomeSubtitleFormat->SetParagraphAlignment(
+            DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+      }
+    }
+
+    if (!m_welcomeBtnFormat) {
+      m_dwriteFactory->CreateTextFormat(
+          L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_MEDIUM,
+          DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 12.0f * s,
+          L"zh-cn", &m_welcomeBtnFormat);
+      if (m_welcomeBtnFormat) {
+        m_welcomeBtnFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+        m_welcomeBtnFormat->SetParagraphAlignment(
+            DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+      }
+    }
 }
 
 void UIRenderer::OnResize(UINT width, UINT height) {
@@ -608,6 +677,29 @@ void UIRenderer::RenderStaticLayer(ID2D1DeviceContext* dc, HWND hwnd) {
     m_whiteBrush = whiteBrush;
     m_blackBrush = blackBrush;
     m_accentBrush = accentBrush;
+
+    // Welcome Screen (If no image loaded and gallery not active)
+    if (g_imagePath.empty() && !g_gallery.IsVisible()) {
+      DrawWelcomeScreen(dc);
+      DrawWindowControls(dc, hwnd);
+
+      // Render overlays even on welcome screen if visible
+      if (g_settingsOverlay.IsVisible()) {
+        g_settingsOverlay.SetGeekGlassData(
+            m_bgCommandList.Get(), m_compEngine
+                                       ? m_compEngine->GetScreenTransform()
+                                       : D2D1::Matrix3x2F::Identity());
+        g_settingsOverlay.Render(dc, (float)m_width, (float)m_height);
+      }
+      if (g_helpOverlay.IsVisible()) {
+        g_helpOverlay.SetGeekGlassData(m_bgCommandList.Get(),
+                                       m_compEngine
+                                           ? m_compEngine->GetScreenTransform()
+                                           : D2D1::Matrix3x2F::Identity());
+        g_helpOverlay.Render(dc, (float)m_width, (float)m_height);
+      }
+      return;
+    }
 
     // Window Controls
     DrawWindowControls(dc, hwnd);
@@ -4088,4 +4180,490 @@ void UIRenderer::DrawCompareInfoHUD(ID2D1DeviceContext* dc) {
     if (!PointInRect((float)m_lastMousePos.x, (float)m_lastMousePos.y, m_lastHUDRect)) {
         if (m_hoverRowIndex <= -2) m_hoverRowIndex = -1;
     }
+}
+
+static void GetCleanButtonText(const wchar_t *src, wchar_t *dest,
+                               size_t destSize) {
+  size_t i = 0;
+  while (src[i] != L'\0' && src[i] != L'\t' && i < destSize - 1) {
+    dest[i] = src[i];
+    i++;
+  }
+  dest[i] = L'\0';
+  size_t len = i;
+  if (len >= 3 && dest[len - 1] == L'.' && dest[len - 2] == L'.' &&
+      dest[len - 3] == L'.') {
+    dest[len - 3] = L'\0';
+  }
+}
+
+static const wchar_t *GetWelcomeSubtitle() {
+  if (AppStrings::Context_OpenFolder) {
+    if (wcscmp(AppStrings::Context_OpenFolder, L"打开文件夹") == 0) {
+      return L"极致性能的现代图像浏览器";
+    }
+    if (wcscmp(AppStrings::Context_OpenFolder, L"開啟資料夾") == 0) {
+      return L"極致性能的現代圖像瀏覽器";
+    }
+    if (wcscmp(AppStrings::Context_OpenFolder, L"フォルダーを開く") == 0) {
+      return L"極限性能の現代的な画像ビューア";
+    }
+    if (wcscmp(AppStrings::Context_OpenFolder, L"Открыть папку") == 0) {
+      return L"Современный просмотрщик изображений с экстремальной "
+             L"производительностью";
+    }
+    if (wcscmp(AppStrings::Context_OpenFolder, L"Ordner öffnen") == 0) {
+      return L"Moderner Bildbetrachter mit extremer Leistung";
+    }
+    if (wcscmp(AppStrings::Context_OpenFolder, L"Abrir carpeta") == 0) {
+      return L"Visor de imágenes moderno con rendimiento extremo";
+    }
+  }
+  return L"Extreme performance modern image viewer";
+}
+
+void UIRenderer::DrawWelcomeScreen(ID2D1DeviceContext *dc) {
+  // Ensure DWrite text formats are initialized with current UI scale
+  EnsureTextFormats();
+
+  // 1. Draw Smooth Linear Gradient Window Background (No Color Banding)
+  {
+    ComPtr<ID2D1LinearGradientBrush> bgBrush;
+    ComPtr<ID2D1GradientStopCollection> bgStopCollection;
+    D2D1_GRADIENT_STOP bgStops[3];
+    if (IsLightThemeActive()) {
+      bgStops[0] = {0.0f, D2D1::ColorF(0.98f, 0.98f, 0.99f, 1.0f)};
+      bgStops[1] = {0.75f, D2D1::ColorF(0.95f, 0.96f, 0.98f, 1.0f)};
+      bgStops[2] = {1.0f, D2D1::ColorF(0.92f, 0.94f, 0.97f, 1.0f)};
+    } else {
+      // Smooth space blue-black gradient
+      bgStops[0] = {0.0f, D2D1::ColorF(0.006f, 0.006f, 0.008f,
+                                       1.0f)}; // Top: pitch black space
+      bgStops[1] = {0.75f, D2D1::ColorF(0.015f, 0.02f, 0.035f,
+                                        1.0f)}; // Mid: fading space blue
+      bgStops[2] = {1.0f,
+                    D2D1::ColorF(0.03f, 0.06f, 0.12f,
+                                 1.0f)}; // Bottom: ambient atmosphere blue
+    }
+
+    if (SUCCEEDED(
+            dc->CreateGradientStopCollection(bgStops, 3, &bgStopCollection))) {
+      if (SUCCEEDED(dc->CreateLinearGradientBrush(
+              D2D1::LinearGradientBrushProperties(
+                  D2D1::Point2F(m_width / 2.0f, 0.0f),
+                  D2D1::Point2F(m_width / 2.0f, (float)m_height)),
+              bgStopCollection.Get(), &bgBrush))) {
+        dc->FillRectangle(D2D1::RectF(0, 0, (float)m_width, (float)m_height),
+                          bgBrush.Get());
+      }
+    }
+  }
+
+  // 2. Draw Space Station Horizon Glow (Cyberpunk/Fluent style glowing Bezier
+  // horizon)
+  {
+    float w = (float)m_width;
+    float h = (float)m_height;
+    float s = m_uiScale;
+
+    // --- 1. Atmospheric Glow Brush (Soft radial gradient to fill the
+    // crescents) ---
+    float curvePeakY =
+        h - 57.5f * s; // The actual physical peak of the bezier curve
+
+    ComPtr<ID2D1RadialGradientBrush> glowBrush;
+    ComPtr<ID2D1GradientStopCollection> glowStopsCol;
+    D2D1_GRADIENT_STOP glowStops[3];
+
+    if (IsLightThemeActive()) {
+      glowStops[0] = {0.0f, D2D1::ColorF(0.6f, 0.85f, 1.0f, 1.0f)};
+      glowStops[1] = {0.2f, D2D1::ColorF(0.6f, 0.85f, 1.0f, 0.5f)};
+      glowStops[2] = {1.0f, D2D1::ColorF(0.6f, 0.85f, 1.0f, 0.0f)};
+    } else {
+      // Paler cyan core, not too blue
+      glowStops[0] = {0.0f, D2D1::ColorF(0.4f, 0.9f, 1.0f, 0.95f)}; 
+      // Strengthened core density (+20%)
+      glowStops[1] = {0.20f, D2D1::ColorF(0.2f, 0.7f, 0.95f, 0.35f)}; 
+      // Long, sparsely foggy tail fading to transparent
+      glowStops[2] = {1.0f, D2D1::ColorF(0.1f, 0.4f, 0.7f, 0.0f)}; 
+    }
+
+    if (SUCCEEDED(dc->CreateGradientStopCollection(glowStops, 3, &glowStopsCol))) {
+      // Increased vertical thickness by exactly 20% (ry = 42s)
+      dc->CreateRadialGradientBrush(
+          D2D1::RadialGradientBrushProperties(D2D1::Point2F(w / 2.0f, curvePeakY),
+                                              D2D1::Point2F(0.0f, 0.0f), 
+                                              w / 2.0f, 42.0f * s),
+          glowStopsCol.Get(), &glowBrush);
+    }
+
+    // --- 2. Linear Gradient Brush for fading out at left/right ends with
+    // center highlight ---
+    ComPtr<ID2D1LinearGradientBrush> lineBrush;
+    ComPtr<ID2D1GradientStopCollection> linearStopsCol;
+    D2D1_GRADIENT_STOP linearStops[7];
+
+    D2D1_COLOR_F coreColor = IsLightThemeActive()
+                                 ? D2D1::ColorF(0.2f, 0.6f, 1.0f, 1.0f)
+                                 : D2D1::ColorF(0.0f, 0.63f, 1.0f, 1.0f);
+    D2D1_COLOR_F highlightColor = IsLightThemeActive()
+                                      ? D2D1::ColorF(0.7f, 0.88f, 1.0f, 1.0f)
+                                      : D2D1::ColorF(0.8f, 0.95f, 1.0f, 1.0f);
+    D2D1_COLOR_F fadeColor = coreColor;
+    fadeColor.a = 0.0f;
+
+    linearStops[0] = {0.0f, fadeColor};
+    linearStops[1] = {0.25f, coreColor};
+    linearStops[2] = {0.35f, coreColor};
+    linearStops[3] = {0.5f, highlightColor};
+    linearStops[4] = {0.65f, coreColor};
+    linearStops[5] = {0.75f, coreColor};
+    linearStops[6] = {1.0f, fadeColor};
+
+    if (SUCCEEDED(dc->CreateGradientStopCollection(linearStops, 7,
+                                                   &linearStopsCol))) {
+      dc->CreateLinearGradientBrush(
+          D2D1::LinearGradientBrushProperties(D2D1::Point2F(0.0f, 0.0f),
+                                              D2D1::Point2F(w, 0.0f)),
+          linearStopsCol.Get(), &lineBrush);
+    }
+
+    // --- 3. Path Geometry for the curved horizon line ---
+    ComPtr<ID2D1Factory> factory;
+    dc->GetFactory(&factory);
+
+    if (factory && lineBrush) {
+      float horizonBaseY = h - 20.0f * s;
+      float horizonCurveY = h - 95.0f * s;
+
+      // Draw Earth dark core (solid block strictly below horizon curve)
+      ComPtr<ID2D1PathGeometry> earthGeometry;
+      if (SUCCEEDED(factory->CreatePathGeometry(&earthGeometry))) {
+        ComPtr<ID2D1GeometrySink> sink;
+        if (SUCCEEDED(earthGeometry->Open(&sink))) {
+          sink->BeginFigure(D2D1::Point2F(0.0f, horizonBaseY),
+                            D2D1_FIGURE_BEGIN_FILLED);
+          sink->AddQuadraticBezier(D2D1::QuadraticBezierSegment(
+              D2D1::Point2F(w / 2.0f, horizonCurveY),
+              D2D1::Point2F(w, horizonBaseY)));
+          sink->AddLine(D2D1::Point2F(w, h));
+          sink->AddLine(D2D1::Point2F(0.0f, h));
+          sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+          sink->Close();
+        }
+        ComPtr<ID2D1SolidColorBrush> earthBrush;
+        dc->CreateSolidColorBrush(
+            IsLightThemeActive() ? D2D1::ColorF(0.92f, 0.94f, 0.97f, 1.0f)
+                                 : D2D1::ColorF(0.003f, 0.006f, 0.012f, 1.0f),
+            &earthBrush);
+        dc->FillGeometry(earthGeometry.Get(), earthBrush.Get());
+      }
+
+      // Downward Glow Area (Using bezier geometry to pinch the ends, filled
+      // with radial soft gradient)
+      ComPtr<ID2D1PathGeometry> downGeo;
+      if (SUCCEEDED(factory->CreatePathGeometry(&downGeo))) {
+        ComPtr<ID2D1GeometrySink> sink;
+        if (SUCCEEDED(downGeo->Open(&sink))) {
+          sink->BeginFigure(D2D1::Point2F(0.0f, horizonBaseY),
+                            D2D1_FIGURE_BEGIN_FILLED);
+          sink->AddQuadraticBezier(D2D1::QuadraticBezierSegment(
+              D2D1::Point2F(w / 2.0f, horizonCurveY),
+              D2D1::Point2F(w, horizonBaseY)));
+          // Strengthened downward thickness (+20%)
+          sink->AddQuadraticBezier(D2D1::QuadraticBezierSegment(
+              D2D1::Point2F(w / 2.0f, horizonCurveY + 85.0f * s),
+              D2D1::Point2F(0.0f, horizonBaseY)));
+          sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+          sink->Close();
+        }
+        if (glowBrush) {
+          glowBrush->SetOpacity(0.7f);
+          dc->FillGeometry(downGeo.Get(), glowBrush.Get());
+        }
+      }
+
+      // Upward Glow Area (Using bezier geometry to pinch the ends)
+      ComPtr<ID2D1PathGeometry> upGeo;
+      if (SUCCEEDED(factory->CreatePathGeometry(&upGeo))) {
+        ComPtr<ID2D1GeometrySink> sink;
+        if (SUCCEEDED(upGeo->Open(&sink))) {
+          sink->BeginFigure(D2D1::Point2F(0.0f, horizonBaseY),
+                            D2D1_FIGURE_BEGIN_FILLED);
+          // Strengthened upward thickness (+20%)
+          sink->AddQuadraticBezier(D2D1::QuadraticBezierSegment(
+              D2D1::Point2F(w / 2.0f, horizonCurveY - 60.0f * s),
+              D2D1::Point2F(w, horizonBaseY)));
+          sink->AddQuadraticBezier(D2D1::QuadraticBezierSegment(
+              D2D1::Point2F(w / 2.0f, horizonCurveY),
+              D2D1::Point2F(0.0f, horizonBaseY)));
+          sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+          sink->Close();
+        }
+        if (glowBrush) {
+          glowBrush->SetOpacity(0.3f); // Upward sky glow is softer
+          dc->FillGeometry(upGeo.Get(), glowBrush.Get());
+        }
+      }
+
+      // Draw Core Geometry (the sharp bright horizon line)
+      ComPtr<ID2D1PathGeometry> coreGeometry;
+      if (SUCCEEDED(factory->CreatePathGeometry(&coreGeometry))) {
+        ComPtr<ID2D1GeometrySink> sink;
+        if (SUCCEEDED(coreGeometry->Open(&sink))) {
+          sink->BeginFigure(D2D1::Point2F(0.0f, horizonBaseY),
+                            D2D1_FIGURE_BEGIN_FILLED);
+          sink->AddQuadraticBezier(D2D1::QuadraticBezierSegment(
+              D2D1::Point2F(w / 2.0f, horizonCurveY),
+              D2D1::Point2F(w, horizonBaseY)));
+          sink->AddQuadraticBezier(D2D1::QuadraticBezierSegment(
+              D2D1::Point2F(w / 2.0f, horizonCurveY + 3.0f * s),
+              D2D1::Point2F(0.0f, horizonBaseY)));
+          sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+          sink->Close();
+        }
+      }
+      if (coreGeometry) {
+        lineBrush->SetOpacity(1.0f); // Maximize sharpness and intensity
+        dc->FillGeometry(coreGeometry.Get(), lineBrush.Get());
+      }
+    }
+  }
+
+  // 3. Compact Vertical Layout Metrics
+  float centerX = m_width / 2.0f;
+  float centerY = m_height / 2.0f;
+
+  float iconSize = 64.0f * m_uiScale;
+  float iconX = centerX - iconSize / 2.0f;
+  float iconY = centerY - 110.0f * m_uiScale;
+  D2D1_RECT_F iconRect =
+      D2D1::RectF(iconX, iconY, iconX + iconSize, iconY + iconSize);
+
+  // 4. Draw Icons Neon Glow Backlight (Radial Gradient)
+  {
+    ComPtr<ID2D1RadialGradientBrush> glowBrush;
+    ComPtr<ID2D1GradientStopCollection> glowStopsCol;
+    D2D1_GRADIENT_STOP glowStops[2];
+    if (IsLightThemeActive()) {
+      glowStops[0] = {0.0f, D2D1::ColorF(0.2f, 0.6f, 1.0f, 0.12f)};
+      glowStops[1] = {1.0f, D2D1::ColorF(0.2f, 0.6f, 1.0f, 0.0f)};
+    } else {
+      glowStops[0] = {0.0f, D2D1::ColorF(0.2f, 0.6f, 1.0f, 0.18f)};
+      glowStops[1] = {1.0f, D2D1::ColorF(0.2f, 0.6f, 1.0f, 0.0f)};
+    }
+
+    if (SUCCEEDED(
+            dc->CreateGradientStopCollection(glowStops, 2, &glowStopsCol))) {
+      float glowCenterX = iconX + iconSize / 2.0f;
+      float glowCenterY = iconY + iconSize / 2.0f;
+      float glowRadius = iconSize * 1.5f;
+
+      if (SUCCEEDED(dc->CreateRadialGradientBrush(
+              D2D1::RadialGradientBrushProperties(
+                  D2D1::Point2F(glowCenterX, glowCenterY), D2D1::Point2F(0, 0),
+                  glowRadius, glowRadius),
+              glowStopsCol.Get(), &glowBrush))) {
+        dc->FillEllipse(D2D1::Ellipse(D2D1::Point2F(glowCenterX, glowCenterY),
+                                      glowRadius, glowRadius),
+                        glowBrush.Get());
+      }
+    }
+  }
+
+  // 5. Draw App Icon (Rendered via high-fidelity native D2D vectors)
+  QuickView::UI::GeekIconRenderer::DrawLogo(dc, iconRect);
+
+  // 6. Draw Title "QuickView"
+  const wchar_t *title = L"QuickView";
+  float titleY = iconY + iconSize + 15.0f * m_uiScale;
+  float titleH = 32.0f * m_uiScale;
+  D2D1_RECT_F titleRect =
+      D2D1::RectF(0, titleY, (float)m_width, titleY + titleH);
+
+  if (m_welcomeTitleFormat) {
+    D2D1_COLOR_F textColor = IsLightThemeActive()
+                                 ? D2D1::ColorF(0.1f, 0.1f, 0.1f, 0.95f)
+                                 : D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.95f);
+    ComPtr<ID2D1SolidColorBrush> textBrush;
+    dc->CreateSolidColorBrush(textColor, &textBrush);
+    dc->DrawText(title, 9, m_welcomeTitleFormat.Get(), titleRect,
+                 textBrush.Get());
+  }
+
+  // 7. Draw Subtitle (Localized with zero-overhead fallback)
+  const wchar_t *subtitle = GetWelcomeSubtitle();
+  float subtitleY = titleY + titleH + 10.0f * m_uiScale;
+  float subtitleH = 20.0f * m_uiScale;
+  D2D1_RECT_F subtitleRect =
+      D2D1::RectF(0, subtitleY, (float)m_width, subtitleY + subtitleH);
+
+  if (m_welcomeSubtitleFormat) {
+    D2D1_COLOR_F textColor = IsLightThemeActive()
+                                 ? D2D1::ColorF(0.4f, 0.4f, 0.4f, 0.8f)
+                                 : D2D1::ColorF(0.7f, 0.7f, 0.7f, 0.8f);
+    ComPtr<ID2D1SolidColorBrush> textBrush;
+    dc->CreateSolidColorBrush(textColor, &textBrush);
+    dc->DrawText(subtitle, (UINT32)wcslen(subtitle),
+                 m_welcomeSubtitleFormat.Get(), subtitleRect, textBrush.Get());
+  }
+
+  // 8. Draw "Open File" and "Open Folder" Buttons (Compacted distance of 25px)
+  float btnW = 150.0f * m_uiScale;
+  float btnH = 36.0f * m_uiScale;
+  float gap = 20.0f * m_uiScale;
+
+  float btnY = subtitleY + subtitleH + 25.0f * m_uiScale;
+  float btn1X = centerX - btnW - gap / 2.0f;
+  float btn2X = centerX + gap / 2.0f;
+
+  m_welcomeOpenFileRect = D2D1::RectF(btn1X, btnY, btn1X + btnW, btnY + btnH);
+  m_welcomeOpenFolderRect = D2D1::RectF(btn2X, btnY, btn2X + btnW, btnY + btnH);
+
+  // Extract clean localized text without keyboard shortcuts and ellipsis
+  wchar_t cleanOpenText[64] = {};
+  if (AppStrings::Context_Open) {
+    GetCleanButtonText(AppStrings::Context_Open, cleanOpenText, 64);
+  } else {
+    wcscpy_s(cleanOpenText, L"Open");
+  }
+
+  const wchar_t *openFolderText = AppStrings::Context_OpenFolder
+                                      ? AppStrings::Context_OpenFolder
+                                      : L"Open Folder";
+
+  DrawWelcomeButton(dc, m_welcomeOpenFileRect, cleanOpenText, Icons::OpenVector,
+                    m_hoverWelcomeBtn == 1);
+  DrawWelcomeButton(dc, m_welcomeOpenFolderRect, openFolderText,
+                    Icons::FolderVector, m_hoverWelcomeBtn == 2);
+}
+
+void UIRenderer::DrawWelcomeButton(ID2D1DeviceContext *dc, const D2D1_RECT_F &r,
+                                   const wchar_t *text,
+                                   const GeekIcons::VectorIcon &icon,
+                                   int hoverState) {
+  // Create Linear Gradient Brush for button background (0-overhead premium
+  // touch)
+  ComPtr<ID2D1LinearGradientBrush> btnBgBrush;
+  ComPtr<ID2D1GradientStopCollection> btnBgStopsCol;
+  D2D1_GRADIENT_STOP bgStops[2];
+  const float s = m_uiScale;
+
+  if (hoverState != 0) {
+    if (IsLightThemeActive()) {
+      bgStops[0] = {0.0f, D2D1::ColorF(0.2f, 0.6f, 1.0f, 0.28f)};
+      bgStops[1] = {1.0f, D2D1::ColorF(0.12f, 0.48f, 0.9f, 0.38f)};
+    } else {
+      bgStops[0] = {0.0f, D2D1::ColorF(0.2f, 0.6f, 1.0f, 0.42f)};
+      bgStops[1] = {1.0f, D2D1::ColorF(0.12f, 0.48f, 0.9f, 0.52f)};
+    }
+  } else {
+    if (IsLightThemeActive()) {
+      bgStops[0] = {0.0f, D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.03f)};
+      bgStops[1] = {1.0f, D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.07f)};
+    } else {
+      bgStops[0] = {0.0f, D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.10f)};
+      bgStops[1] = {1.0f, D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.04f)};
+    }
+  }
+
+  if (SUCCEEDED(dc->CreateGradientStopCollection(bgStops, 2, &btnBgStopsCol))) {
+    dc->CreateLinearGradientBrush(
+        D2D1::LinearGradientBrushProperties(D2D1::Point2F(r.left, r.top),
+                                            D2D1::Point2F(r.right, r.bottom)),
+        btnBgStopsCol.Get(), &btnBgBrush);
+  }
+
+  if (btnBgBrush) {
+    dc->FillRoundedRectangle(D2D1::RoundedRect(r, 6.0f * s, 6.0f * s),
+                             btnBgBrush.Get());
+  } else {
+    ComPtr<ID2D1SolidColorBrush> fallbackBrush;
+    D2D1_COLOR_F fallbackColor = IsLightThemeActive()
+                                     ? D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.05f)
+                                     : D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.08f);
+    if (hoverState != 0)
+      fallbackColor = IsLightThemeActive()
+                          ? D2D1::ColorF(0.2f, 0.6f, 1.0f, 0.2f)
+                          : D2D1::ColorF(0.2f, 0.6f, 1.0f, 0.35f);
+    dc->CreateSolidColorBrush(fallbackColor, &fallbackBrush);
+    dc->FillRoundedRectangle(D2D1::RoundedRect(r, 6.0f * s, 6.0f * s),
+                             fallbackBrush.Get());
+  }
+
+  // Button border
+  D2D1_COLOR_F btnBorderColor = IsLightThemeActive()
+                                    ? D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.1f)
+                                    : D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.12f);
+  if (hoverState != 0) {
+    btnBorderColor = D2D1::ColorF(0.2f, 0.6f, 1.0f, 0.6f);
+  }
+  ComPtr<ID2D1SolidColorBrush> borderBrush;
+  dc->CreateSolidColorBrush(btnBorderColor, &borderBrush);
+  dc->DrawRoundedRectangle(D2D1::RoundedRect(r, 6.0f * s, 6.0f * s),
+                           borderBrush.Get(), 1.0f);
+
+  // Interactive Micro-displacement (0-overhead elastic touch)
+  float hoverOffset = (hoverState != 0) ? (1.0f * s) : 0.0f;
+
+  D2D1_COLOR_F contentColor = IsLightThemeActive()
+                                  ? D2D1::ColorF(0.15f, 0.15f, 0.15f, 0.9f)
+                                  : D2D1::ColorF(0.9f, 0.9f, 0.9f, 0.95f);
+  if (hoverState != 0) {
+    contentColor = IsLightThemeActive() ? D2D1::ColorF(0.0f, 0.45f, 0.9f, 1.0f)
+                                        : D2D1::ColorF(0.4f, 0.75f, 1.0f, 1.0f);
+  }
+  ComPtr<ID2D1SolidColorBrush> contentBrush;
+  dc->CreateSolidColorBrush(contentColor, &contentBrush);
+
+  if (m_welcomeBtnFormat) {
+    // Calculate absolute horizontal centering (0-overhead balance)
+    float textW = 0.0f;
+    float textH = 14.0f * s;
+    UINT32 textLen = (UINT32)wcslen(text);
+    ComPtr<IDWriteTextLayout> textLayout;
+    float btnW = r.right - r.left;
+    float btnH = r.bottom - r.top;
+    HRESULT hrLayout = m_dwriteFactory->CreateTextLayout(
+        text, textLen, m_welcomeBtnFormat.Get(), btnW, btnH, &textLayout);
+    if (SUCCEEDED(hrLayout) && textLayout) {
+      DWRITE_TEXT_METRICS metrics = {};
+      if (SUCCEEDED(textLayout->GetMetrics(&metrics))) {
+        textW = metrics.widthIncludingTrailingWhitespace;
+        textH = metrics.height;
+      }
+    } else {
+      textW = (float)textLen * 12.0f * s;
+    }
+
+    float subIconSize = 14.0f * s;
+    float gapW = 8.0f * s;
+    float contentW = subIconSize + gapW + textW;
+
+    // Layout offsets
+    float startX = r.left + (btnW - contentW) / 2.0f;
+    float subIconX = startX + hoverOffset;
+    float subIconY = r.top + (btnH - subIconSize) / 2.0f + hoverOffset;
+
+    // Draw Icon
+    QuickView::UI::GeekIconRenderer::DrawVectorIcon(
+        dc, icon,
+        D2D1::RectF(subIconX, subIconY, subIconX + subIconSize,
+                    subIconY + subIconSize),
+        contentBrush.Get());
+
+    // Draw Text Layout
+    float textX = startX + subIconSize + gapW + hoverOffset;
+    float textY = r.top + (btnH - textH) / 2.0f + hoverOffset;
+
+    if (textLayout) {
+      dc->DrawTextLayout(D2D1::Point2F(textX, textY), textLayout.Get(),
+                         contentBrush.Get());
+    } else {
+      D2D1_RECT_F textRect = D2D1::RectF(textX, r.top + hoverOffset, r.right,
+                                         r.bottom + hoverOffset);
+      dc->DrawText(text, textLen, m_welcomeBtnFormat.Get(), textRect,
+                   contentBrush.Get());
+    }
+  }
 }

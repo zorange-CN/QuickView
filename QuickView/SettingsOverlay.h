@@ -187,7 +187,6 @@ private:
     ComPtr<ID2D1SolidColorBrush> m_brushBorder;
     ComPtr<ID2D1SolidColorBrush> m_brushSuccess;
     ComPtr<ID2D1SolidColorBrush> m_brushError;
-    ComPtr<ID2D1Bitmap> m_bitmapIcon;
     
     ComPtr<IDWriteFactory> m_dwriteFactory;
     ComPtr<IDWriteTextFormat> m_textFormatHeader;

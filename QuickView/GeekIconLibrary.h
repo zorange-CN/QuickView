@@ -81,6 +81,14 @@ namespace GeekIcons {
     extern const VectorIcon PassthroughVector;     // 0xE962
     extern const VectorIcon KeyboardVector;        // 0xE765
 
+    // --- QuickView Logo Vector Layers ---
+    extern const VectorIcon Logo_st5Vector; // Background Round Card
+    extern const VectorIcon Logo_st3Vector; // Card Border Outline
+    extern const VectorIcon Logo_st1Vector; // Core Pointer Highlight
+    extern const VectorIcon Logo_st0Vector; // Primary Lens Arc
+    extern const VectorIcon Logo_st4Vector; // Shadow Lens Arc
+    extern const VectorIcon Logo_st2Vector; // Light Rays
+
     // --- Batch 1: UI Overlays & Settings ---
     extern const VectorIcon CloseVector;          // 0xE711
     extern const VectorIcon CancelVector;         // 0xE711

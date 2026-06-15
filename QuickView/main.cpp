@@ -2850,6 +2850,9 @@ static bool OpenPathOrDirectory(HWND hwnd, const std::wstring& path, bool clearT
     }
 
     if (isDirectory) {
+        ReleaseImageResources();
+        GetPaneContext(PaneSlot::Primary).path = L"";
+        GetPaneContext(PaneSlot::Primary).metadata = CImageLoader::ImageMetadata{};
         ShowGallery(hwnd);
     } else {
         LoadImageAsync(hwnd, GetPaneContext(PaneSlot::Primary).navigator.GetResolvedPath(path).c_str());
@@ -5909,6 +5912,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, [[maybe_unused]] LPWSTR lpCm
         RequestRepaint(PaintLayer::All);
     }
 
+
     if (!initialImagePath.empty()) {
       std::error_code ec;
       if (std::filesystem::is_directory(std::filesystem::path(initialImagePath),
@@ -5927,22 +5931,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, [[maybe_unused]] LPWSTR lpCm
         }
       }
     } else {
-        // No file specified - auto open file dialog
-        OPENFILENAMEW ofn = {};
-        wchar_t szFile[MAX_PATH] = {};
-        ofn.lStructSize = sizeof(ofn);
-        ofn.hwndOwner = hwnd;
-        ofn.lpstrFile = szFile;
-        ofn.nMaxFile = MAX_PATH;
-        std::wstring filterStr = QuickView::GetSupportedExtensionsFilter();
-        ofn.lpstrFilter = filterStr.c_str();
-        ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
-        if (GetOpenFileNameW(&ofn)) {
-            GetPaneContext(PaneSlot::Primary).navigator.Initialize(szFile, hwnd);
-            LoadImageAsync(hwnd, GetPaneContext(PaneSlot::Primary).navigator.GetResolvedPath(szFile).c_str());
-            // [Fix Race] Force check here too
-             PostMessageW(hwnd, WM_ENGINE_EVENT, 0, 0); 
-        }
+        // No file specified - stay on welcome screen and request repaint
+        RequestRepaint(PaintLayer::All);
     }
     
     // --- Auto Update Integration ---
@@ -6926,6 +6916,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
               POINT lastPt = g_uiRenderer->GetLastMousePos();
               g_uiRenderer->UpdateHoverState(pt, -1);
               
+              if (GetPaneContext(PaneSlot::Primary).path.empty() && !g_gallery.IsVisible()) {
+                  auto hit = g_uiRenderer->HitTest((float)pt.x, (float)pt.y);
+                  if (hit.type == UIHitResult::WelcomeOpenFile || hit.type == UIHitResult::WelcomeOpenFolder) {
+                      g_currentCursor = LoadCursor(nullptr, IDC_HAND);
+                  }
+              }
+              
               if (h >= 450 && w >= 600 && !g_gallery.IsVisible() && (g_config.GalleryTriggerMode == 1 || g_config.GalleryTriggerMode == 2)) {
                   float cx = w / 2.0f;
                   float neckH = 40.0f * g_uiScale;
@@ -7851,11 +7848,18 @@ SKIP_EDGE_NAV:;
         }
         
         bool hudVisible = IsCompareModeActive() && g_runtime.ShowCompareInfo;
-        if ((g_runtime.ShowInfoPanel || hudVisible) && g_uiRenderer) {
-             // Use UIRenderer::HitTest for all Info UI interactions (Panel + HUD)
+        if ((g_runtime.ShowInfoPanel || hudVisible || (GetPaneContext(PaneSlot::Primary).path.empty() && !g_gallery.IsVisible())) && g_uiRenderer) {
+             // Use UIRenderer::HitTest for all Info UI interactions (Panel + HUD + Welcome Screen)
              auto hit = g_uiRenderer->HitTest((float)pt.x, (float)pt.y);
              
              switch (hit.type) {
+                 case UIHitResult::WelcomeOpenFile:
+                     SendMessageW(hwnd, WM_COMMAND, IDM_OPEN, 0);
+                     return 0;
+
+                 case UIHitResult::WelcomeOpenFolder:
+                     SendMessageW(hwnd, WM_COMMAND, IDM_OPEN_FOLDER, 0);
+                     return 0;
                  case UIHitResult::InfoPanelDrag:
                      GetPaneContext(PaneSlot::Primary).view.IsDraggingInfoPanel = true;
                      GetPaneContext(PaneSlot::Primary).view.InfoPanelDragAnchor = pt;
@@ -11671,7 +11675,7 @@ void OnPaint(HWND hwnd) {
             const auto titanMeta = GetPaneContext(PaneSlot::Primary).metadata; // Value copy 鈥?safe from concurrent reset
 
             // [Infinity Engine] Cascade Rendering Path
-            bool isTitan = g_imageEngine && g_imageEngine->IsTitanModeEnabled();
+            bool isTitan = g_imageEngine && g_imageEngine->IsTitanModeEnabled() && !GetPaneContext(PaneSlot::Primary).path.empty();
             if (isTitan) {
                  // 1. Calculate Dimensions
                  float imgFullW = (float)titanMeta.Width;

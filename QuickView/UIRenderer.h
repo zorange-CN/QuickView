@@ -13,6 +13,10 @@
 #include "ImageLoader.h"
 #include "EditState.h"
 #include "ImageEngine.h"
+
+namespace GeekIcons {
+    struct VectorIcon;
+}
 #include "OSDState.h"
 #include "GeekGlass.h"
 #include <dwrite.h>
@@ -65,7 +69,9 @@ enum class UIHitResult {
     InfoRow,        // Click to copy row content
     HudToggleLite,  // Click to toggle HUD Lite mode
     HudToggleExpand,// Click to toggle HUD Expand mode
-    InfoPanelDrag   // Drag to move Info Panel
+    InfoPanelDrag,  // Drag to move Info Panel
+    WelcomeOpenFile,
+    WelcomeOpenFolder
 };
 
 // Window Controls Hit Test Result
@@ -304,6 +310,11 @@ private:
     D2D1_RECT_F m_winPinRect = {};
     float m_compactInfoAdaptiveBlend = 0.0f;
     
+    // Welcome Screen
+    D2D1_RECT_F m_welcomeOpenFileRect = {};
+    D2D1_RECT_F m_welcomeOpenFolderRect = {};
+    int m_hoverWelcomeBtn = 0; // 0: None, 1: Open File, 2: Open Folder
+    
     // 脏标记
     bool m_isStaticDirty = true;
     bool m_isDynamicDirty = true;
@@ -327,6 +338,8 @@ private:
     bool m_decodeWasActive = false;
     DWORD m_decodeFinishTime = 0;
     void DrawDecodingStatus(ID2D1DeviceContext* dc, HWND hwnd);
+    void DrawWelcomeScreen(ID2D1DeviceContext* dc);
+    void DrawWelcomeButton(ID2D1DeviceContext* dc, const D2D1_RECT_F& r, const wchar_t* text, const GeekIcons::VectorIcon& icon, int hoverState);
     
     // 缓存的 D2D 资源
     ComPtr<ID2D1SolidColorBrush> m_whiteBrush;
@@ -335,6 +348,9 @@ private:
     ComPtr<IDWriteTextFormat> m_osdFormat;
     ComPtr<IDWriteTextFormat> m_debugFormat;
     ComPtr<IDWriteTextFormat> m_panelFormat;  // For Info Panel text
+    ComPtr<IDWriteTextFormat> m_welcomeTitleFormat;
+    ComPtr<IDWriteTextFormat> m_welcomeSubtitleFormat;
+    ComPtr<IDWriteTextFormat> m_welcomeBtnFormat;
 
     ComPtr<ID2D1CommandList> m_bgCommandList;
     QuickView::UI::GeekGlass::GeekGlassEngine m_geekGlass;

@@ -16,6 +16,7 @@ extern bool IsLightThemeActive();
 extern float g_uiScale;
 extern Toolbar g_toolbar;
 extern RuntimeConfig g_runtime;
+extern std::wstring& g_imagePath;
 
 
 // Helper to center crop
@@ -259,7 +260,7 @@ void GalleryOverlay::Update(float deltaTime, HWND hwnd) {
             }
         }
         
-        if (!m_mouseInGallery && !m_isPinned) {
+        if (!m_mouseInGallery && !m_isPinned && !g_imagePath.empty()) {
             m_dismissalTimer += deltaTime;
             if (m_dismissalTimer >= 0.3f) {
                 Close(true);

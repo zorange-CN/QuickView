@@ -866,76 +866,7 @@ void SettingsOverlay::CreateResources(ID2D1DeviceContext* pRT) {
         m_textFormatItem->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
     }
 
-    // Load App Icon from Resource
-    if (!m_bitmapIcon) {
-        m_debugInfo = L"Starting...";
-        
-        // Try Resource ID 1 (256x256 first)
-        HICON hIcon = (HICON)::LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(1), IMAGE_ICON, 256, 256, LR_DEFAULTCOLOR); 
-        
-        if (!hIcon) {
-            m_debugInfo += L" | Load(256) Fail Err=" + std::to_wstring(GetLastError());
-            // Fallback to default
-            hIcon = (HICON)::LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(1), IMAGE_ICON, 0, 0, LR_DEFAULTCOLOR);
-             if (!hIcon) {
-                 m_debugInfo += L" | Load(0) Fail Err=" + std::to_wstring(GetLastError());
-                 // Fallback to System Hand
-                 hIcon = (HICON)::LoadIconW(NULL, (LPCWSTR)IDI_APPLICATION);
-                 if (hIcon) m_debugInfo += L" | Using SysIcon";
-             }
-        } else {
-             m_debugInfo += L" | Load(256) OK";
-        }
-
-        if (hIcon) {
-            IWICImagingFactory* pWICFactory = nullptr;
-            HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pWICFactory));
-            if (SUCCEEDED(hr)) {
-                IWICBitmap* pWicBitmap = nullptr;
-                hr = pWICFactory->CreateBitmapFromHICON(hIcon, &pWicBitmap);
-                if (SUCCEEDED(hr)) {
-                    // Convert to PBGRA (Required for D2D)
-                    IWICFormatConverter* pConverter = nullptr;
-                    hr = pWICFactory->CreateFormatConverter(&pConverter);
-                    if (SUCCEEDED(hr)) {
-                        hr = pConverter->Initialize(
-                            pWicBitmap,
-                            GUID_WICPixelFormat32bppPBGRA,
-                            WICBitmapDitherTypeNone,
-                            nullptr,
-                            0.0f,
-                            WICBitmapPaletteTypeMedianCut
-                        );
-                        
-                        if (SUCCEEDED(hr)) {
-                             hr = pRT->CreateBitmapFromWicBitmap(pConverter, nullptr, &m_bitmapIcon);
-                             if (FAILED(hr)) m_debugInfo += L" | D2D Fail HR=" + std::to_wstring(hr);
-                             else m_debugInfo.clear(); // Success! Clear debug info
-                        } else {
-                             m_debugInfo += L" | Conv Init Fail HR=" + std::to_wstring(hr);
-                        }
-                        pConverter->Release();
-                    } else {
-                        m_debugInfo += L" | CreateConv Fail HR=" + std::to_wstring(hr);
-                    }
-                    
-                    pWicBitmap->Release();
-                } else {
-                    m_debugInfo += L" | FromHICON Fail HR=" + std::to_wstring(hr);
-                }
-                pWICFactory->Release();
-            } else {
-                m_debugInfo += L" | WICFactory Fail HR=" + std::to_wstring(hr);
-            }
-            // If we loaded system icon (shared), LoadIcon docs say no destroy needed strictly but LoadImage does.
-            // Since we treat hIcon as local handle unless it was IDI_APPLICATION...
-            // Win32: DestroyIcon calling on shared icon is ignored or harmless usually?
-            // Actually LoadIcon(NULL, ...) returns shared. DestroyIcon on it is allowed but does nothing?
-            // Safer: only destroy if we loaded from module?
-            // For debugging it doesn't matter much.
-            // DestroyIcon(hIcon); 
-        }
-    }
+    // Load App Icon from Resource removed (refactored to native Vector D2D)
 }
 
 // --- Helper Functions for Shared Layout ---
@@ -2715,13 +2646,9 @@ void SettingsOverlay::Render(ID2D1DeviceContext* pRT, float winW, float winH) {
                 float groupX = contentX + (contentW - centerBaseW) / 2.0f;
                 // If we used full groupW before, it was pushing it left. This should shift it right.
                 
-                // Icon
+                // Icon (Rendered via high-fidelity native D2D vectors)
                 D2D1_RECT_F iconRect = D2D1::RectF(groupX, contentY, groupX + iconSize, contentY + iconSize);
-                 if (m_bitmapIcon) {
-                     pRT->DrawBitmap(m_bitmapIcon.Get(), iconRect);
-                } else {
-                     QuickView::UI::GeekIconRenderer::DrawVectorIcon(pRT, *Icons::Contact, FitSquareIcon(iconRect, 0.52f), m_brushAccent.Get());
-                }
+                QuickView::UI::GeekIconRenderer::DrawLogo(pRT, iconRect);
 
                 // Text Stack
                 float textX = groupX + iconSize + paddingX;

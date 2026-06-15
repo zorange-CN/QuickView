@@ -39,7 +39,7 @@ void ShowContextMenu(HWND hwnd, POINT pt, bool hasImage, bool needsExtensionFix,
     items.push_back(MI::Normal(IDM_OPENWITH_DEFAULT, AppStrings::Context_OpenWith, GeekIcons::OpenWith).Enabled(hasImage));
     items.push_back(MI::Normal(IDM_COPY_IMAGE, AppStrings::Context_CopyImage, GeekIcons::Copy, L"Ctrl+C"));
     items.push_back(MI::Normal(IDM_SHOW_IN_EXPLORER, AppStrings::Context_ShowInExplorer, GeekIcons::Explorer));
-    items.push_back(MI::Normal(IDM_OPEN_FOLDER, AppStrings::Context_OpenFolder, GeekIcons::Folder).Enabled(hasImage));
+    items.push_back(MI::Normal(IDM_OPEN_FOLDER, AppStrings::Context_OpenFolder, GeekIcons::Folder));
     items.push_back(MI::Normal(IDM_COPY_PATH, AppStrings::Context_CopyPath, GeekIcons::Link, L"Ctrl+Shift+C"));
     items.push_back(MI::Normal(IDM_PRINT, AppStrings::Context_Print, GeekIcons::Print, L"Ctrl+P"));
     items.push_back(MI::Sep());
