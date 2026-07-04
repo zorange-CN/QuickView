@@ -6005,6 +6005,16 @@ static bool TryTriggerCustomMouseHotkey(HWND hwnd, uint16_t vk, bool execute) {
 }
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
+    // [Loupe] 当放大镜处于活动状态时，拦截并忽略所有鼠标点击和双击事件，以防在此期间误操作缩放、导航或分栏控制
+    if (AppContext::GetInstance().Loupe.active) {
+        if (message == WM_LBUTTONDOWN || message == WM_LBUTTONUP || message == WM_LBUTTONDBLCLK ||
+            message == WM_RBUTTONDOWN || message == WM_RBUTTONUP || message == WM_RBUTTONDBLCLK ||
+            message == WM_MBUTTONDOWN || message == WM_MBUTTONUP || message == WM_MBUTTONDBLCLK ||
+            message == WM_XBUTTONDOWN || message == WM_XBUTTONUP || message == WM_XBUTTONDBLCLK) {
+            return 0;
+        }
+    }
+
     if (AppContext::GetInstance().DialogCtrl && AppContext::GetInstance().DialogCtrl->IsActive()) {
         auto result = AppContext::GetInstance().DialogCtrl->HandleMessage(hwnd, message, wParam, lParam);
         if (result.has_value()) {
@@ -6041,6 +6051,21 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
     }
     static bool isTracking = false;
     switch (message) {
+    case WM_ACTIVATE:
+        if (LOWORD(wParam) == WA_INACTIVE) {
+            // [Loupe] 当窗口失去焦点时，确保重置放大镜状态并恢复鼠标指针，以防按键释放事件丢失
+            if (AppContext::GetInstance().Loupe.active) {
+                AppContext::GetInstance().Loupe.active = false;
+                SetCursor(g_currentCursor ? g_currentCursor : LoadCursor(nullptr, IDC_ARROW));
+                if (AppContext::GetInstance().Loupe.sizeChanged) {
+                    AppContext::GetInstance().Loupe.sizeChanged = false;
+                    SaveConfig();
+                }
+                RequestRepaint(PaintLayer::Dynamic);
+            }
+        }
+        break;
+
     case WM_CTLCOLOREDIT: {
         HDC hdc = (HDC)wParam;
         HWND hEdit = (HWND)lParam;

@@ -624,7 +624,7 @@ bool UIRenderer::RenderAll(HWND hwnd, float deltaTime) {
     // ===== Dynamic Layer (Topmost, High Freq) =====
     if (m_isDynamicDirty) {
         // 智能 Dirty Rects: 只有 OSD 变化时使用局部更新
-        bool useOSDDirtyRect = m_osdDirty && !m_dynamicFullDirty && !m_tooltipDirty;
+        bool useOSDDirtyRect = m_osdDirty && !m_dynamicFullDirty && !m_tooltipDirty && !AppContext::GetInstance().Loupe.active;
         
         if (useOSDDirtyRect && m_osdOpacity > 0.01f) {
             // 只 OSD 需要更新 - 使用 Dirty Rects
@@ -756,6 +756,8 @@ void UIRenderer::RenderStaticLayer(ID2D1DeviceContext* dc, HWND hwnd) {
 // Dynamic Layer: Debug HUD, OSD, Tooltip, Dialog
 // ============================================================================
 
+extern int GetEffectiveExifOrientation(int orientation, const EditState& state);
+
 // [Loupe] Press-and-hold magnifier. Maps the cursor to an image pixel via the
 // inverse of the on-screen draw transform, then renders a crisp (nearest-
 // neighbour) magnified patch of the source bitmap in a box at the cursor. In
@@ -802,7 +804,7 @@ void UIRenderer::DrawLoupe(ID2D1DeviceContext* dc, HWND hwnd) {
     };
 
     struct LoupeTarget { PaneSlot slot; D2D1_RECT_F viewport; };
-    LoupeTarget targets[2];
+    std::array<LoupeTarget, 2> targets{};
     int targetCount = 0;
     const bool compare = (app.Compare.mode != ViewMode::Single) && app.CompareCtrl;
     if (compare) {
@@ -818,7 +820,22 @@ void UIRenderer::DrawLoupe(ID2D1DeviceContext* dc, HWND hwnd) {
         if (!pane.resource.bitmap) return false;
         outRaw = pane.resource.GetSize();
         if (outRaw.width <= 0.0f || outRaw.height <= 0.0f) return false;
-        const D2D1_SIZE_F osz = orientedSize(outRaw, pane.view.ExifOrientation);
+
+        // [Loupe Fix] In Single View mode, use CompositionEngine's exact screen transform.
+        // This ensures 100% alignment with DComp rendering (animations, downscaling, gallery pin offsets).
+        if (!compare && m_compEngine && m_compEngine->IsInitialized()) {
+            D2D1_MATRIX_3X2_F st = m_compEngine->GetScreenTransform();
+            outM = D2D1::Matrix3x2F(st._11, st._12, st._21, st._22, st._31, st._32);
+            UINT w = 0, h = 0;
+            m_compEngine->GetLayerSpecs(m_compEngine->GetActiveLayerIndex(), &w, &h);
+            if (w > 0 && h > 0) {
+                outRaw = D2D1::SizeF((float)w, (float)h);
+                return true;
+            }
+        }
+
+        const int effExif = GetEffectiveExifOrientation(pane.view.ExifOrientation, pane.editState);
+        const D2D1_SIZE_F osz = orientedSize(outRaw, effExif);
         const float vpW = t.viewport.right - t.viewport.left;
         const float vpH = t.viewport.bottom - t.viewport.top;
         if (vpW < 1.0f || vpH < 1.0f) return false;
@@ -827,7 +844,7 @@ void UIRenderer::DrawLoupe(ID2D1DeviceContext* dc, HWND hwnd) {
         const float totalScale = fitScale * (std::max)(0.02f, pane.view.Zoom);
         const float centerX = (t.viewport.left + t.viewport.right) * 0.5f + pane.view.PanX;
         const float centerY = (t.viewport.top + t.viewport.bottom) * 0.5f + pane.view.PanY;
-        outM = buildForward(outRaw, pane.view.ExifOrientation, totalScale, centerX, centerY);
+        outM = buildForward(outRaw, effExif, totalScale, centerX, centerY);
         return true;
     };
 
@@ -873,7 +890,8 @@ void UIRenderer::DrawLoupe(ID2D1DeviceContext* dc, HWND hwnd) {
         // Where that pixel currently appears on screen in this pane -> box center.
         D2D1::Matrix3x2F fwdT; D2D1_SIZE_F rawTmp;
         if (!computeForward(targets[i], fwdT, rawTmp)) continue;
-        const D2D1_POINT_2F screenPt = fwdT.TransformPoint(tImgPt);
+        const D2D1_POINT_2F targetSurfacePt = D2D1::Point2F(fracX * rawTmp.width, fracY * rawTmp.height);
+        const D2D1_POINT_2F screenPt = fwdT.TransformPoint(targetSurfacePt);
 
         const float half = boxSize * 0.5f;
         float cx = screenPt.x, cy = screenPt.y;
@@ -882,7 +900,8 @@ void UIRenderer::DrawLoupe(ID2D1DeviceContext* dc, HWND hwnd) {
         const D2D1_RECT_F box = D2D1::RectF(cx - half, cy - half, cx + half, cy + half);
 
         // Loupe transform: native bitmap -> magnified, centered so tImgPt lands at box center.
-        D2D1::Matrix3x2F L0 = buildForward(rawT, pane.view.ExifOrientation, loupeZoom, cx, cy);
+        const int effExif = GetEffectiveExifOrientation(pane.view.ExifOrientation, pane.editState);
+        D2D1::Matrix3x2F L0 = buildForward(rawT, effExif, loupeZoom, cx, cy);
         const D2D1_POINT_2F p = L0.TransformPoint(tImgPt);
         D2D1::Matrix3x2F L = L0 * D2D1::Matrix3x2F::Translation(cx - p.x, cy - p.y);
 
@@ -891,7 +910,7 @@ void UIRenderer::DrawLoupe(ID2D1DeviceContext* dc, HWND hwnd) {
 
         // Magnified patch, clipped to the box, drawn with the loupe transform.
         dc->PushAxisAlignedClip(box, D2D1_ANTIALIAS_MODE_ALIASED);
-        dc->SetTransform(L);
+        dc->SetTransform(L * identity);
         dc->DrawBitmap(pane.resource.bitmap.Get(),
                        D2D1::RectF(0.0f, 0.0f, rawT.width, rawT.height),
                        1.0f,
