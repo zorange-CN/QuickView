@@ -140,7 +140,7 @@ constexpr UINT_PTR TIMER_ID_STARTUP_SHOW = 992;
 
 
 static const wchar_t* g_szClassName = L"QuickViewClass";
-static const wchar_t* g_szWindowTitle = L"QuickView 2026";
+static const wchar_t* g_szWindowTitle = L"QuickView";
 void HandleAnimFrameStep(HWND hwnd, bool forward); // [v10.5] fwd decl
 void PerformAnimSeek(HWND hwnd, float targetProgress);
 void RequestRepaint(QuickView::PaintLayer layer);
@@ -5960,7 +5960,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, [[maybe_unused]] LPWSTR lpCm
     }
 
     MSG msg;
-    while (GetMessage(&msg, NULL, 0, 0)) { TranslateMessage(&msg); DispatchMessage(&msg); }
+    while (GetMessageW(&msg, NULL, 0, 0)) { TranslateMessage(&msg); DispatchMessageW(&msg); }
     
     // [Phase 0] Wait for all child viewer processes before tearing down.
     if (g_isMasterProcess) {
@@ -6574,7 +6574,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
         // [Fix] Disable window edge resizing/interaction in Fullscreen
         if (g_isFullScreen) return HTCLIENT;
 
-        LRESULT hit = DefWindowProc(hwnd, message, wParam, lParam);
+        LRESULT hit = DefWindowProcW(hwnd, message, wParam, lParam);
         if (hit != HTCLIENT) return hit;
         
         POINT pt = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
@@ -9884,7 +9884,7 @@ SKIP_EDGE_NAV:;
         return 0;
     }
     }
-    return DefWindowProc(hwnd, message, wParam, lParam);
+    return DefWindowProcW(hwnd, message, wParam, lParam);
 }
 
 

@@ -388,9 +388,9 @@ DialogResult DialogController::ShowDialog(HWND hwnd, const std::wstring& title, 
     UpdateWindow(hwnd); 
     
     MSG msgStruct;
-    while (m_context.Dialog.IsVisible && GetMessage(&msgStruct, NULL, 0, 0)) {
+    while (m_context.Dialog.IsVisible && GetMessageW(&msgStruct, NULL, 0, 0)) {
         TranslateMessage(&msgStruct);
-        DispatchMessage(&msgStruct);
+        DispatchMessageW(&msgStruct);
     }
     
     if (m_context.Dialog.HasInput) {
@@ -536,9 +536,9 @@ std::wstring DialogController::ShowInputDialog(HWND hwnd, const std::wstring& ti
     MSG msgStruct;
     SetCursor(LoadCursor(nullptr, IDC_ARROW));
 
-    while (m_context.Dialog.IsVisible && GetMessage(&msgStruct, NULL, 0, 0)) {
+    while (m_context.Dialog.IsVisible && GetMessageW(&msgStruct, NULL, 0, 0)) {
         TranslateMessage(&msgStruct);
-        DispatchMessage(&msgStruct);
+        DispatchMessageW(&msgStruct);
     }
     
     DestroyDialogInputInternal(m_context.Dialog);

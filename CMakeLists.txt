@@ -203,6 +203,7 @@ endif()
 set_target_properties(QuickView PROPERTIES 
     WIN32_EXECUTABLE TRUE
 )
+target_compile_definitions(QuickView PRIVATE UNICODE _UNICODE)
 # Note: Manifest is handled via QuickView.rc
 
 # ============================================================================
@@ -338,6 +339,7 @@ target_link_libraries(QuickViewTests PRIVATE
     ZLIB::ZLIB
 )
 target_include_directories(QuickViewTests PRIVATE QuickView third_party/unrar-mini)
+target_compile_definitions(QuickViewTests PRIVATE UNICODE _UNICODE)
 add_test(NAME QuickViewTests COMMAND QuickViewTests)
 
 # ============================================================================
