@@ -83,7 +83,8 @@ static bool GetAVIFDimensions(LPCWSTR filePath, uint32_t *width,
 static bool GetISOBMFFDimensions(LPCWSTR filePath, uint32_t *width,
                                  uint32_t *height);
 static void ProbeHdrMetadataNative(const uint8_t *data, size_t size,
-                                   QuickView::HdrStaticMetadata *pHdr);
+                                   QuickView::HdrStaticMetadata *pHdr,
+                                   CImageLoader::ImageMetadata *pMetadata = nullptr);
 
 // [v18] Brute force scan for 'nclx' box in HEIF/AVIF streams.
 // Used when standard ISOBMFF parsing fails due to non-standard container brands
@@ -358,7 +359,8 @@ static void FindHeifGainMapManual(const uint8_t *data, size_t size,
 
 // [v18] Fallback Metadata Prober for Native WIC Path
 static void ProbeHdrMetadataNative(const uint8_t *data, size_t size,
-                                   QuickView::HdrStaticMetadata *pHdr) {
+                                   QuickView::HdrStaticMetadata *pHdr,
+                                   CImageLoader::ImageMetadata *pMetadata) {
   if (!data || size == 0 || !pHdr)
     return;
 
@@ -369,6 +371,16 @@ static void ProbeHdrMetadataNative(const uint8_t *data, size_t size,
     if (avifDecoderSetIOMemory(decoder, data, size) == AVIF_RESULT_OK) {
       if (avifDecoderParse(decoder) == AVIF_RESULT_OK) {
         PopulateAvifHdrStaticMetadata(decoder->image, pHdr);
+        if (pMetadata) {
+          pMetadata->colorInfo.nominalBitDepth = decoder->image->depth;
+          pMetadata->colorInfo.primaries = MapAvifPrimaries(decoder->image->colorPrimaries);
+          pMetadata->colorInfo.transfer = MapAvifTransferFunction(decoder->image->transferCharacteristics);
+          if (decoder->image->icc.data && decoder->image->icc.size > 0) {
+            pMetadata->colorInfo.hasEmbeddedIcc = true;
+            pMetadata->iccProfileData.assign(decoder->image->icc.data,
+                                             decoder->image->icc.data + decoder->image->icc.size);
+          }
+        }
         avifDecoderDestroy(decoder);
         return;
       }
@@ -385,6 +397,12 @@ static void ProbeHdrMetadataNative(const uint8_t *data, size_t size,
     pHdr->primaries = MapCicpPrimaries(p);
     pHdr->transfer = MapCicpTransfer(t);
     pHdr->isValid = true;
+    if (pMetadata) {
+      pMetadata->colorInfo.primaries = pHdr->primaries;
+      pMetadata->colorInfo.transfer = pHdr->transfer;
+      pMetadata->colorInfo.dataSpace = pHdr->isHdr ? QuickView::PixelDataSpace::EncodedHdr
+                                                   : QuickView::PixelDataSpace::EncodedSdr;
+    }
   }
 
   // 3. Detect Apple HDR Gain Map (iso:hdrgainmap URN presence)
@@ -871,6 +889,11 @@ void MoveDecodeResultToFrame(const QuickView::Codec::DecodeResult &result,
   outFrame->exifOrientation = result.metadata.ExifOrientation;
   outFrame->colorInfo = result.metadata.colorInfo;
   outFrame->hdrMetadata = result.metadata.hdrMetadata;
+  if (outFrame->format == QuickView::PixelFormat::R16G16B16A16_FLOAT) {
+      outFrame->colorInfo.dataSpace = QuickView::PixelDataSpace::SceneLinear;
+      outFrame->colorInfo.transfer = QuickView::TransferFunction::Linear;
+      outFrame->hdrMetadata.isSceneLinear = true;
+  }
   if (!result.metadata.iccProfileData.empty()) {
       outFrame->iccProfile.assign(result.metadata.iccProfileData.begin(), result.metadata.iccProfileData.end());
   }
@@ -1437,6 +1460,14 @@ static void PopulateHdrInfoFromWicPixelFormat(
     QuickView::PixelColorInfo *colorInfoOut = nullptr) {
   if (!metadata)
     return;
+
+  // For native formats where we have dedicated codecs (AVIF, JXL, RAW),
+  // WIC is only used as an EXIF/GPS tag reader. Do not let WIC's intermediate
+  // bitmap format overwrite our authoritative color and bit depth info!
+  if (metadata->Format == L"AVIF" || metadata->Format == L"JXL" ||
+      metadata->Format == L"Raw") {
+    return;
+  }
 
   const bool isFloat =
       IsEqualGUID(pixelFormat, GUID_WICPixelFormat128bppRGBAFloat) ||
@@ -5070,12 +5101,16 @@ HRESULT CImageLoader::LoadAVIF(LPCWSTR filePath, IWICBitmap **ppBitmap,
       g_lastFormatDetails += L" +Alpha";
 
     // [CMS] Extract ICC profile
-    if (pMetadata && decoder->image->icc.data && decoder->image->icc.size > 0) {
-      pMetadata->iccProfileData.assign(decoder->image->icc.data,
-                                       decoder->image->icc.data +
-                                           decoder->image->icc.size);
-    }
     if (pMetadata) {
+      pMetadata->colorInfo.nominalBitDepth = depth;
+      pMetadata->colorInfo.primaries = MapAvifPrimaries(decoder->image->colorPrimaries);
+      pMetadata->colorInfo.transfer = MapAvifTransferFunction(decoder->image->transferCharacteristics);
+      if (decoder->image->icc.data && decoder->image->icc.size > 0) {
+        pMetadata->colorInfo.hasEmbeddedIcc = true;
+        pMetadata->iccProfileData.assign(decoder->image->icc.data,
+                                         decoder->image->icc.data +
+                                             decoder->image->icc.size);
+      }
       PopulateAvifHdrStaticMetadata(decoder->image, &pMetadata->hdrMetadata);
       if (decoder->image->gainMap) {
         g_lastFormatDetails += L" [GainMap]";
@@ -7361,7 +7396,7 @@ static HRESULT Load(const uint8_t *data, size_t size, const DecodeContext &ctx,
             QuickView::TransferFunction::Linear;
         result.metadata.colorInfo.primaries =
             result.metadata.hdrMetadata.primaries;
-        result.metadata.colorInfo.nominalBitDepth = 16;
+        result.metadata.colorInfo.nominalBitDepth = decoder->image->depth;
         if (decoder->image->icc.data && decoder->image->icc.size > 0) {
           result.metadata.iccProfileData.assign(decoder->image->icc.data,
                                                 decoder->image->icc.data +
@@ -7526,7 +7561,7 @@ static HRESULT Load(const uint8_t *data, size_t size, const DecodeContext &ctx,
         QuickView::PixelDataSpace::SceneLinear;
     result.metadata.colorInfo.transfer = QuickView::TransferFunction::Linear;
     result.metadata.colorInfo.primaries = primaries;
-    result.metadata.colorInfo.nominalBitDepth = 16;
+    result.metadata.colorInfo.nominalBitDepth = decoder->image->depth;
     PopulateAvifHdrStaticMetadata(decoder->image, &result.metadata.hdrMetadata);
     result.metadata.hdrMetadata.isSceneLinear = true;
     result.metadata.hdrMetadata.isHdr =
@@ -10828,13 +10863,18 @@ HRESULT CImageLoader::ReadMetadata(LPCWSTR filePath, ImageMetadata *pMetadata,
   // [v5.3] Read File Stats (Size/Date) - ALWAYS read this first
   PopulateFileStats(filePath, pMetadata);
 
+  // 1. Detect Format (if missing) - Detect first so native probes and WIC fallback know the format
+  if (pMetadata->Format.empty()) {
+    pMetadata->Format = DetectFormatFromContent(filePath);
+  }
+
   // [v6.0] Try Native parsers first (Faster for JXL/AVIF/HEIC)
   // This populates basic HDR metadata if found.
   {
     QuickView::MappedFile mapping(filePath);
     if (mapping.IsValid()) {
       ProbeHdrMetadataNative(mapping.data(), mapping.size(),
-                             &pMetadata->hdrMetadata);
+                             &pMetadata->hdrMetadata, pMetadata);
       if (pMetadata->hdrMetadata.isValid &&
           pMetadata->hdrMetadata.primaries !=
               QuickView::ColorPrimaries::Unknown) {
@@ -10842,12 +10882,6 @@ HRESULT CImageLoader::ReadMetadata(LPCWSTR filePath, ImageMetadata *pMetadata,
             QuickView::ToString(pMetadata->hdrMetadata.primaries);
       }
     }
-  }
-
-  // 1. Detect Format (if missing)
-
-  if (pMetadata->Format.empty()) {
-    pMetadata->Format = DetectFormatFromContent(filePath);
   }
 
   // File Stats already populated above
@@ -13703,15 +13737,44 @@ std::wstring CImageLoader::ParseICCProfileName(const uint8_t *data,
       uint32_t offset = ReadU32BE(entry + 4);
       uint32_t length = ReadU32BE(entry + 8);
 
-      if (offset + length > size || length < 12)
+      if (offset + length > size || length < 8)
         continue;
 
       const uint8_t *tagData = data + offset;
-      uint32_t asciiLen = ReadU32BE(tagData + 8);
 
-      if (asciiLen > 0 && asciiLen < length && offset + 12 + asciiLen <= size) {
-        std::string ascii((const char *)(tagData + 12), asciiLen);
-        // Remove nulls
+      // Handle 'mluc' type (Multi-localized Unicode)
+      if (length >= 16 && memcmp(tagData, "mluc", 4) == 0) {
+        uint32_t numRecords = ReadU32BE(tagData + 8);
+        uint32_t recordSize = ReadU32BE(tagData + 12);
+        if (recordSize == 12 && 16 + numRecords * 12 <= length) {
+          // Look at first name record (usually English, or the only record)
+          uint32_t nameLen = ReadU32BE(tagData + 20); // UTF-16 characters length in bytes
+          uint32_t nameOffset = ReadU32BE(tagData + 24);
+          if (nameOffset + nameLen <= length) {
+            std::wstring ws;
+            ws.reserve(nameLen / 2);
+            for (uint32_t j = 0; j + 1 < nameLen; j += 2) {
+              uint16_t ch = ((uint16_t)tagData[nameOffset + j] << 8) | tagData[nameOffset + j + 1];
+              ws.push_back((wchar_t)ch);
+            }
+            // Remove nulls
+            ws.erase(std::remove(ws.begin(), ws.end(), L'\0'), ws.end());
+            if (!ws.empty()) return ws;
+          }
+        }
+      }
+      // Handle 'desc' type (Text Description Type)
+      else if (length >= 12 && memcmp(tagData, "desc", 4) == 0) {
+        uint32_t asciiLen = ReadU32BE(tagData + 8);
+        if (asciiLen > 0 && asciiLen < length && 12 + asciiLen <= length) {
+          std::string ascii((const char *)(tagData + 12), asciiLen);
+          ascii.erase(std::remove(ascii.begin(), ascii.end(), '\0'), ascii.end());
+          return std::wstring(ascii.begin(), ascii.end());
+        }
+      }
+      // Handle 'text' type (Simple Text)
+      else if (length > 8 && memcmp(tagData, "text", 4) == 0) {
+        std::string ascii((const char *)(tagData + 8), length - 8);
         ascii.erase(std::remove(ascii.begin(), ascii.end(), '\0'), ascii.end());
         return std::wstring(ascii.begin(), ascii.end());
       }

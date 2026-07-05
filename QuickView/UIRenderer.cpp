@@ -1020,7 +1020,7 @@ void UIRenderer::RenderDynamicLayer(ID2D1DeviceContext* dc, HWND hwnd) {
     }
 
     // Draw Top Gallery Hotspot: Vector Icon + Material Ripple (Fix #1)
-    if (!g_gallery.IsVisible() && (g_config.GalleryTriggerMode == 1 || g_config.GalleryTriggerMode == 2) && m_height >= 450 && m_width >= 600) {
+    if (!g_gallery.IsVisible() && (g_config.GalleryTriggerMode == 1 || g_config.GalleryTriggerMode == 2) && m_width >= 300.0f * m_uiScale && m_height >= 200.0f * m_uiScale) {
         float cx = m_width / 2.0f;
         float neckH = 40.0f * m_uiScale;
         float neckW = 200.0f * m_uiScale;
@@ -2317,10 +2317,7 @@ std::vector<InfoRow> UIRenderer::BuildGridRows(const CImageLoader::ImageMetadata
         }
     }
 
-    if (metadata.hdrMetadata.isValid ||
-        metadata.hdrMetadata.hasGainMap ||
-        metadata.colorInfo.dataSpace == QuickView::PixelDataSpace::EncodedHdr ||
-        metadata.colorInfo.IsSceneLinear()) {
+    if (IsHdrLikeContent(metadata)) {
         const std::wstring hdrSummary = BuildHdrSummary(metadata);
         const std::wstring hdrDetailTooltip = BuildHdrDetail(metadata.hdrMetadata);
         
@@ -2353,7 +2350,12 @@ std::vector<InfoRow> UIRenderer::BuildGridRows(const CImageLoader::ImageMetadata
             rows.push_back({L"\U0001F4CC", L"D.Range", BuildDynamicRangeLabel(metadata), L"", L"", TruncateMode::EndEllipsis, false});
             if (bitDepth > 0) {
                 wchar_t bitBuf[48];
-                swprintf_s(bitBuf, metadata.colorInfo.IsSceneLinear() ? L"%d-bit Float" : L"%d-bit", bitDepth);
+                const bool isFloatFormat = (metadata.FormatDetails.find(L"EXR") != std::wstring::npos ||
+                                            metadata.FormatDetails.find(L"Radiance") != std::wstring::npos ||
+                                            metadata.FormatDetails.find(L"Float") != std::wstring::npos ||
+                                            metadata.FormatDetails.find(L"RAW") != std::wstring::npos ||
+                                            metadata.FormatDetails.find(L"DDS") != std::wstring::npos);
+                swprintf_s(bitBuf, (metadata.colorInfo.IsSceneLinear() && isFloatFormat) ? L"%d-bit Float" : L"%d-bit", bitDepth);
                 rows.push_back({L"\U0001F522", L"BitDepth", bitBuf, L"", L"", TruncateMode::None, false});
             }
             const QuickView::TransferFunction effectiveTransfer =
@@ -3069,7 +3071,7 @@ void UIRenderer::DrawCompactInfo(ID2D1DeviceContext* dc) {
             }
         }
 
-        if (IsHdrLikeContent(g_currentMetadata) || g_currentMetadata.hdrMetadata.isValid) {
+        if (IsHdrLikeContent(g_currentMetadata)) {
             const std::wstring dynamicRange = BuildDynamicRangeLabel(g_currentMetadata);
             if (!dynamicRange.empty()) {
                 info += L"   [";

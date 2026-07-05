@@ -6978,7 +6978,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
                   }
               }
               
-              if (h >= 450 && w >= 600 && !g_gallery.IsVisible() && (g_config.GalleryTriggerMode == 1 || g_config.GalleryTriggerMode == 2)) {
+              if (w >= 300.0f * g_uiScale && h >= 200.0f * g_uiScale && !g_gallery.IsVisible() && (g_config.GalleryTriggerMode == 1 || g_config.GalleryTriggerMode == 2)) {
                   float cx = w / 2.0f;
                   float neckH = 40.0f * g_uiScale;
                   float neckW = 200.0f * g_uiScale;
@@ -6993,17 +6993,16 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
                   float iconSize = 18.0f * g_uiScale;
                   float iconY = 8.0f * g_uiScale;
                   float clickHalfW = iconSize / 2.0f + 6.0f * g_uiScale;
-                  float clickMinY = iconY - 6.0f * g_uiScale;
                   float clickMaxY = iconY + iconSize + 6.0f * g_uiScale;
                   
-                  if (pt.y >= clickMinY && pt.y <= clickMaxY && pt.x >= cx - clickHalfW && pt.x <= cx + clickHalfW) {
+                  if (pt.y >= 0 && pt.y <= clickMaxY && pt.x >= cx - clickHalfW && pt.x <= cx + clickHalfW) {
                       g_currentCursor = LoadCursor(nullptr, IDC_HAND);
                   }
               }
           }
 
           // Top Hover Gallery Trigger Detection
-          if (w >= 600 && h >= 450) {
+          if (w >= 300.0f * g_uiScale && h >= 200.0f * g_uiScale) {
               float cx = w / 2.0f;
               
               bool inGalleryTriggerZone = false;
@@ -7854,16 +7853,15 @@ SKIP_EDGE_NAV:;
             RECT rcWnd; GetClientRect(hwnd, &rcWnd);
             float winH = (float)(rcWnd.bottom - rcWnd.top);
             float winW = (float)(rcWnd.right - rcWnd.left);
-            if (winH >= 450.0f && winW >= 600.0f) {
+            if (winW >= 300.0f * g_uiScale && winH >= 200.0f * g_uiScale) {
                 float cx = (rcWnd.right - rcWnd.left) / 2.0f;
                 
                 float iconSize = 18.0f * g_uiScale;
                 float iconY = 8.0f * g_uiScale;
                 float clickHalfW = iconSize / 2.0f + 6.0f * g_uiScale;
-                float clickMinY = iconY - 6.0f * g_uiScale;
                 float clickMaxY = iconY + iconSize + 6.0f * g_uiScale;
                 
-                if (pt.y >= clickMinY && pt.y <= clickMaxY && pt.x >= cx - clickHalfW && pt.x <= cx + clickHalfW) {
+                if (pt.y >= 0 && pt.y <= clickMaxY && pt.x >= cx - clickHalfW && pt.x <= cx + clickHalfW) {
                     if (!g_gallery.IsVisible()) {
                         SaveOverlayWindowState(hwnd);
                         g_gallery.Open(GetPaneContext(PaneSlot::Primary).navigator.Index(), GalleryMode::Filmstrip);

@@ -370,13 +370,20 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size, ID
     }
     
     // 2. Text Format Initialization
+    static float lastScale = 0.0f;
+    if (fabsf(lastScale - g_uiScale) >= 0.001f) {
+        m_textFormat.Reset();
+        m_textFormatStats.Reset();
+        m_textFormatOSD.Reset();
+        lastScale = g_uiScale;
+    }
     if (!m_dwriteFactory) {
         DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(m_dwriteFactory.GetAddressOf()));
     }
     if (m_dwriteFactory && !m_textFormat) {
-        m_dwriteFactory->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_MEDIUM, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 12.0f, L"en-us", &m_textFormat);
-        m_dwriteFactory->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 10.0f, L"en-us", &m_textFormatStats);
-        m_dwriteFactory->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 20.0f, L"en-us", &m_textFormatOSD);
+        m_dwriteFactory->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_MEDIUM, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 12.0f * g_uiScale, L"en-us", &m_textFormat);
+        m_dwriteFactory->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 10.0f * g_uiScale, L"en-us", &m_textFormatStats);
+        m_dwriteFactory->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 20.0f * g_uiScale, L"en-us", &m_textFormatOSD);
     }
     
     size_t count = m_pNav->Count();
@@ -399,7 +406,7 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size, ID
     
     float filmCellW = FILM_CELL_SIZE;
     float filmCellH = FILM_CELL_SIZE;
-    float filmLeftMargin = 48.0f;
+    float filmLeftMargin = 48.0f * g_uiScale;
     m_maxScrollLeft = std::max(0.0f, filmLeftMargin * 2.0f + count * (filmCellW + GAP) - GAP - size.width);
     
     // If target scroll was uninitialized (e.g. newly opened), calculate it now with the correct max scroll
@@ -424,9 +431,9 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size, ID
     pDC->PushAxisAlignedClip(panelRect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
     
     // Clip thumbnails to scrollable region (to avoid overlapping Pin button and arrows)
-    // Add 6.0px buffer on left/right to ensure selection DodgerBlue outline is not clipped
+    // Add scaled buffer on left/right to ensure selection DodgerBlue outline is not clipped
     float currentLeftMargin = filmLeftMargin + (PADDING - filmLeftMargin) * m_gridProgress;
-    D2D1_RECT_F thumbsClip = D2D1::RectF(currentLeftMargin - 6.0f, 0.0f, size.width - currentLeftMargin + 6.0f, galleryH);
+    D2D1_RECT_F thumbsClip = D2D1::RectF(currentLeftMargin - 6.0f * g_uiScale, 0.0f, size.width - currentLeftMargin + 6.0f * g_uiScale, galleryH);
     pDC->PushAxisAlignedClip(thumbsClip, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
     
     // Loop and draw visible items
@@ -457,19 +464,15 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size, ID
             cellRect.bottom += expandH;
         }
         
-        // Selection glow border (rounded, DodgerBlue/Accent, elegant double ring)
+        // Selection border (rounded, DodgerBlue/Accent, single crisp ring)
         if (i == m_selectedIndex) {
-            // 1. Outer glow ring (broad and soft)
-            m_brushSelection->SetOpacity(0.35f * m_transitionProgress);
+            float borderOffset = 1.5f * g_uiScale;
+            float borderRadius = 6.5f * g_uiScale;
+            float borderWidth = 2.0f * g_uiScale;
+            m_brushSelection->SetOpacity(1.0f * m_transitionProgress);
             pDC->DrawRoundedRectangle(
-                D2D1::RoundedRect(D2D1::RectF(cellRect.left - 4.5f, cellRect.top - 4.5f, cellRect.right + 4.5f, cellRect.bottom + 4.5f), 7.5f, 7.5f),
-                m_brushSelection.Get(), 2.0f);
-            
-            // 2. Inner crisp border
-            m_brushSelection->SetOpacity(0.90f * m_transitionProgress);
-            pDC->DrawRoundedRectangle(
-                D2D1::RoundedRect(D2D1::RectF(cellRect.left - 1.5f, cellRect.top - 1.5f, cellRect.right + 1.5f, cellRect.bottom + 1.5f), 6.5f, 6.5f),
-                m_brushSelection.Get(), 1.5f);
+                D2D1::RoundedRect(D2D1::RectF(cellRect.left - borderOffset, cellRect.top - borderOffset, cellRect.right + borderOffset, cellRect.bottom + borderOffset), borderRadius, borderRadius),
+                m_brushSelection.Get(), borderWidth);
             m_brushSelection->SetOpacity(1.0f);
         }
         
@@ -525,13 +528,13 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size, ID
             size_t lastSlash = path.find_last_of(L"\\/");
             std::wstring_view filename = (lastSlash != std::wstring::npos) ? std::wstring_view(path).substr(lastSlash + 1) : std::wstring_view(path);
             
-            float tooltipW = 240.0f;
-            float tooltipH = 54.0f;
+            float tooltipW = 240.0f * g_uiScale;
+            float tooltipH = 54.0f * g_uiScale;
             
             std::wstring filenameStr(filename);
             extern std::unique_ptr<UIRenderer> g_uiRenderer;
             if (g_uiRenderer) {
-                filenameStr = g_uiRenderer->MakeMiddleEllipsis(tooltipW - 20.0f, filenameStr, m_textFormat.Get());
+                filenameStr = g_uiRenderer->MakeMiddleEllipsis(tooltipW - 20.0f * g_uiScale, filenameStr, m_textFormat.Get());
             }
             
             wchar_t statsBuf[128];
@@ -545,29 +548,64 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size, ID
                 swprintf_s(statsBuf, L"Loading...");
             }
             
-            D2D1_RECT_F tooltipRect = D2D1::RectF(cellRect.left + 8, cellRect.top + 8, cellRect.left + 8 + tooltipW, cellRect.top + 8 + tooltipH);
+            D2D1_RECT_F tooltipRect = D2D1::RectF(cellRect.left + 8.0f * g_uiScale, cellRect.top + 8.0f * g_uiScale, cellRect.left + 8.0f * g_uiScale + tooltipW, cellRect.top + 8.0f * g_uiScale + tooltipH);
             
             // Draw card background
-            m_brushOverlay->SetOpacity(0.85f * m_transitionProgress);
-            pDC->FillRoundedRectangle(D2D1::RoundedRect(tooltipRect, 6, 6), m_brushOverlay.Get());
+            bool glassDrawn = false;
+            if (g_config.EnableGeekGlass) {
+                QuickView::UI::GeekGlass::GeekGlassConfig tooltipGlassConfig;
+                tooltipGlassConfig.panelBounds = tooltipRect;
+                tooltipGlassConfig.cornerRadius = 6.0f * g_uiScale;
+                tooltipGlassConfig.enableGeekGlass = true;
+                tooltipGlassConfig.theme = isLight ? QuickView::UI::GeekGlass::ThemeMode::Light : QuickView::UI::GeekGlass::ThemeMode::Dark;
+                tooltipGlassConfig.tintProfile = g_config.GlassTintProfile;
+                tooltipGlassConfig.customTintColor = D2D1::ColorF(g_config.GlassCustomTintR, g_config.GlassCustomTintG, g_config.GlassCustomTintB, g_config.GlassTintAlpha);
+                tooltipGlassConfig.tintAlpha = g_config.GlassTintAlpha;
+                tooltipGlassConfig.specularOpacity = g_config.GlassSpecularOpacity;
+                tooltipGlassConfig.blurStandardDeviation = g_config.GlassBlurSigma * g_uiScale * m_transitionProgress;
+                tooltipGlassConfig.opacity = (g_config.GlassPanelsOpacity / 100.0f) * m_transitionProgress;
+                tooltipGlassConfig.strokeWeight = g_config.GetVectorStrokeWeight();
+                tooltipGlassConfig.shadowOpacity = g_config.GlassShadowOpacity;
+                tooltipGlassConfig.pBackgroundCommandList = pBgCmdList;
+                tooltipGlassConfig.backgroundTransform = bgTransform;
+                
+                // Material Booster Layer for contrast
+                D2D1_COLOR_F boosterColor = isLight ? D2D1::ColorF(0.95f, 0.95f, 0.97f) : D2D1::ColorF(0.04f, 0.04f, 0.04f);
+                m_brushBg->SetColor(boosterColor);
+                m_brushBg->SetOpacity(0.25f * tooltipGlassConfig.opacity);
+                pDC->FillRoundedRectangle(D2D1::RoundedRect(tooltipRect, 6.0f * g_uiScale, 6.0f * g_uiScale), m_brushBg.Get());
+                
+                m_geekGlass.DrawGeekGlassPanel(pDC, tooltipGlassConfig);
+                glassDrawn = true;
+            }
             
-            // Draw 1.0px border
-            m_brushBg->SetColor(D2D1::ColorF(0.4f, 0.4f, 0.45f));
-            m_brushBg->SetOpacity(m_transitionProgress * 0.5f);
-            pDC->DrawRoundedRectangle(D2D1::RoundedRect(tooltipRect, 6, 6), m_brushBg.Get(), 1.0f);
+            if (!glassDrawn) {
+                float panelOpacity = (g_config.GlassPanelsOpacity / 100.0f) * m_transitionProgress;
+                D2D1_COLOR_F tipBgClr = isLight ? D2D1::ColorF(0.95f, 0.95f, 0.95f, 0.75f) : D2D1::ColorF(0.1f, 0.1f, 0.1f, 0.75f);
+                m_brushOverlay->SetColor(tipBgClr);
+                m_brushOverlay->SetOpacity(panelOpacity);
+                pDC->FillRoundedRectangle(D2D1::RoundedRect(tooltipRect, 6.0f * g_uiScale, 6.0f * g_uiScale), m_brushOverlay.Get());
+            }
+            
+            // Draw subtle 1.0px border
+            D2D1_COLOR_F tipBorderClr = isLight ? D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.08f) : D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.15f);
+            m_brushBg->SetColor(tipBorderClr);
+            m_brushBg->SetOpacity(m_transitionProgress);
+            pDC->DrawRoundedRectangle(D2D1::RoundedRect(tooltipRect, 6.0f * g_uiScale, 6.0f * g_uiScale), m_brushBg.Get(), 1.0f);
             
             // Draw title (filename)
+            D2D1_COLOR_F tipTxtClr = isLight ? D2D1::ColorF(0.12f, 0.12f, 0.15f) : D2D1::ColorF(D2D1::ColorF::White);
             D2D1_COLOR_F oldTextClr = m_brushText->GetColor();
-            m_brushText->SetColor(D2D1::ColorF(D2D1::ColorF::White));
+            m_brushText->SetColor(tipTxtClr);
             m_brushText->SetOpacity(m_transitionProgress);
             pDC->DrawText(filenameStr.c_str(), (UINT32)filenameStr.length(), m_textFormat.Get(),
-                D2D1::RectF(tooltipRect.left + 10, tooltipRect.top + 8, tooltipRect.right - 10, tooltipRect.top + 26),
+                D2D1::RectF(tooltipRect.left + 10.0f * g_uiScale, tooltipRect.top + 8.0f * g_uiScale, tooltipRect.right - 10.0f * g_uiScale, tooltipRect.top + 26.0f * g_uiScale),
                 m_brushText.Get());
             
             // Draw subtitle (stats)
             m_brushText->SetOpacity(m_transitionProgress * 0.65f);
             pDC->DrawText(statsBuf, (UINT32)wcslen(statsBuf), m_textFormatStats.Get(),
-                D2D1::RectF(tooltipRect.left + 10, tooltipRect.top + 28, tooltipRect.right - 10, tooltipRect.bottom - 6),
+                D2D1::RectF(tooltipRect.left + 10.0f * g_uiScale, tooltipRect.top + 28.0f * g_uiScale, tooltipRect.right - 10.0f * g_uiScale, tooltipRect.bottom - 6.0f * g_uiScale),
                 m_brushText.Get());
                 
             m_brushText->SetColor(oldTextClr);
@@ -579,12 +617,12 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size, ID
     
     // 5. Left/Right Navigation Arrows Rendering (Only in Filmstrip Mode with Floating Circle buttons)
     if (m_gridProgress < 0.2f) {
-        float arrowSize = 12.0f;
-        float btnRadius = 18.0f;
+        float arrowSize = 12.0f * g_uiScale;
+        float btnRadius = 18.0f * g_uiScale;
         
         // Left Arrow
         if (m_arrowLeftAlpha > 0.01f) {
-            float cx = 24.0f;
+            float cx = 24.0f * g_uiScale;
             float cy = PADDING + filmCellH / 2.0f;
             
             // Draw floating glass-morphic circle background
@@ -594,13 +632,13 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size, ID
             
             // Draw arrow chevron lines
             m_brushText->SetOpacity(m_arrowLeftAlpha * m_transitionProgress);
-            pDC->DrawLine(D2D1::Point2F(cx + arrowSize / 2.0f - 1.0f, cy - arrowSize / 2.0f), D2D1::Point2F(cx - arrowSize / 2.0f - 1.0f, cy), m_brushText.Get(), 2.5f);
-            pDC->DrawLine(D2D1::Point2F(cx - arrowSize / 2.0f - 1.0f, cy), D2D1::Point2F(cx + arrowSize / 2.0f - 1.0f, cy + arrowSize / 2.0f), m_brushText.Get(), 2.5f);
+            pDC->DrawLine(D2D1::Point2F(cx + arrowSize / 2.0f - 1.0f * g_uiScale, cy - arrowSize / 2.0f), D2D1::Point2F(cx - arrowSize / 2.0f - 1.0f * g_uiScale, cy), m_brushText.Get(), 2.5f * g_uiScale);
+            pDC->DrawLine(D2D1::Point2F(cx - arrowSize / 2.0f - 1.0f * g_uiScale, cy), D2D1::Point2F(cx + arrowSize / 2.0f - 1.0f * g_uiScale, cy + arrowSize / 2.0f), m_brushText.Get(), 2.5f * g_uiScale);
         }
         
         // Right Arrow
         if (m_arrowRightAlpha > 0.01f) {
-            float cx = size.width - 24.0f;
+            float cx = size.width - 24.0f * g_uiScale;
             float cy = PADDING + filmCellH / 2.0f;
             
             // Draw floating glass-morphic circle background
@@ -610,8 +648,8 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size, ID
             
             // Draw arrow chevron lines
             m_brushText->SetOpacity(m_arrowRightAlpha * m_transitionProgress);
-            pDC->DrawLine(D2D1::Point2F(cx - arrowSize / 2.0f + 1.0f, cy - arrowSize / 2.0f), D2D1::Point2F(cx + arrowSize / 2.0f + 1.0f, cy), m_brushText.Get(), 2.5f);
-            pDC->DrawLine(D2D1::Point2F(cx + arrowSize / 2.0f + 1.0f, cy), D2D1::Point2F(cx - arrowSize / 2.0f + 1.0f, cy + arrowSize / 2.0f), m_brushText.Get(), 2.5f);
+            pDC->DrawLine(D2D1::Point2F(cx - arrowSize / 2.0f + 1.0f * g_uiScale, cy - arrowSize / 2.0f), D2D1::Point2F(cx + arrowSize / 2.0f + 1.0f * g_uiScale, cy), m_brushText.Get(), 2.5f * g_uiScale);
+            pDC->DrawLine(D2D1::Point2F(cx + arrowSize / 2.0f + 1.0f * g_uiScale, cy), D2D1::Point2F(cx - arrowSize / 2.0f + 1.0f * g_uiScale, cy + arrowSize / 2.0f), m_brushText.Get(), 2.5f * g_uiScale);
         }
         
         m_brushText->SetOpacity(1.0f); // Reset opacity
@@ -619,17 +657,22 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size, ID
     
     // 6a. Pin button (top-left corner of filmstrip) - only visible in filmstrip mode
     if (m_gridProgress < 0.2f) {
-        float pinSize = 16.0f;
-        float pinX = 16.0f;
-        float pinY = 16.0f;
+        float pinSize = 16.0f * g_uiScale;
+        float pinX = 16.0f * g_uiScale;
+        float pinY = 16.0f * g_uiScale;
         D2D1_RECT_F pinRect = D2D1::RectF(pinX, pinY, pinX + pinSize, pinY + pinSize);
         
         ID2D1SolidColorBrush* pPinBrush = nullptr;
         if (m_pinHover) {
             m_brushSelection->SetOpacity(m_transitionProgress * (1.0f - m_gridProgress / 0.2f) * 0.95f);
             pPinBrush = m_brushSelection.Get();
+        } else if (m_isPinned) {
+            // Pinned state should stand out with active accent selection color, just like the toolbar
+            m_brushSelection->SetOpacity(m_transitionProgress * (1.0f - m_gridProgress / 0.2f) * 1.0f);
+            pPinBrush = m_brushSelection.Get();
         } else {
-            D2D1_COLOR_F pinClr = isLight ? D2D1::ColorF(0.2f, 0.2f, 0.2f, 0.5f) : D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.4f);
+            // Unpinned and not hovered: make it clear and visible but not overwhelming (increased contrast to 0.85)
+            D2D1_COLOR_F pinClr = isLight ? D2D1::ColorF(0.12f, 0.12f, 0.15f, 0.85f) : D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.85f);
             m_brushBg->SetColor(pinClr);
             m_brushBg->SetOpacity(m_transitionProgress * (1.0f - m_gridProgress / 0.2f));
             pPinBrush = m_brushBg.Get();
@@ -646,10 +689,10 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size, ID
     // 6b. Bottom drag indicator / visual cue (handle strip)
     // Draw OUTSIDE clip area so it renders below the filmstrip edge
     {
-        float handleW = 48.0f;
-        float handleH = 3.0f;
+        float handleW = 48.0f * g_uiScale;
+        float handleH = 3.0f * g_uiScale;
         float cx = size.width / 2.0f;
-        float cy = galleryH + 5.0f; // Below filmstrip edge
+        float cy = galleryH + 5.0f * g_uiScale; // Below filmstrip edge
         
         // Reusing m_brushOverlay for shadow brush
         m_brushOverlay->SetColor(D2D1::ColorF(0.0f, 0.0f, 0.0f, 1.0f));
@@ -675,14 +718,14 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size, ID
 
                 // Handle Outline
                 D2D1_RECT_F handleStrokeRect = D2D1::RectF(
-                    cx - handleW / 2.0f - 1.5f, cy - handleH / 2.0f - 1.5f,
-                    cx + handleW / 2.0f + 1.5f, cy + handleH / 2.0f + 1.5f);
-                pDC->FillRoundedRectangle(D2D1::RoundedRect(handleStrokeRect, handleH / 2.0f + 1.5f, handleH / 2.0f + 1.5f), m_brushOverlay.Get());
+                    cx - handleW / 2.0f - 1.5f * g_uiScale, cy - handleH / 2.0f - 1.5f * g_uiScale,
+                    cx + handleW / 2.0f + 1.5f * g_uiScale, cy + handleH / 2.0f + 1.5f * g_uiScale);
+                pDC->FillRoundedRectangle(D2D1::RoundedRect(handleStrokeRect, handleH / 2.0f + 1.5f * g_uiScale, handleH / 2.0f + 1.5f * g_uiScale), m_brushOverlay.Get());
                 
                 // Chevron Outline
-                float chevronSize = 6.0f;
-                float chevronY = cy + 5.0f;
-                float strokeThickness = 4.5f;
+                float chevronSize = 6.0f * g_uiScale;
+                float chevronY = cy + 5.0f * g_uiScale;
+                float strokeThickness = 4.5f * g_uiScale;
                 pDC->DrawLine(D2D1::Point2F(cx - chevronSize, chevronY - chevronSize / 2.0f), D2D1::Point2F(cx, chevronY + chevronSize / 2.0f), m_brushOverlay.Get(), strokeThickness);
                 pDC->DrawLine(D2D1::Point2F(cx, chevronY + chevronSize / 2.0f), D2D1::Point2F(cx + chevronSize, chevronY - chevronSize / 2.0f), m_brushOverlay.Get(), strokeThickness);
             }
@@ -693,10 +736,10 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size, ID
                 pDC->FillRoundedRectangle(D2D1::RoundedRect(handleRect, handleH / 2.0f, handleH / 2.0f), pHandleBrush);
                 
                 // Chevron Foreground
-                float chevronSize = 6.0f;
-                float chevronY = cy + 5.0f;
-                pDC->DrawLine(D2D1::Point2F(cx - chevronSize, chevronY - chevronSize / 2.0f), D2D1::Point2F(cx, chevronY + chevronSize / 2.0f), pHandleBrush, 2.0f);
-                pDC->DrawLine(D2D1::Point2F(cx, chevronY + chevronSize / 2.0f), D2D1::Point2F(cx + chevronSize, chevronY - chevronSize / 2.0f), pHandleBrush, 2.0f);
+                float chevronSize = 6.0f * g_uiScale;
+                float chevronY = cy + 5.0f * g_uiScale;
+                pDC->DrawLine(D2D1::Point2F(cx - chevronSize, chevronY - chevronSize / 2.0f), D2D1::Point2F(cx, chevronY + chevronSize / 2.0f), pHandleBrush, 2.0f * g_uiScale);
+                pDC->DrawLine(D2D1::Point2F(cx, chevronY + chevronSize / 2.0f), D2D1::Point2F(cx + chevronSize, chevronY - chevronSize / 2.0f), pHandleBrush, 2.0f * g_uiScale);
             }
         }
         
@@ -787,9 +830,9 @@ bool GalleryOverlay::OnLButtonDown(int x, int y) {
     
     // Check Pin button click (top-left corner) - only in filmstrip mode
     if (m_gridProgress < 0.2f) {
-        float pinSize = 16.0f;
-        float pinX = 16.0f;
-        float pinY = 16.0f;
+        float pinSize = 16.0f * g_uiScale;
+        float pinX = 16.0f * g_uiScale;
+        float pinY = 16.0f * g_uiScale;
         if (fx >= pinX && fx <= pinX + pinSize && fy >= pinY && fy <= pinY + pinSize) {
             TogglePin();
             RequestRepaint(QuickView::PaintLayer::Gallery);
@@ -800,15 +843,15 @@ bool GalleryOverlay::OnLButtonDown(int x, int y) {
     // Check filmstrip left/right arrows
     if (m_gridProgress < 0.2f) {
         float arrowCy = PADDING + FILM_CELL_SIZE / 2.0f;
-        float arrowR = 30.0f;
+        float arrowR = 30.0f * g_uiScale;
         
-        if (fx < 48.0f && fabsf(fy - arrowCy) < arrowR) {
+        if (fx < 48.0f * g_uiScale && fabsf(fy - arrowCy) < arrowR) {
             if (m_targetScrollLeft < 0.0f) m_targetScrollLeft = m_scrollLeft;
             m_targetScrollLeft = std::max(0.0f, m_targetScrollLeft - 300.0f);
             RequestRepaint(QuickView::PaintLayer::Gallery);
             return true;
         }
-        if (fx > m_lastSize.width - 48.0f && fabsf(fy - arrowCy) < arrowR) {
+        if (fx > m_lastSize.width - 48.0f * g_uiScale && fabsf(fy - arrowCy) < arrowR) {
             if (m_targetScrollLeft < 0.0f) m_targetScrollLeft = m_scrollLeft;
             m_targetScrollLeft = std::min(m_maxScrollLeft, m_targetScrollLeft + 300.0f);
             RequestRepaint(QuickView::PaintLayer::Gallery);
@@ -819,8 +862,10 @@ bool GalleryOverlay::OnLButtonDown(int x, int y) {
     // Check bottom handle click → expand to FullGrid
     {
         float handleCx = m_lastSize.width / 2.0f;
-        float handleCy = galleryH + 5.0f; // Outside clip edge (matches cy = galleryH + 5.0f)
-        if (fabsf(fx - handleCx) < 40.0f && fabsf(fy - handleCy) < 12.0f && m_gridProgress < 0.2f) {
+        float handleCy = galleryH + 5.0f * g_uiScale; // Outside clip edge (matches cy = galleryH + 5.0f * g_uiScale)
+        float hitW = 40.0f * g_uiScale;
+        float hitH = 12.0f * g_uiScale;
+        if (fabsf(fx - handleCx) < hitW && fabsf(fy - handleCy) < hitH && m_gridProgress < 0.2f) {
             SetMode(GalleryMode::FullGrid);
             return true;
         }
@@ -851,8 +896,9 @@ bool GalleryOverlay::OnMouseMove(int x, int y) {
     // Update arrow hover states (filmstrip mode)
     if (m_gridProgress < 0.2f) {
         float arrowCy = PADDING + FILM_CELL_SIZE / 2.0f;
-        bool leftHover = (fx < 48.0f && fabsf(fy - arrowCy) < 30.0f);
-        bool rightHover = (fx > m_lastSize.width - 48.0f && fabsf(fy - arrowCy) < 30.0f);
+        float arrowR = 30.0f * g_uiScale;
+        bool leftHover = (fx < 48.0f * g_uiScale && fabsf(fy - arrowCy) < arrowR);
+        bool rightHover = (fx > m_lastSize.width - 48.0f * g_uiScale && fabsf(fy - arrowCy) < arrowR);
         if (leftHover != m_arrowLeftHover || rightHover != m_arrowRightHover) {
             m_arrowLeftHover = leftHover;
             m_arrowRightHover = rightHover;
@@ -862,9 +908,9 @@ bool GalleryOverlay::OnMouseMove(int x, int y) {
     
     // Pin button hover - only in filmstrip mode
     {
-        float pinSize = 16.0f;
-        float pinX = 16.0f;
-        float pinY = 16.0f;
+        float pinSize = 16.0f * g_uiScale;
+        float pinX = 16.0f * g_uiScale;
+        float pinY = 16.0f * g_uiScale;
         bool pinHover = (m_gridProgress < 0.2f) && (fx >= pinX && fx <= pinX + pinSize && fy >= pinY && fy <= pinY + pinSize);
         if (pinHover != m_pinHover) {
             m_pinHover = pinHover;
@@ -876,8 +922,10 @@ bool GalleryOverlay::OnMouseMove(int x, int y) {
     {
         float galleryH = GetVisualHeight(m_lastSize.height);
         float handleCx = m_lastSize.width / 2.0f;
-        float handleCy = galleryH + 5.0f; // Match new position
-        bool hintHover = (fabsf(fx - handleCx) < 40.0f && fabsf(fy - handleCy) < 12.0f);
+        float handleCy = galleryH + 5.0f * g_uiScale; // Match new position
+        float hitW = 40.0f * g_uiScale;
+        float hitH = 12.0f * g_uiScale;
+        bool hintHover = (fabsf(fx - handleCx) < hitW && fabsf(fy - handleCy) < hitH);
         if (hintHover != m_bottomHintHover) {
             m_bottomHintHover = hintHover;
             changed = true;
@@ -991,7 +1039,7 @@ void GalleryOverlay::EnsureVisible(int index, const D2D1_SIZE_F& size, bool smoo
         }
     } else {
         float cellW = FILM_CELL_SIZE;
-        float filmLeftMargin = 48.0f;
+        float filmLeftMargin = 48.0f * g_uiScale;
         float itemLeft = filmLeftMargin + index * (cellW + GAP);
         
         float itemCenter = itemLeft + cellW * 0.5f;
@@ -1019,7 +1067,7 @@ D2D1_RECT_F GalleryOverlay::GetItemRect(int index, float winW) const {
     
     float filmCellW = FILM_CELL_SIZE;
     float filmCellH = FILM_CELL_SIZE;
-    float filmLeftMargin = 48.0f;
+    float filmLeftMargin = 48.0f * g_uiScale;
     
     float fx = filmLeftMargin + index * (filmCellW + GAP) - m_scrollLeft;
     float fy = PADDING;

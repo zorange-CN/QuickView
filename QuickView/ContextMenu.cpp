@@ -158,10 +158,10 @@ void ShowContextMenu(HWND hwnd, POINT pt, bool hasImage, bool needsExtensionFix,
     items.push_back(MI::Sep());
 
     // --- File Operations ---
-    if (hasImage && needsExtensionFix)
+    if (hasImage && needsExtensionFix) {
         items.push_back(MI::Normal(IDM_FIX_EXTENSION, AppStrings::Context_FixExtension, GeekIcons::FixExt));
-
-    items.push_back(MI::Sep());
+        items.push_back(MI::Sep());
+    }
 
     // --- Sort Submenu ---
     items.push_back(MI::Sub(AppStrings::Context_SortBy, GeekIcons::Sort, {
