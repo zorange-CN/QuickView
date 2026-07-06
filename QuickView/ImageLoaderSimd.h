@@ -19,6 +19,10 @@ void PremultiplyAlpha(uint8_t* data, int width, int height, int stride);
 /// Swizzle RGBA → BGRA with simultaneous alpha premultiplication (in-place).
 void SwizzleRGBAToBGRA(uint8_t* data, size_t pixelCount);
 
+/// Convert packed 24-bit RGB to 32-bit BGRA using Google Highway SIMD.
+/// OpenMP is used inside for multi-threaded row processing.
+void ConvertRGBToBGRA(const uint8_t* src, uint8_t* dst, int width, int height, int dstStride);
+
 /// Bilinear resize of BGRA image.
 void ResizeBilinear(const uint8_t* src, int srcW, int srcH, int srcStride,
                     uint8_t* dst, int dstW, int dstH, int dstStride);

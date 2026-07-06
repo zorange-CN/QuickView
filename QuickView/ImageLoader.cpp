@@ -7804,17 +7804,7 @@ static HRESULT Load(LPCWSTR filePath, const DecodeContext &ctx,
             if (pixels) {
               uint8_t *src = (uint8_t *)thumb->data;
               uint8_t *dst = pixels;
-
-              for (int y = 0; y < h; y++) {
-                uint8_t *rowSrc = src + (y * w * 3);
-                uint32_t *rowDst = (uint32_t *)(dst + (y * stride));
-                for (int x = 0; x < w; x++) {
-                  uint8_t r = rowSrc[x * 3];
-                  uint8_t g = rowSrc[x * 3 + 1];
-                  uint8_t b = rowSrc[x * 3 + 2];
-                  rowDst[x] = (0xFF000000) | (r << 16) | (g << 8) | b;
-                }
-              }
+              ImageLoaderSimd::ConvertRGBToBGRA(src, dst, w, h, stride);
 
               result.pixels = pixels;
               result.width = w;
@@ -7891,18 +7881,7 @@ static HRESULT Load(LPCWSTR filePath, const DecodeContext &ctx,
     // [v9.9] Convert RGB to BGRA with OpenMP parallelization
     uint8_t *src = (uint8_t *)image->data;
     uint8_t *dst = pixels;
-
-#pragma omp parallel for schedule(dynamic, 32)
-    for (int y = 0; y < h; y++) {
-      uint8_t *rowSrc = src + (y * w * 3);
-      uint32_t *rowDst = (uint32_t *)(dst + (y * stride));
-      for (int x = 0; x < w; x++) {
-        uint8_t r = rowSrc[x * 3];
-        uint8_t g = rowSrc[x * 3 + 1];
-        uint8_t b = rowSrc[x * 3 + 2];
-        rowDst[x] = (0xFF000000) | (r << 16) | (g << 8) | b;
-      }
-    }
+    ImageLoaderSimd::ConvertRGBToBGRA(src, dst, w, h, stride);
 
     result.pixels = pixels;
     result.width = w;

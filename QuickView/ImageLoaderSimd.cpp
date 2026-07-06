@@ -36,6 +36,7 @@ struct __clangd_preamble_stop_struct {};
 #include <hwy/foreach_target.h>
 #include "ImageTypes.h" // For GpuShaderPayload
 #include <hwy/highway.h>
+#include <hwy/cache_control.h>
 
 #include "ImageLoaderSimd.h"
 #include <algorithm>
@@ -215,6 +216,44 @@ void SwizzleRGBAToBGRAImpl(uint8_t* data, size_t pixelCount) {
             px[1] = static_cast<uint8_t>((g * a + 127) / 255);
             px[2] = static_cast<uint8_t>((r * a + 127) / 255);
         }
+    }
+}
+
+// ============================================================================
+// ConvertRGBToBGRARow - Swizzle 24-bit RGB → 32-bit BGRA (with prefetching)
+// ============================================================================
+void ConvertRGBToBGRARowImpl(const uint8_t* rowSrc, uint8_t* rowDst, int width) {
+    const hn::ScalableTag<uint8_t> d8;
+    const size_t N = hn::Lanes(d8);
+    const size_t pixelsPerVec = N;
+    const auto vA = hn::Set(d8, 255u);
+    size_t x = 0;
+
+    for (; x + pixelsPerVec <= static_cast<size_t>(width); x += pixelsPerVec) {
+        const uint8_t* pxSrc = rowSrc + x * 3;
+        uint8_t* pxDst = rowDst + x * 4;
+
+        // [v10.4 Optimization] Software Prefetching
+        // Prefetch 256 bytes ahead. Since pxSrc and pxDst are read/written sequentially,
+        // prefetching hints the processor to load future cache lines, hiding memory latency.
+        hwy::Prefetch(pxSrc + 256);
+        hwy::Prefetch(pxDst + 256);
+
+        hn::Vec<decltype(d8)> vR, vG, vB;
+        hn::LoadInterleaved3(d8, pxSrc, vR, vG, vB);
+
+        // Store back in BGRA layout (B, G, R, A)
+        hn::StoreInterleaved4(vB, vG, vR, vA, d8, pxDst);
+    }
+
+    // Scalar tail
+    for (; x < static_cast<size_t>(width); ++x) {
+        const uint8_t* pxSrc = rowSrc + x * 3;
+        uint8_t* pxDst = rowDst + x * 4;
+        pxDst[0] = pxSrc[2]; // B
+        pxDst[1] = pxSrc[1]; // G
+        pxDst[2] = pxSrc[0]; // R
+        pxDst[3] = 255;      // A
     }
 }
 
@@ -1418,6 +1457,7 @@ namespace ImageLoaderSimd {
 // Export dispatch tables
 HWY_EXPORT(PremultiplyAlphaImpl);
 HWY_EXPORT(SwizzleRGBAToBGRAImpl);
+HWY_EXPORT(ConvertRGBToBGRARowImpl);
 HWY_EXPORT(ResizeBilinearImpl);
 HWY_EXPORT(FindPeakFloatImpl);
 HWY_EXPORT(ComputeHistogramRowImpl);
@@ -1446,6 +1486,16 @@ void PremultiplyAlpha(uint8_t* data, int width, int height, int stride) {
 
 void SwizzleRGBAToBGRA(uint8_t* data, size_t pixelCount) {
     HWY_DYNAMIC_DISPATCH(SwizzleRGBAToBGRAImpl)(data, pixelCount);
+}
+
+void ConvertRGBToBGRA(const uint8_t* src, uint8_t* dst, int width, int height, int dstStride) {
+    auto dispatchFunc = HWY_DYNAMIC_DISPATCH(ConvertRGBToBGRARowImpl);
+#pragma omp parallel for schedule(static) if(height > 128)
+    for (int y = 0; y < height; ++y) {
+        const uint8_t* rowSrc = src + static_cast<size_t>(y) * width * 3;
+        uint8_t* rowDst = dst + static_cast<size_t>(y) * dstStride;
+        dispatchFunc(rowSrc, rowDst, width);
+    }
 }
 
 void ResizeBilinear(const uint8_t* src, int srcW, int srcH, int srcStride,
