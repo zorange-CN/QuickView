@@ -3883,12 +3883,12 @@ static HRESULT LoadThumbJXL_Sampled(const uint8_t *pFile, size_t fileSize,
       if (pMetadata) {
         size_t iccSize = 0;
         if (JXL_DEC_SUCCESS ==
-                JxlDecoderGetICCProfileSize(dec, JXL_COLOR_PROFILE_TARGET_DATA,
+                JxlDecoderGetICCProfileSize(dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL,
                                             &iccSize) &&
             iccSize > 0) {
           std::vector<uint8_t> icc(iccSize);
           if (JXL_DEC_SUCCESS ==
-              JxlDecoderGetColorAsICCProfile(dec, JXL_COLOR_PROFILE_TARGET_DATA,
+              JxlDecoderGetColorAsICCProfile(dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL,
                                              icc.data(), iccSize)) {
             std::wstring desc =
                 CImageLoader::ParseICCProfileName(icc.data(), iccSize);
@@ -6980,13 +6980,13 @@ static HRESULT Load(const uint8_t *data, size_t size, const DecodeContext &ctx,
       if (ctx.pMetadata) {
         size_t iccSize = 0;
         if (JXL_DEC_SUCCESS ==
-            JxlDecoderGetICCProfileSize(dec, JXL_COLOR_PROFILE_TARGET_DATA,
+            JxlDecoderGetICCProfileSize(dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL,
                                         &iccSize)) {
           if (iccSize > 0) {
             std::vector<uint8_t> icc(iccSize);
             if (JXL_DEC_SUCCESS ==
                 JxlDecoderGetColorAsICCProfile(
-                    dec, JXL_COLOR_PROFILE_TARGET_DATA, icc.data(), iccSize)) {
+                    dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL, icc.data(), iccSize)) {
               std::wstring desc =
                   CImageLoader::ParseICCProfileName(icc.data(), iccSize);
               if (!desc.empty())

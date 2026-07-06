@@ -235,7 +235,7 @@ void ThumbnailManager::WorkerLoopSlow() {
 
         int targetSize = 300; 
         CImageLoader::ThumbData data;
-        HRESULT hr = m_pLoader->LoadThumbnail(task.path.c_str(), targetSize, &data);
+        HRESULT hr = m_pLoader->LoadThumbnail(task.path.c_str(), targetSize, &data, true);
         if (FAILED(hr) || !data.isValid) {
             data.isValid = true; 
             data.isFailed = true;

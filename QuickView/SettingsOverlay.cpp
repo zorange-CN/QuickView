@@ -1354,6 +1354,9 @@ void SettingsOverlay::BuildMenu() {
     itemMenus.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) { overlay->AutoSwitchToCustom(); };
     tabTheme.items.push_back(itemMenus);
 
+    SettingsItem itemBorders = { AppStrings::Settings_Label_UIBorders, OptionType::Toggle, &g_config.GlassShowBorders };
+    tabTheme.items.push_back(itemBorders);
+
 
     // Theme Management
     SettingsItem itemThemeManage = { AppStrings::Settings_Header_ThemeManagement, OptionType::DualActionButton };

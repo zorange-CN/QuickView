@@ -1169,21 +1169,19 @@ void UIRenderer::DrawOSD(ID2D1DeviceContext* dc, HWND hwnd) {
                 config.specularOpacity = g_config.GlassSpecularOpacity;
                 config.blurStandardDeviation = g_config.GlassBlurSigma * s;
                 config.shadowOpacity = g_config.GlassShadowOpacity;
-                float concentration = (g_config.GlassOsdOpacity / 100.0f);
-                float balancingScale = g_config.EnableGeekGlass ? (0.7f - 0.4f * concentration) : 1.0f;
-                config.opacity = m_osdOpacity * balancingScale;
+                config.opacity = g_config.GlassPanelsOpacity / 100.0f;
                 
                 if (g_config.EnableGeekGlass) {
                     // Compensate shadow intensity to remain invariant to concentration balancing
                     // but maintain consistency with the Panel Density scaling used in other windows.
-                    float density = g_config.GlassOsdOpacity / 100.0f;
-                    if (balancingScale > 0.01f) config.shadowOpacity = (g_config.GlassShadowOpacity * density) / balancingScale;
+                    float density = g_config.GlassPanelsOpacity / 100.0f;
+                    config.shadowOpacity = g_config.GlassShadowOpacity * density;
 
                     // Material Booster Layer (Theme-Aware and Full Range)
                     ComPtr<ID2D1SolidColorBrush> boosterBrush;
                     bool isLight = (config.theme == QuickView::UI::GeekGlass::ThemeMode::Light);
                     D2D1_COLOR_F fillerBase = isLight ? D2D1::ColorF(0.95f, 0.95f, 0.97f, 1.0f) : D2D1::ColorF(0.04f, 0.04f, 0.04f, 1.0f);
-                    float baseAlpha = (g_config.GlassOsdOpacity / 100.0f);
+                    float baseAlpha = (g_config.GlassPanelsOpacity / 100.0f);
                     D2D1_COLOR_F boosterColor = D2D1::ColorF(fillerBase.r, fillerBase.g, fillerBase.b, baseAlpha);
                     dc->CreateSolidColorBrush(boosterColor, &boosterBrush);
                     dc->FillRoundedRectangle(D2D1::RoundedRect(r, 6.0f * s, 6.0f * s), boosterBrush.Get());
@@ -1263,21 +1261,19 @@ void UIRenderer::DrawOSD(ID2D1DeviceContext* dc, HWND hwnd) {
         config.specularOpacity = g_config.GlassSpecularOpacity;
         config.blurStandardDeviation = g_config.GlassBlurSigma * s;
         config.shadowOpacity = g_config.GlassShadowOpacity;
-        float concentration = (g_config.GlassOsdOpacity / 100.0f);
-        float balancingScale = g_config.EnableGeekGlass ? (0.7f - 0.4f * concentration) : 1.0f;
-        config.opacity = m_osdOpacity * balancingScale;
+        config.opacity = g_config.GlassPanelsOpacity / 100.0f;
 
         if (g_config.EnableGeekGlass) {
             // Compensate shadow intensity to remain invariant to concentration balancing
             // but maintain consistency with the Panel Density scaling used in other windows.
-            float density = g_config.GlassOsdOpacity / 100.0f;
-            if (balancingScale > 0.01f) config.shadowOpacity = (g_config.GlassShadowOpacity * density) / balancingScale;
+            float density = g_config.GlassPanelsOpacity / 100.0f;
+            config.shadowOpacity = g_config.GlassShadowOpacity * density;
 
             // Material Booster Layer (Theme-Aware and Full Range)
             ComPtr<ID2D1SolidColorBrush> boosterBrush;
             bool isLight = (config.theme == QuickView::UI::GeekGlass::ThemeMode::Light);
             D2D1_COLOR_F fillerBase = isLight ? D2D1::ColorF(0.95f, 0.95f, 0.97f, 1.0f) : D2D1::ColorF(0.04f, 0.04f, 0.04f, 1.0f);
-            float baseAlpha = (g_config.GlassOsdOpacity / 100.0f);
+            float baseAlpha = (g_config.GlassPanelsOpacity / 100.0f);
             D2D1_COLOR_F boosterColor = D2D1::ColorF(fillerBase.r, fillerBase.g, fillerBase.b, baseAlpha);
             dc->CreateSolidColorBrush(boosterColor, &boosterBrush);
             dc->FillRoundedRectangle(D2D1::RoundedRect(bgRect, 8.0f * s, 8.0f * s), boosterBrush.Get());
@@ -1580,7 +1576,7 @@ void UIRenderer::DrawWindowControls(ID2D1DeviceContext* dc, HWND hwnd) {
         config.specularOpacity = g_config.GlassSpecularOpacity;
         config.blurStandardDeviation = g_config.GlassBlurSigma * s;
         // Window controls need high visibility, slightly more opaque
-        float capsuleOpacity = (g_config.GlassPanelsOpacity / 100.0f) * 0.8f;
+        float capsuleOpacity = (g_config.GlassPanelsOpacity / 100.0f);
         config.opacity = std::min(1.0f, capsuleOpacity);
         config.shadowOpacity = g_config.GlassShadowOpacity * 1.5f;
         config.pBackgroundCommandList = m_bgCommandList.Get();
@@ -1597,10 +1593,12 @@ void UIRenderer::DrawWindowControls(ID2D1DeviceContext* dc, HWND hwnd) {
             geekGlass.DrawGeekGlassPanel(dc, config);
             
             // Replaced ugly 3D Toppings with a designer 1px subtle inner glow border
-            ComPtr<ID2D1SolidColorBrush> borderBrush;
-            D2D1_COLOR_F borderColor = isLight ? D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.08f) : D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.15f);
-            dc->CreateSolidColorBrush(borderColor, &borderBrush);
-            dc->DrawRoundedRectangle(D2D1::RoundedRect(capsuleRect, cornerRadius, cornerRadius), borderBrush.Get(), 1.0f * s);
+            if (g_config.GlassShowBorders) {
+                ComPtr<ID2D1SolidColorBrush> borderBrush;
+                D2D1_COLOR_F borderColor = isLight ? D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.08f) : D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.15f);
+                dc->CreateSolidColorBrush(borderColor, &borderBrush);
+                dc->DrawRoundedRectangle(D2D1::RoundedRect(capsuleRect, cornerRadius, cornerRadius), borderBrush.Get(), 1.0f * s);
+            }
             
             glassDrawn = true;
         }
@@ -1613,10 +1611,12 @@ void UIRenderer::DrawWindowControls(ID2D1DeviceContext* dc, HWND hwnd) {
         dc->FillRoundedRectangle(D2D1::RoundedRect(capsuleRect, cornerRadius, cornerRadius), bgBrush.Get());
         
         // Add a subtle border
-        ComPtr<ID2D1SolidColorBrush> borderBrush;
-        D2D1_COLOR_F borderColor = isLight ? D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.08f) : D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.15f);
-        dc->CreateSolidColorBrush(borderColor, &borderBrush);
-        dc->DrawRoundedRectangle(D2D1::RoundedRect(capsuleRect, cornerRadius, cornerRadius), borderBrush.Get(), 1.0f * s);
+        if (g_config.GlassShowBorders) {
+            ComPtr<ID2D1SolidColorBrush> borderBrush;
+            D2D1_COLOR_F borderColor = isLight ? D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.08f) : D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.15f);
+            dc->CreateSolidColorBrush(borderColor, &borderBrush);
+            dc->DrawRoundedRectangle(D2D1::RoundedRect(capsuleRect, cornerRadius, cornerRadius), borderBrush.Get(), 1.0f * s);
+        }
     }
     
     // [NEW] Cache hit rects for HitTestWindowControls
@@ -2331,7 +2331,7 @@ std::vector<InfoRow> UIRenderer::BuildGridRows(const CImageLoader::ImageMetadata
         }
         if (!colorText.empty()) {
         if (metadata.HasEmbeddedColorProfile) colorText += L" [ICC]";
-        rows.push_back({L"\U0001F3A8", L"Color", colorText, L"", L"", TruncateMode::None, false});
+        rows.push_back({L"\U0001F3A8", L"Profile", colorText, L"", L"", TruncateMode::None, false});
         }
     }
 
@@ -2432,7 +2432,7 @@ std::vector<InfoRow> UIRenderer::BuildGridRows(const CImageLoader::ImageMetadata
         rows.push_back({L"\U0001F4CA", L"Prog", metadata.ExposureProgram, L"", metadata.ExposureProgram, TruncateMode::EndEllipsis, false});
     }
     if (!metadata.Software.empty()) {
-        rows.push_back({L"\U0001F4BB", L"Soft", metadata.Software, L"", metadata.Software, TruncateMode::EndEllipsis, false});
+        rows.push_back({L"\U0001F4BB", L"Program", metadata.Software, L"", metadata.Software, TruncateMode::EndEllipsis, false});
     }
 
 	    if (!metadata.Format.empty() || !metadata.FormatDetails.empty()) {
@@ -4168,7 +4168,7 @@ void UIRenderer::DrawCompareInfoHUD(ID2D1DeviceContext* dc) {
 	        };
 	        if (hudMode == 2) {
 	            // Full mode includes optics plus richer encoding/color information.
-	            hudGroups.push_back({ AppStrings::HUD_Group_Encoding, { L"Camera", L"Exp", L"Lens", L"Focal", L"Color", L"Flash", L"W.Bal", L"Meter", L"Prog", L"Soft" } });
+	            hudGroups.push_back({ AppStrings::HUD_Group_Encoding, { L"Camera", L"Exp", L"Lens", L"Focal", L"Profile", L"Flash", L"W.Bal", L"Meter", L"Prog", L"Program" } });
 	        }
 		    }
 

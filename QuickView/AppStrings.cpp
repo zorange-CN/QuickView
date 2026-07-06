@@ -272,6 +272,7 @@ const wchar_t *Settings_Label_LockWindow = nullptr;
 const wchar_t *Settings_Tooltip_LockWindow = nullptr;
 const wchar_t *Settings_Label_AutoHideTitle = nullptr;
 const wchar_t *Settings_Label_RoundedCorners = nullptr;
+const wchar_t *Settings_Label_UIBorders = nullptr;
 const wchar_t *Settings_Tooltip_RoundedCorners = nullptr;
 const wchar_t *Settings_Label_LockToolbar = nullptr;
 const wchar_t *Settings_Label_WindowMinSize = nullptr;
@@ -757,6 +758,7 @@ struct LanguageTable {
     const wchar_t *Settings_Tooltip_LockWindow;
     const wchar_t *Settings_Label_AutoHideTitle;
     const wchar_t *Settings_Label_RoundedCorners;
+    const wchar_t *Settings_Label_UIBorders;
     const wchar_t *Settings_Tooltip_RoundedCorners;
     const wchar_t *Settings_Label_LockToolbar;
     const wchar_t *Settings_Label_WindowMinSize;
@@ -1239,6 +1241,7 @@ static const LanguageTable Table_EN = {
     L"Controls whether the program locks the window border by default on startup, rather than following image scaling.", // Settings_Tooltip_LockWindow
     L"Auto-Hide Title Bar", // Settings_Label_AutoHideTitle
     L"Rounded Corners", // Settings_Label_RoundedCorners
+    L"Show UI Borders", // Settings_Label_UIBorders
     L"Controls window and context menu rounded corners. Requires Windows 11.", // Settings_Tooltip_RoundedCorners
     L"Lock Bottom Toolbar", // Settings_Label_LockToolbar
     L"Minimum Window Width", // Settings_Label_WindowMinSize
@@ -1721,6 +1724,7 @@ static const LanguageTable Table_CN = {
     L"此处控制程序启动时默认锁定窗口边框，不跟随图片缩放。", // Settings_Tooltip_LockWindow
     L"自动隐藏标题栏", // Settings_Label_AutoHideTitle
     L"圆角窗口", // Settings_Label_RoundedCorners
+    L"显示组件边框", // Settings_Label_UIBorders
     L"控制主窗口及右键菜单圆角，仅支持Windows 11。", // Settings_Tooltip_RoundedCorners
     L"锁定底部工具栏", // Settings_Label_LockToolbar
     L"默认最小窗口宽度", // Settings_Label_WindowMinSize
@@ -2203,6 +2207,7 @@ static const LanguageTable Table_TW = {
     L"此處控制程式啟動時預設鎖定視窗邊框，不跟隨圖片縮放。", // Settings_Tooltip_LockWindow
     L"自動隱藏標題列", // Settings_Label_AutoHideTitle
     L"圓角視窗", // Settings_Label_RoundedCorners
+    L"顯示組件邊框", // Settings_Label_UIBorders
     L"控制主視窗及右鍵選單圓角，僅支援Windows 11。", // Settings_Tooltip_RoundedCorners
     L"鎖定底部工具列", // Settings_Label_LockToolbar
     L"預設最小視窗寬度", // Settings_Label_WindowMinSize
@@ -2685,6 +2690,7 @@ static const LanguageTable Table_JA = {
     L"プログラムの起動時にウィンドウの境界線をデフォルトでロックし、画像の拡大縮小に追従させないように制御します。", // Settings_Tooltip_LockWindow
     L"タイトルバー自動非表示", // Settings_Label_AutoHideTitle
     L"角丸ウィンドウ", // Settings_Label_RoundedCorners
+    L"UI境界線を表示", // Settings_Label_UIBorders
     L"ウィンドウとコンテキストメニューの角丸を制御します。Windows 11のみをサポートします。", // Settings_Tooltip_RoundedCorners
     L"下部ツールバー固定", // Settings_Label_LockToolbar
     L"最小ウィンドウ幅", // Settings_Label_WindowMinSize
@@ -3167,6 +3173,7 @@ static const LanguageTable Table_RU = {
     L"Определяет, будут ли блокироваться границы окна по умолчанию при запуске, а не после масштабирования изображения.", // Settings_Tooltip_LockWindow
     L"Автоскрытие заголовка", // Settings_Label_AutoHideTitle
     L"Скруглённые углы", // Settings_Label_RoundedCorners
+    L"Показывать границы UI", // Settings_Label_UIBorders
     L"Определяет, будут ли окно и контекстное меню со скруглёнными углами. Требуется Windows 11.", // Settings_Tooltip_RoundedCorners
     L"Закрепить нижнюю панель", // Settings_Label_LockToolbar
     L"Мин. ширина окна", // Settings_Label_WindowMinSize
@@ -3649,6 +3656,7 @@ static const LanguageTable Table_DE = {
     L"Legt fest, ob das Programm beim Start standardmäßig den Fensterrahmen sperrt, anstatt der Bildskalierung zu folgen.", // Settings_Tooltip_LockWindow
     L"Titelleiste automatisch ausblenden", // Settings_Label_AutoHideTitle
     L"Abgerundete Ecken", // Settings_Label_RoundedCorners
+    L"UI-Rahmen anzeigen", // Settings_Label_UIBorders
     L"Controls window and context menu rounded corners. Requires Windows 11.", // Settings_Tooltip_RoundedCorners
     L"Untere Symbolleiste sperren", // Settings_Label_LockToolbar
     L"Minimale Fensterbreite", // Settings_Label_WindowMinSize
@@ -4131,6 +4139,7 @@ static const LanguageTable Table_ES = {
     L"Controla si el programa bloquea el borde de la ventana de forma predeterminada al inicio, sin seguir la escala de la imagen.", // Settings_Tooltip_LockWindow
     L"Ocultar barra de título", // Settings_Label_AutoHideTitle
     L"Esquinas Redondeadas", // Settings_Label_RoundedCorners
+    L"Mostrar Bordes de UI", // Settings_Label_UIBorders
     L"Controla las esquinas redondeadas de las ventanas y los menús. Requiere Windows 11.", // Settings_Tooltip_RoundedCorners
     L"Bloquear barra inferior", // Settings_Label_LockToolbar
     L"Anchura mínima de ventana", // Settings_Label_WindowMinSize
@@ -4613,6 +4622,7 @@ static const LanguageTable Table_FR = {
     L"Controls whether the program locks the window border by default on startup, rather than following image scaling.", // Settings_Tooltip_LockWindow
     L"Auto-Hide Title Bar", // Settings_Label_AutoHideTitle
     L"Rounded Corners", // Settings_Label_RoundedCorners
+    L"Show UI Borders", // Settings_Label_UIBorders
     L"Controls window and context menu rounded corners. Requires Windows 11.", // Settings_Tooltip_RoundedCorners
     L"Lock Bottom Toolbar", // Settings_Label_LockToolbar
     L"Minimum Window Width", // Settings_Label_WindowMinSize
@@ -5095,6 +5105,7 @@ void Apply(const LanguageTable& t) {
   Settings_Tooltip_LockWindow = t.Settings_Tooltip_LockWindow;
   Settings_Label_AutoHideTitle = t.Settings_Label_AutoHideTitle;
   Settings_Label_RoundedCorners = t.Settings_Label_RoundedCorners;
+  Settings_Label_UIBorders = t.Settings_Label_UIBorders;
   Settings_Tooltip_RoundedCorners = t.Settings_Tooltip_RoundedCorners;
   Settings_Label_LockToolbar = t.Settings_Label_LockToolbar;
   Settings_Label_WindowMinSize = t.Settings_Label_WindowMinSize;
