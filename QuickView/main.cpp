@@ -586,7 +586,6 @@ static constexpr int HOTKEY_ID_ALPHA_DOWN = 0x0003;
 static void SetDialogCenter(float x, float y);
 static void ClearDialogCenter();
 
-bool IsRawFile(const std::wstring& path); // Forward declaration
 
 
 
@@ -2458,23 +2457,6 @@ bool FileExists(LPCWSTR path) {
     return (dwAttrib != INVALID_FILE_ATTRIBUTES && !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
 }
 
-bool IsRawFile(const std::wstring& path) {
-    size_t dot = path.find_last_of(L'.');
-    if (dot == std::wstring::npos) return false;
-    std::wstring ext = path.substr(dot);
-    std::transform(ext.begin(), ext.end(), ext.begin(), ::towlower);
-    
-    static const wchar_t* rawExts[] = { 
-        L".3fr", L".ari", L".arw", L".bay", L".braw", L".cr2", L".cr3", L".cap", L".data", L".dcs", L".dcr", 
-        L".dng", L".drf", L".eip", L".erf", L".fff", L".gpr", L".iiq", L".k25", L".kdc", L".mdc", L".mef", 
-        L".mos", L".mrw", L".nef", L".nrw", L".obm", L".orf", L".pef", L".ptx", L".pxn", L".r3d", L".raf", 
-        L".raw", L".rwl", L".rw2", L".rwz", L".sr2", L".srf", L".srw", L".sti", L".x3f"
-    };
-    for (const auto* e : rawExts) {
-        if (ext == e) return true;
-    }
-    return false;
-}
 
 void ReleaseImageResources() {
     GetPaneContext(PaneSlot::Primary).resource.Reset();
@@ -3702,8 +3684,9 @@ static constexpr FormatExtRule g_formatRules[] = {
     { L"ppm",  L".ppm", L".pnm", L".pgm", L".pbm" },
     { L"pbm",  L".pbm", L".pnm", L".pgm", L".ppm" },
     
-    // [v10.1] New: Support all RAW formats in extension check
-    { L"raw",  L".dng", L".arw", L".nef", L".cr2", L".cr3", L".raf" },
+    // [v10.1] RAW: any extension in QuickView::RAW_EXTENSIONS is accepted
+    // (special-cased in CheckExtensionMismatch); .dng stays the rename target.
+    { L"raw",  L".dng" },
     { L"dds",  L".dds" },
 };
 
@@ -3739,6 +3722,8 @@ bool CheckExtensionMismatch(std::wstring_view path, std::wstring_view format) {
     
     for (const auto& rule : g_formatRules) {
         if (fmt == rule.format || fmt.contains(rule.format)) {
+            // RAW covers 40+ extensions; defer to the central classification list
+            if (rule.format == L"raw" && QuickView::IsRawExtension(ext)) return false;
             if (ext == rule.primary) return false;
             if (!rule.alt1.empty() && ext == rule.alt1) return false;
             if (!rule.alt2.empty() && ext == rule.alt2) return false;
@@ -8379,7 +8364,7 @@ SKIP_EDGE_NAV:;
                     if (IsCompareModeActive()) {
                         bool isLeft = (AppContext::GetInstance().Compare.selectedPane == ComparePane::Left);
                         const std::wstring& selPath = isLeft ? GetPaneContext(PaneSlot::Left).path : GetPaneContext(PaneSlot::Primary).path;
-                        if (!IsRawFile(selPath)) break; // Selected pane is not RAW, ignore
+                        if (!QuickView::IsRawPath(selPath)) break; // Selected pane is not RAW, ignore
                         // Point context to selected pane, then delegate to IDM_RENDER_RAW
                         AppContext::GetInstance().Compare.contextPane = AppContext::GetInstance().Compare.selectedPane;
                         SendMessage(hwnd, WM_COMMAND, IDM_RENDER_RAW, 0);
@@ -9021,7 +9006,7 @@ SKIP_EDGE_NAV:;
 
         if (hasImage && !targetPath.empty()) {
              extensionFixNeeded = CheckExtensionMismatch(targetPath, targetFmt);
-             isRaw = IsRawFile(targetPath);
+             isRaw = QuickView::IsRawPath(targetPath);
         }
         
         bool isPixelArtMode = GetCurrentPixelArtState(hwnd);
@@ -11341,7 +11326,7 @@ void StartNavigation(HWND hwnd, std::wstring path, [[maybe_unused]] bool showOSD
     
     // Update Toolbar State for RAW
     // [Fix] Ensure RAW button visibility is updated immediately on navigation
-    g_toolbar.SetRawState(IsRawFile(path), g_runtime.ForceRawDecode);
+    g_toolbar.SetRawState(QuickView::IsRawPath(path), g_runtime.ForceRawDecode);
     if (IsCompareModeActive()) {
         RefreshCompareRawUI(hwnd);
     }

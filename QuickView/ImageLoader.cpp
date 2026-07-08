@@ -1365,30 +1365,14 @@ static std::wstring DetectFormatFromContent(LPCWSTR filePath) {
 
   // === STEP 1: Extension-based RAW Detection (Highest Priority) ===
   // This MUST run first. RAW formats cannot be reliably detected by magic
-  // bytes.
-  std::wstring pathLower = filePath;
-  std::transform(pathLower.begin(), pathLower.end(), pathLower.begin(),
-                 ::towlower);
+  // bytes. Classification list lives in SupportedExtensions.h.
+  // Note: .tif/.tiff excluded - standard TIFFs should use WIC, not LibRaw.
+  if (QuickView::IsRawPath(filePath))
+    return L"RAW"; // Definitive RAW identification by extension
 
-  // Comprehensive LibRaw Extension List (40+ formats) + SVG
-  static const wchar_t *rawExts[] = {
-      L".3fr", L".ari",  L".arw", L".bay", L".braw", L".cr2", L".cr3", L".crw",
-      L".cap", L".data", L".dcs", L".dcr", L".dng",  L".drf", L".eip", L".erf",
-      L".fff", L".gpr",  L".iiq", L".k25", L".kdc",  L".mdc", L".mef", L".mos",
-      L".mrw", L".nef",  L".nrw", L".obm", L".orf",  L".pef", L".ptx", L".pxn",
-      L".r3d", L".raf",  L".raw", L".rwl", L".rw2",  L".rwz", L".sr2", L".srf",
-      L".srw", L".sti",  L".x3f",
-      L".svg" // [v9.5] SVG detection
-      // Note: .tif/.tiff excluded - standard TIFFs should use WIC, not LibRaw
-  };
-
-  for (const auto *ext : rawExts) {
-    if (pathLower.ends_with(ext)) {
-      if (wcscmp(ext, L".svg") == 0)
-        return L"SVG"; // Special case for SVG
-      return L"RAW";   // Definitive RAW identification by extension
-    }
-  }
+  // [v9.5] SVG detection
+  if (QuickView::ExtEqualsIgnoreCase(QuickView::ExtensionOf(filePath), L".svg"))
+    return L"SVG";
 
   // === STEP 2: Magic Bytes Detection (for non-RAW formats) ===
   uint8_t magic[32] = {0};
@@ -1401,16 +1385,17 @@ static std::wstring DetectFormatFromContent(LPCWSTR filePath) {
   // === STEP 3: Extension Fallbacks (for problematic formats) ===
   // TGA: Some TGAs have no reliable magic signature
   if (fmt == L"Unknown") {
-    if (pathLower.ends_with(L".tga"))
+    const std::wstring_view ext = QuickView::ExtensionOf(filePath);
+    if (QuickView::ExtEqualsIgnoreCase(ext, L".tga"))
       return L"TGA";
-    if (pathLower.ends_with(L".jxl"))
+    if (QuickView::ExtEqualsIgnoreCase(ext, L".jxl"))
       return L"JXL";
-    if (pathLower.ends_with(L".dds"))
+    if (QuickView::ExtEqualsIgnoreCase(ext, L".dds"))
       return L"DDS";
-    if (pathLower.ends_with(L".wdp") || pathLower.ends_with(L".hdp") ||
-        pathLower.ends_with(L".jxr"))
+    if (QuickView::ExtEqualsIgnoreCase(ext, L".wdp") || QuickView::ExtEqualsIgnoreCase(ext, L".hdp") ||
+        QuickView::ExtEqualsIgnoreCase(ext, L".jxr"))
       return L"JXR";
-    if (pathLower.ends_with(L".hif"))
+    if (QuickView::ExtEqualsIgnoreCase(ext, L".hif"))
       return L"HEIC";
   }
 
@@ -5689,12 +5674,7 @@ HRESULT CImageLoader::LoadToMemory(LPCWSTR filePath, IWICBitmap **ppBitmap,
   // 2. Handle TIFF (CR2, NEF, ARW often identify as TIFF via Magic Bytes)
   else if (detectedFmt == L"TIFF") {
     // Check if it's actually a RAW file based on extension
-    if (path.ends_with(L".arw") || path.ends_with(L".cr2") ||
-        path.ends_with(L".nef") || path.ends_with(L".dng") ||
-        path.ends_with(L".orf") || path.ends_with(L".rw2") ||
-        path.ends_with(L".raf") || path.ends_with(L".pef") ||
-        path.ends_with(L".srw") || path.ends_with(L".cr3") ||
-        path.ends_with(L".nrw")) {
+    if (QuickView::IsRawPath(path)) {
       HRESULT hr = LoadRaw(filePath, ppBitmap, forceFullDecode);
       if (SUCCEEDED(hr)) {
         if (pLoaderName)
@@ -5709,12 +5689,7 @@ HRESULT CImageLoader::LoadToMemory(LPCWSTR filePath, IWICBitmap **ppBitmap,
   // RAW Check (no magic bytes usually reliable OR falls into Unknown)
   if (detectedFmt == L"Unknown") {
     // Check extension
-    if (path.ends_with(L".arw") || path.ends_with(L".cr2") ||
-        path.ends_with(L".nef") || path.ends_with(L".dng") ||
-        path.ends_with(L".orf") || path.ends_with(L".rw2") ||
-        path.ends_with(L".raf") || path.ends_with(L".pef") ||
-        path.ends_with(L".srw") || path.ends_with(L".cr3") ||
-        path.ends_with(L".nrw")) {
+    if (QuickView::IsRawPath(path)) {
       HRESULT hr = LoadRaw(filePath, ppBitmap, forceFullDecode);
       if (SUCCEEDED(hr)) {
         if (pLoaderName)
@@ -10890,19 +10865,9 @@ HRESULT CImageLoader::ReadMetadata(LPCWSTR filePath, ImageMetadata *pMetadata,
 
   // 2. Dispatch
   if (pMetadata->Format == L"Raw" || pMetadata->Format == L"Unknown") {
-    // Try LibRaw first for metadata
-    std::wstring path = filePath;
-    std::transform(path.begin(), path.end(), path.begin(), ::towlower);
-
-    bool isRawExt = (path.ends_with(L".arw") || path.ends_with(L".cr2") ||
-                     path.ends_with(L".nef") || path.ends_with(L".dng") ||
-                     path.ends_with(L".orf") || path.ends_with(L".rw2") ||
-                     path.ends_with(L".raf") || path.ends_with(L".pef") ||
-                     path.ends_with(L".srw") || path.ends_with(L".cr3") ||
-                     path.ends_with(L".nrw") || path.ends_with(L".heic") ||
-                     path.ends_with(L".heif") || path.ends_with(L".hif"));
-
-    if (isRawExt) {
+    // Try LibRaw first for metadata (RAW formats plus HEIF, whose embedded
+    // EXIF LibRaw also parses)
+    if (QuickView::IsRawPath(filePath) || QuickView::IsHeifPath(filePath)) {
       if (SUCCEEDED(ReadMetadataLibRaw(filePath, pMetadata))) {
         // LibRaw succeeded - metadata fields populated
         // Continue to WIC for GPS if needed (or other missing fields)

@@ -313,10 +313,11 @@ target_link_libraries(QuickView PRIVATE
 find_package(GTest CONFIG REQUIRED)
 enable_testing()
 
-add_executable(QuickViewTests 
-    tests/ColorMathTests.cpp 
-    tests/FileNavigatorTests.cpp 
+add_executable(QuickViewTests
+    tests/ColorMathTests.cpp
+    tests/FileNavigatorTests.cpp
     tests/HotkeyTests.cpp
+    tests/SupportedExtensionsTests.cpp
     QuickView/ColorMath.cpp 
     QuickView/FileNavigator.cpp 
     QuickView/ArchiveVFS.cpp 

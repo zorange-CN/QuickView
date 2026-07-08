@@ -47,7 +47,7 @@ void FileNavigator::Initialize(const std::wstring& currentPath, HWND hwnd) {
     std::wstring pExt = p.extension().wstring();
     std::transform(pExt.begin(), pExt.end(), pExt.begin(), [](wchar_t c){ return std::towlower(c); });
 
-    if (pExt == L".cbz" || pExt == L".zip" || pExt == L".cbr" || pExt == L".rar") {
+    if (QuickView::IsArchiveExtension(pExt)) {
         // Load from Archive VFS
         m_archivePath = p.wstring();
         if (pExt == L".cbr" || pExt == L".rar") {
@@ -94,7 +94,7 @@ void FileNavigator::Initialize(const std::wstring& currentPath, HWND hwnd) {
                 std::transform(ext.begin(), ext.end(), ext.begin(), [](wchar_t c){ return std::towlower(c); });
 
                 // Skip archive container files from the flat folder slideshow playlist
-                bool isArchiveExt = (ext == L".cbz" || ext == L".zip" || ext == L".cbr" || ext == L".rar");
+                bool isArchiveExt = QuickView::IsArchiveExtension(ext);
                 if (isArchiveExt) continue;
 
                 for (const auto& supp : QuickView::SUPPORTED_EXTENSIONS) {
@@ -540,7 +540,7 @@ __declspec(noinline) std::vector<std::wstring> FileNavigator::GetSortedSiblings(
         } else if (entry.is_regular_file(ec)) {
             std::wstring ext = entry.path().extension().wstring();
             std::transform(ext.begin(), ext.end(), ext.begin(), [](wchar_t c){ return std::towlower(c); });
-            bool isArchive = (ext == L".cbz" || ext == L".zip" || ext == L".cbr" || ext == L".rar");
+            bool isArchive = QuickView::IsArchiveExtension(ext);
             if (isArchive) {
                 siblings.push_back(entry.path().wstring());
                 continue;
@@ -599,7 +599,7 @@ std::wstring FileNavigator::FindAdjacentFolderImage(bool next) {
         } else {
             std::wstring sibExt = fs::path(sib).extension().wstring();
             std::transform(sibExt.begin(), sibExt.end(), sibExt.begin(), [](wchar_t c){ return std::towlower(c); });
-            if (sibExt == L".cbz" || sibExt == L".zip" || sibExt == L".cbr" || sibExt == L".rar") {
+            if (QuickView::IsArchiveExtension(sibExt)) {
                 isContainer = true;
             }
         }
@@ -639,7 +639,7 @@ FileNavigator::DirectoryScanResult FileNavigator::PerformDirectoryScan() {
             std::transform(ext.begin(), ext.end(), ext.begin(), [](wchar_t c){ return std::towlower(c); });
 
             // Skip archive container files from the flat folder slideshow playlist
-            bool isArchiveExt = (ext == L".cbz" || ext == L".zip" || ext == L".cbr" || ext == L".rar");
+            bool isArchiveExt = QuickView::IsArchiveExtension(ext);
             if (isArchiveExt) continue;
 
             for (const auto& supp : QuickView::SUPPORTED_EXTENSIONS) {
