@@ -83,6 +83,28 @@ TEST(SupportedExtensionsTest, HeifAndArchiveHelpers) {
     EXPECT_FALSE(IsArchivePath(L"C:\\comics\\page.png"));
 }
 
+TEST(SupportedExtensionsTest, RenderedPairWhitelist) {
+    // Camera-rendered stills that may pair with a RAW
+    EXPECT_TRUE(IsRenderedPairExtension(L".jpg"));
+    EXPECT_TRUE(IsRenderedPairExtension(L".JPEG"));
+    EXPECT_TRUE(IsRenderedPairExtension(L".hif"));  // Canon/Nikon/Sony/Fuji HEIF
+    EXPECT_TRUE(IsRenderedPairExtension(L".heic")); // Apple / newer Panasonic
+    EXPECT_TRUE(IsRenderedPairExtension(L".heif"));
+    // Never pair a RAW behind these
+    EXPECT_FALSE(IsRenderedPairExtension(L".png"));  // not camera-written beside a RAW
+    EXPECT_FALSE(IsRenderedPairExtension(L".psd"));  // edit
+    EXPECT_FALSE(IsRenderedPairExtension(L".tif"));  // RAW-derived export
+    EXPECT_FALSE(IsRenderedPairExtension(L".svg"));
+    EXPECT_FALSE(IsRenderedPairExtension(L".dng"));  // RAW itself
+    // Every whitelist entry must be a browsable supported extension
+    for (const auto& e : RENDERED_PAIR_EXTENSIONS) {
+        bool supported = false;
+        for (const auto& s : SUPPORTED_EXTENSIONS) supported |= (e == s);
+        EXPECT_TRUE(supported) << std::string(e.begin(), e.end());
+        EXPECT_FALSE(IsRawExtension(e));
+    }
+}
+
 TEST(SupportedExtensionsTest, FilterStringIsWellFormed) {
     const std::wstring filter = GetSupportedExtensionsFilter();
     EXPECT_NE(filter.find(L"*.jpg"), std::wstring::npos);

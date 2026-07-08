@@ -136,6 +136,33 @@ constexpr bool IsArchivePath(std::wstring_view path) {
     return IsArchiveExtension(ExtensionOf(path));
 }
 
+// ============================================================================
+// RAW+JPEG pairing policy
+// ============================================================================
+// The out-of-camera *rendered* stills that legitimately sit next to a RAW (the
+// visible half of a RAW+JPEG pair). Deliberately a curated WHITELIST of what
+// cameras actually write, NOT "everything that isn't RAW": no camera writes a
+// .png/.psd/.svg beside a RAW, so a same-name file of such a type comes from
+// some other software (an export, an edit, a generated file) and a RAW must
+// never be hidden behind it.
+// JPEG family: every camera writes .JPG; .JPEG appears via software.
+// HEIF family: Canon/Nikon/Sony/Fujifilm write .HIF to the card; Apple and
+// newer Panasonic use .HEIC; .HEIF covers generic/Hasselblad HEIF. Excluded on
+// purpose: TIFF (no modern camera captures it -- it only appears via in-camera
+// RAW development, so a same-name .tif is a RAW-derived export) and Panasonic
+// HLG .HSP (not in SUPPORTED_EXTENSIONS, so QuickView cannot display it).
+inline constexpr std::array<std::wstring_view, 5> RENDERED_PAIR_EXTENSIONS = {
+    L".jpg", L".jpeg", L".heic", L".heif", L".hif"
+};
+
+// Can this extension be the visible (rendered) half of a RAW+JPEG pair?
+constexpr bool IsRenderedPairExtension(std::wstring_view ext) {
+    for (const auto& r : RENDERED_PAIR_EXTENSIONS) {
+        if (ExtEqualsIgnoreCase(ext, r)) return true;
+    }
+    return false;
+}
+
 // Compile-time regression tests (zero runtime cost)
 static_assert(SUPPORTED_EXTENSIONS.size() == 67);
 static_assert(RAW_EXTENSIONS.size() == 43);
@@ -148,6 +175,9 @@ static_assert(!IsRawPath(L"C:\\dir.raw\\readme"));
 static_assert(ExtensionOf(L"C:\\a\\manga.cbz|12|page01.png") == L".png");
 static_assert(IsHeifExtension(L".HIF"));
 static_assert(IsArchivePath(L"C:\\comics\\manga.CBZ"));
+static_assert(IsRenderedPairExtension(L".JPG"));
+static_assert(!IsRenderedPairExtension(L".tif"));  // TIFF is a RAW-derived export
+static_assert(!IsRenderedPairExtension(L".png")); // not camera-written beside a RAW
 
 // Generate the COMDLG filter string, e.g., "All Images\0*.jpg;*.png...\0All Files\0*.*\0\0"
 inline std::wstring GetSupportedExtensionsFilter() {

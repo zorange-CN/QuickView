@@ -621,9 +621,14 @@ struct AppConfig {
     // Default States (User Preference)
     bool ShowInfoPanel = false;          
     bool InfoPanelExpanded = false;      
-    bool ForceRawDecode = false;         
+    bool ForceRawDecode = false;
     bool RenderRAW = false;
-    
+
+    // [RAW+JPEG Pairing] Merge a same-name RAW + camera-rendered JPEG/HEIF into
+    // one logical photo (the RAW is hidden from the list). Default off so
+    // behavior is identical to stock unless the user opts in.
+    bool PairRawJpeg = false;
+
     /// <summary>
     bool IsAdvancedColorEnabled(bool isSystemHdrActive) const {
         return AdvancedColorMode == 1 || (AdvancedColorMode == 2 && isSystemHdrActive);

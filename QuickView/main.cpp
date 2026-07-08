@@ -3962,6 +3962,7 @@ void SaveConfig() {
     WritePrivateProfileStringW(L"Image", L"GamutWarningColorB", std::to_wstring(g_config.GamutWarningColorB).c_str(), iniPath.c_str());
     WritePrivateProfileStringW(L"Image", L"CustomEditorPath", g_config.CustomEditorPath.c_str(), iniPath.c_str());
     WritePrivateProfileStringW(L"Image", L"ForceRawDecode", g_config.ForceRawDecode ? L"1" : L"0", iniPath.c_str());
+    WritePrivateProfileStringW(L"Image", L"PairRawJpeg", g_config.PairRawJpeg ? L"1" : L"0", iniPath.c_str());
     WritePrivateProfileStringW(L"Image", L"AlwaysSaveLossless", g_config.AlwaysSaveLossless ? L"1" : L"0", iniPath.c_str());
     WritePrivateProfileStringW(L"Image", L"AlwaysSaveEdgeAdapted", g_config.AlwaysSaveEdgeAdapted ? L"1" : L"0", iniPath.c_str());
     WritePrivateProfileStringW(L"Image", L"AlwaysSaveLossy", g_config.AlwaysSaveLossy ? L"1" : L"0", iniPath.c_str());
@@ -4243,6 +4244,7 @@ void LoadConfig() {
     g_config.CustomEditorPath = customEditorPath;
 
     g_config.ForceRawDecode = GetPrivateProfileIntW(L"Image", L"ForceRawDecode", 0, iniPath.c_str()) != 0;
+    g_config.PairRawJpeg = GetPrivateProfileIntW(L"Image", L"PairRawJpeg", 0, iniPath.c_str()) != 0;
     g_config.AlwaysSaveLossless = GetPrivateProfileIntW(L"Image", L"AlwaysSaveLossless", 0, iniPath.c_str()) != 0;
     g_config.AlwaysSaveEdgeAdapted = GetPrivateProfileIntW(L"Image", L"AlwaysSaveEdgeAdapted", 0, iniPath.c_str()) != 0;
     g_config.AlwaysSaveLossy = GetPrivateProfileIntW(L"Image", L"AlwaysSaveLossy", 0, iniPath.c_str()) != 0;
