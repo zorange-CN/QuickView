@@ -857,8 +857,8 @@ void SettingsOverlay::CreateResources(ID2D1DeviceContext* pRT) {
     if (!m_textFormatHeader || !m_textFormatItem) {
         float scaledHeader = fontSizeHeader * m_uiScale;
         float scaledItem = fontSizeItem * m_uiScale;
-        m_dwriteFactory->CreateTextFormat(fontFace, nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, scaledHeader, L"en-us", &m_textFormatHeader);
-        m_dwriteFactory->CreateTextFormat(fontFace, nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, scaledItem, L"en-us", &m_textFormatItem);
+        m_dwriteFactory->CreateTextFormat(fontFace, nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, scaledHeader, AppStrings::CurrentLocale, &m_textFormatHeader);
+        m_dwriteFactory->CreateTextFormat(fontFace, nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, scaledItem, AppStrings::CurrentLocale, &m_textFormatItem);
     }
 
     if (m_textFormatItem) {

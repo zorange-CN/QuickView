@@ -6,8 +6,10 @@
 namespace AppStrings {
 
 // ----------------------------------------------------------------
+// ----------------------------------------------------------------
 // Global Pointers (Definition)
 // ----------------------------------------------------------------
+const wchar_t *CurrentLocale = L"en-us";
 const wchar_t *OSD_NoImage = nullptr;
 const wchar_t *OSD_Lossless = nullptr;
 const wchar_t *OSD_ReencodedLossless = nullptr;
@@ -5359,28 +5361,36 @@ void SetLanguage(Language lang) {
 
   switch (target) {
   case Language::ChineseSimplified:
+    CurrentLocale = L"zh-cn";
     Apply(Table_CN);
     break;
   case Language::ChineseTraditional:
+    CurrentLocale = L"zh-tw";
     Apply(Table_TW);
     break;
   case Language::Japanese:
+    CurrentLocale = L"ja-jp";
     Apply(Table_JA);
     break;
   case Language::Russian:
+    CurrentLocale = L"ru-ru";
     Apply(Table_RU);
     break;
   case Language::German:
+    CurrentLocale = L"de-de";
     Apply(Table_DE);
     break;
   case Language::Spanish:
+    CurrentLocale = L"es-es";
     Apply(Table_ES);
     break;
   case Language::French:
+    CurrentLocale = L"fr-fr";
     Apply(Table_FR);
     break;
   case Language::English:
   default:
+    CurrentLocale = L"en-us";
     Apply(Table_EN);
     break;
   }

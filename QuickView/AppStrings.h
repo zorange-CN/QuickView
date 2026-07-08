@@ -21,6 +21,8 @@ namespace AppStrings {
         French = 8
     };
 
+    extern const wchar_t* CurrentLocale;
+
     void Init();
     void SetLanguage(Language lang);
 

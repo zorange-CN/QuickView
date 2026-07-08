@@ -514,7 +514,7 @@ void UIRenderer::EnsureTextFormats() {
         m_dwriteFactory->CreateTextFormat(
             L"Segoe UI", nullptr,
             DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
-            14.0f * s, L"en-us", &m_osdFormat
+            14.0f * s, AppStrings::CurrentLocale, &m_osdFormat
         );
         if (m_osdFormat) {
             m_osdFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
@@ -526,7 +526,7 @@ void UIRenderer::EnsureTextFormats() {
         m_dwriteFactory->CreateTextFormat(
             L"Consolas", nullptr,
             DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
-            12.0f, L"en-us", &m_debugFormat
+            12.0f, AppStrings::CurrentLocale, &m_debugFormat
         );
         if (m_debugFormat) {
             m_debugFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
@@ -537,7 +537,7 @@ void UIRenderer::EnsureTextFormats() {
         m_dwriteFactory->CreateTextFormat(
             L"Segoe UI", nullptr,
             DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
-            11.0f * s, L"en-us", &m_panelFormat
+            11.0f * s, AppStrings::CurrentLocale, &m_panelFormat
         );
         if (m_panelFormat) {
             m_panelFormat->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
@@ -549,7 +549,7 @@ void UIRenderer::EnsureTextFormats() {
       m_dwriteFactory->CreateTextFormat(
           L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_BOLD,
           DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 24.0f * s,
-          L"en-us", &m_welcomeTitleFormat);
+          AppStrings::CurrentLocale, &m_welcomeTitleFormat);
       if (m_welcomeTitleFormat) {
         m_welcomeTitleFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
         m_welcomeTitleFormat->SetParagraphAlignment(
@@ -561,7 +561,7 @@ void UIRenderer::EnsureTextFormats() {
       m_dwriteFactory->CreateTextFormat(
           L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
           DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 13.0f * s,
-          L"zh-cn", &m_welcomeSubtitleFormat);
+          AppStrings::CurrentLocale, &m_welcomeSubtitleFormat);
       if (m_welcomeSubtitleFormat) {
         m_welcomeSubtitleFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
         m_welcomeSubtitleFormat->SetParagraphAlignment(
@@ -573,7 +573,7 @@ void UIRenderer::EnsureTextFormats() {
       m_dwriteFactory->CreateTextFormat(
           L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_MEDIUM,
           DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 12.0f * s,
-          L"zh-cn", &m_welcomeBtnFormat);
+          AppStrings::CurrentLocale, &m_welcomeBtnFormat);
       if (m_welcomeBtnFormat) {
         m_welcomeBtnFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
         m_welcomeBtnFormat->SetParagraphAlignment(

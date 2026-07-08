@@ -104,7 +104,7 @@ void Toolbar::CreateResources(ID2D1RenderTarget *pRT) {
   m_textFormatUI.Reset();
   m_dwriteFactory->CreateTextFormat(
       L"Segoe UI", NULL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-      DWRITE_FONT_STRETCH_NORMAL, 11.5f * m_uiScale, L"en-us",
+      DWRITE_FONT_STRETCH_NORMAL, 11.5f * m_uiScale, AppStrings::CurrentLocale,
       &m_textFormatUI);
   if (m_textFormatUI) {
     m_textFormatUI->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
@@ -933,7 +933,7 @@ void Toolbar::Render(ID2D1RenderTarget *pRT) {
       m_dwriteFactory->CreateTextFormat(
           L"Segoe UI", NULL, DWRITE_FONT_WEIGHT_NORMAL,
           DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
-          12.0f * m_uiScale, L"en-us", &tooltipFormat);
+          12.0f * m_uiScale, AppStrings::CurrentLocale, &tooltipFormat);
       if (tooltipFormat) {
         tooltipFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
         tooltipFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
