@@ -10452,14 +10452,17 @@ void ProcessEngineEvents(HWND hwnd) {
                 // UI Text Logic
                 wchar_t titleBuf[2048];
                 if (isPreview) {
-                    swprintf_s(titleBuf, L"Loading... %s - %s", 
-                        evt.filePath.substr(evt.filePath.find_last_of(L"\\/") + 1).c_str(), 
+                    swprintf_s(titleBuf, L"Loading... %s - %s",
+                        evt.filePath.substr(evt.filePath.find_last_of(L"\\/") + 1).c_str(),
                         g_szWindowTitle);
                 } else {
-                     swprintf_s(titleBuf, L"%s - %s", 
-                        evt.filePath.substr(evt.filePath.find_last_of(L"\\/") + 1).c_str(), 
-                        g_szWindowTitle);
-                     
+                     // [RAW+JPEG Pairing] Flag the hidden RAW in the title, e.g. "IMG_001.JPG (+CR3)"
+                     std::wstring titleName = evt.filePath.substr(evt.filePath.find_last_of(L"\\/") + 1);
+                     if (const auto* pairedRaw = GetPaneContext(PaneSlot::Primary).navigator.GetPairedRaw(FileNavigator::PathToImageID(evt.filePath))) {
+                         titleName += L" (" + FileNavigator::PairedRawLabel(*pairedRaw) + L")";
+                     }
+                     swprintf_s(titleBuf, L"%s - %s", titleName.c_str(), g_szWindowTitle);
+
                      g_isImageScaled = evt.isScaled;
                 }
                 SetWindowTextW(hwnd, titleBuf);

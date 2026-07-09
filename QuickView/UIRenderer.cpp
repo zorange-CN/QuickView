@@ -2174,6 +2174,10 @@ D2D1_SIZE_F UIRenderer::GetRequiredInfoPanelSize() const {
         return D2D1::SizeF(16.0f * s + width + 32.0f * s + 152.0f * s, 32.0f * s + height + 32.0f * s);
     } else if (g_runtime.ShowInfoPanel && !g_runtime.InfoPanelExpanded) {
         std::wstring info = g_imagePath.substr(g_imagePath.find_last_of(L"\\/") + 1);
+        // [RAW+JPEG Pairing] Must match the draw path so the measured width fits
+        if (const auto* pairedRaw = g_navigator.GetPairedRaw(FileNavigator::PathToImageID(g_imagePath))) {
+            info += L" (" + FileNavigator::PairedRawLabel(*pairedRaw) + L")";
+        }
         if (g_currentMetadata.Width > 0) {
             wchar_t sz[64]; swprintf_s(sz, L"   %u x %u", g_currentMetadata.Width, g_currentMetadata.Height);
             info += sz;
@@ -2249,6 +2253,20 @@ std::vector<InfoRow> UIRenderer::BuildGridRows(const CImageLoader::ImageMetadata
     // Row 1: Filename
     std::wstring filename = imagePath.substr(imagePath.find_last_of(L"\\/") + 1);
     rows.push_back({L"\U0001F4C4", L"File", filename, L"", filename, TruncateMode::MiddleEllipsis, true});
+
+    // [RAW+JPEG Pairing] Hidden RAW sibling of this photo. Icon: link
+    // (U+1F517) = "file paired with this photo"; the film-frames icon is
+    // already taken by the Format row.
+    if (const auto* pairedRaw = g_navigator.GetPairedRaw(FileNavigator::PathToImageID(imagePath))) {
+        std::wstring rawName = pairedRaw->path.substr(pairedRaw->path.find_last_of(L"\\/") + 1);
+        wchar_t rawSizeBuf[32] = L"";
+        if (pairedRaw->size >= 1024 * 1024) {
+            swprintf_s(rawSizeBuf, L"%.2f MB", pairedRaw->size / (1024.0 * 1024.0));
+        } else if (pairedRaw->size > 0) {
+            swprintf_s(rawSizeBuf, L"%.2f KB", pairedRaw->size / 1024.0);
+        }
+        rows.push_back({L"\U0001F517", L"RAW", rawName, rawSizeBuf, rawName, TruncateMode::MiddleEllipsis, false});
+    }
 
     // Row 2: Dimensions + Megapixels + Zoom
     if (metadata.Width > 0) {
@@ -3055,6 +3073,11 @@ void UIRenderer::DrawCompactInfo(ID2D1DeviceContext* dc) {
         info = frameBuf;
     } else {
         info = g_imagePath.substr(g_imagePath.find_last_of(L"\\/") + 1);
+
+        // [RAW+JPEG Pairing] Flag the hidden RAW, e.g. "IMG_001.JPG (+CR3)"
+        if (const auto* pairedRaw = g_navigator.GetPairedRaw(FileNavigator::PathToImageID(g_imagePath))) {
+            info += L" (" + FileNavigator::PairedRawLabel(*pairedRaw) + L")";
+        }
 
         // Add Comic Page Info if in Archive
         if (g_navigator.GetArchive() != nullptr) {

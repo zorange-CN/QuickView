@@ -107,6 +107,16 @@ public:
         return ComputePathHash(path);
     }
 
+    // [RAW+JPEG Pairing] "+CR3"-style label for a hidden RAW (its uppercase
+    // extension) — shared by the gallery badge, window title and info panel.
+    static std::wstring PairedRawLabel(const PairedRaw& raw) {
+        std::wstring_view ext = QuickView::ExtensionOf(raw.path);
+        if (!ext.empty()) ext.remove_prefix(1); // drop the dot
+        std::wstring label = L"+";
+        for (wchar_t c : ext) label += (wchar_t)std::towupper(c);
+        return label;
+    }
+
     // [RAW+JPEG Pairing] Query the RAW hidden behind a rendered file (by the
     // rendered file's ImageID); nullptr if that file has no hidden RAW.
     inline const PairedRaw* GetPairedRaw(ImageID renderedId) const {
