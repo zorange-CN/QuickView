@@ -924,6 +924,13 @@ void SettingsOverlay::RebuildMenu() {
 void SettingsOverlay::BuildMenu() {
     m_tabs.clear();
 
+    // [UX Fix] Sync 3-state border option from config
+    if (!g_config.GlassShowBorders) {
+        m_borderStrokeOption = 0; // None
+    } else {
+        m_borderStrokeOption = (g_config.GlassVectorStrokeWeightIndex == 1) ? 1 : 2; // 1=Fine, 2=Standard
+    }
+
     // --- 1. General ---
     SettingsTab tabGeneral;
     tabGeneral.name = AppStrings::Settings_Tab_General;
@@ -1145,15 +1152,6 @@ void SettingsOverlay::BuildMenu() {
     }
     tabTheme.items.push_back(itemRounded);
 
-    // UI Borders
-    SettingsItem itemBorders = { AppStrings::Settings_Label_UIBorders, OptionType::Toggle, &g_config.GlassShowBorders };
-    itemBorders.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
-        SaveConfig();
-        if (overlay && overlay->m_hwnd) {
-            InvalidateRect(overlay->m_hwnd, nullptr, FALSE);
-        }
-    };
-    tabTheme.items.push_back(itemBorders);
 
     if (g_config.ThemeMode == 3) {
         // Custom Theme Mode options
@@ -1301,8 +1299,20 @@ void SettingsOverlay::BuildMenu() {
 
     // Vector Stroke Config
     tabTheme.items.push_back({ AppStrings::Settings_Header_VectorAssets, OptionType::Header });
-    SettingsItem itemStroke = { AppStrings::Settings_Label_VectorStrokeWeight, OptionType::Segment, nullptr, nullptr, &g_config.GlassVectorStrokeWeightIndex, nullptr, 0, 0, { AppStrings::Settings_Option_StrokeStandard, AppStrings::Settings_Option_StrokeFine } };
-    itemStroke.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) { SaveConfig(); if (overlay->m_hwnd) InvalidateRect(overlay->m_hwnd, NULL, FALSE); };
+    SettingsItem itemStroke = { AppStrings::Settings_Label_UIBorders, OptionType::Segment, nullptr, nullptr, &m_borderStrokeOption, nullptr, 0, 0, { AppStrings::Settings_Option_None, AppStrings::Settings_Option_StrokeFine, AppStrings::Settings_Option_StrokeStandard } };
+    itemStroke.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
+        if (overlay->m_borderStrokeOption == 0) {
+            g_config.GlassShowBorders = false;
+        } else if (overlay->m_borderStrokeOption == 1) {
+            g_config.GlassShowBorders = true;
+            g_config.GlassVectorStrokeWeightIndex = 1;
+        } else if (overlay->m_borderStrokeOption == 2) {
+            g_config.GlassShowBorders = true;
+            g_config.GlassVectorStrokeWeightIndex = 0;
+        }
+        SaveConfig();
+        if (overlay->m_hwnd) InvalidateRect(overlay->m_hwnd, NULL, FALSE);
+    };
     tabTheme.items.push_back(itemStroke);
 
     // Glass Tint Profile (Base Color)

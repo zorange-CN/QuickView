@@ -1216,7 +1216,7 @@ static const LanguageTable Table_EN = {
     L"OSD & HUD", // Settings_Label_OsdDensity
     L"Transparency for small floating overlays.", // Settings_Tooltip_OsdDensity
     L"Toolbar & Sidebars", // Settings_Label_PanelsDensity
-    L"Transparency for persistent control panels.", // Settings_Tooltip_PanelsDensity
+    L"Transparency for the bottom toolbar, information panel, gallery, and top-right window controls.", // Settings_Tooltip_PanelsDensity
     L"Dialogs & Settings", // Settings_Label_ModalsDensity
     L"Transparency for centered popups.", // Settings_Tooltip_ModalsDensity
     L"Menus", // Settings_Label_MenusDensity
@@ -1699,9 +1699,9 @@ static const LanguageTable Table_CN = {
     L"信息提示 (OSD)", // Settings_Label_OsdDensity
     L"控制加载进度条、播放提示、缩放信息等浮层的厚度。", // Settings_Tooltip_OsdDensity
     L"工具面板", // Settings_Label_PanelsDensity
-    L"控制底部工具栏、侧边面板的厚度。", // Settings_Tooltip_PanelsDensity
+    L"控制底部工具栏、信息面板、画廊胶卷以及右上角窗口控制按钮的厚度。", // Settings_Tooltip_PanelsDensity
     L"模态窗口", // Settings_Label_ModalsDensity
-    L"控制设置、关于和对话框的厚度。", // Settings_Tooltip_ModalsDensity
+    L"控制设置面板、帮助面板和对话框等弹出窗口的厚度。", // Settings_Tooltip_ModalsDensity
     L"右键菜单", // Settings_Label_MenusDensity
     L"控制右键菜单、下拉列表的厚度。", // Settings_Tooltip_MenusDensity
     L"主题", // Settings_Tab_Theme
@@ -2182,9 +2182,9 @@ static const LanguageTable Table_TW = {
     L"信息提示 (OSD)", // Settings_Label_OsdDensity
     L"控制加載進度條、播放提示、縮放資訊等浮層的厚度。", // Settings_Tooltip_OsdDensity
     L"工具面板", // Settings_Label_PanelsDensity
-    L"控制底部工具列、側邊面板的厚度。", // Settings_Tooltip_PanelsDensity
+    L"控制底部工具列、資訊面板、畫廊底片以及右上角窗口控制按鈕的厚度。", // Settings_Tooltip_PanelsDensity
     L"模態視窗", // Settings_Label_ModalsDensity
-    L"控制設定、關於和對話方塊的厚度。", // Settings_Tooltip_ModalsDensity
+    L"控制設定面板、幫助面板和對話方塊等彈出窗口的厚度。", // Settings_Tooltip_ModalsDensity
     L"右鍵選單", // Settings_Label_MenusDensity
     L"控制右鍵選單、下拉列表的厚度。", // Settings_Tooltip_MenusDensity
     L"主題", // Settings_Tab_Theme
@@ -2665,7 +2665,7 @@ static const LanguageTable Table_JA = {
     L"OSD & HUD", // Settings_Label_OsdDensity
     L"OSDなどの浮層の厚みを制御します。", // Settings_Tooltip_OsdDensity
     L"ツールパネル", // Settings_Label_PanelsDensity
-    L"ツールバーやサイドパネルの厚みを制御します。", // Settings_Tooltip_PanelsDensity
+    L"ツールバー、情報パネル、ギャラリー、および右上ウィンドウコントロールの厚みを制御します。", // Settings_Tooltip_PanelsDensity
     L"モーダルウィンドウ", // Settings_Label_ModalsDensity
     L"設定、情報、ダイアログの厚みを制御します。", // Settings_Tooltip_ModalsDensity
     L"右クリックメニュー", // Settings_Label_MenusDensity

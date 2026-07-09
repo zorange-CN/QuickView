@@ -544,15 +544,7 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size, ID
             size_t lastSlash = path.find_last_of(L"\\/");
             std::wstring_view filename = (lastSlash != std::wstring::npos) ? std::wstring_view(path).substr(lastSlash + 1) : std::wstring_view(path);
             
-            float tooltipW = 240.0f * g_uiScale;
-            float tooltipH = 54.0f * g_uiScale;
-            
             std::wstring filenameStr(filename);
-            extern std::unique_ptr<UIRenderer> g_uiRenderer;
-            if (g_uiRenderer) {
-                filenameStr = g_uiRenderer->MakeMiddleEllipsis(tooltipW - 20.0f * g_uiScale, filenameStr, m_textFormat.Get());
-            }
-            
             wchar_t statsBuf[128];
             if (info.isValid) {
                 if (info.isFailed) {
@@ -563,45 +555,61 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size, ID
             } else {
                 swprintf_s(statsBuf, L"Loading...");
             }
-            
-            D2D1_RECT_F tooltipRect = D2D1::RectF(cellRect.left + 8.0f * g_uiScale, cellRect.top + 8.0f * g_uiScale, cellRect.left + 8.0f * g_uiScale + tooltipW, cellRect.top + 8.0f * g_uiScale + tooltipH);
-            
-            // Draw card background
-            bool glassDrawn = false;
-            if (g_config.EnableGeekGlass) {
-                QuickView::UI::GeekGlass::GeekGlassConfig tooltipGlassConfig;
-                tooltipGlassConfig.panelBounds = tooltipRect;
-                tooltipGlassConfig.cornerRadius = 6.0f * g_uiScale;
-                tooltipGlassConfig.enableGeekGlass = true;
-                tooltipGlassConfig.theme = isLight ? QuickView::UI::GeekGlass::ThemeMode::Light : QuickView::UI::GeekGlass::ThemeMode::Dark;
-                tooltipGlassConfig.tintProfile = g_config.GlassTintProfile;
-                tooltipGlassConfig.customTintColor = D2D1::ColorF(g_config.GlassCustomTintR, g_config.GlassCustomTintG, g_config.GlassCustomTintB, g_config.GlassTintAlpha);
-                tooltipGlassConfig.tintAlpha = g_config.GlassTintAlpha;
-                tooltipGlassConfig.specularOpacity = g_config.GlassSpecularOpacity;
-                tooltipGlassConfig.blurStandardDeviation = g_config.GlassBlurSigma * g_uiScale * m_transitionProgress;
-                tooltipGlassConfig.opacity = (g_config.GlassPanelsOpacity / 100.0f) * m_transitionProgress;
-                tooltipGlassConfig.strokeWeight = g_config.GetVectorStrokeWeight();
-                tooltipGlassConfig.shadowOpacity = g_config.GlassShadowOpacity;
-                tooltipGlassConfig.pBackgroundCommandList = pBgCmdList;
-                tooltipGlassConfig.backgroundTransform = bgTransform;
-                
-                // Material Booster Layer for contrast
-                D2D1_COLOR_F boosterColor = isLight ? D2D1::ColorF(0.95f, 0.95f, 0.97f) : D2D1::ColorF(0.04f, 0.04f, 0.04f);
-                m_brushBg->SetColor(boosterColor);
-                m_brushBg->SetOpacity(0.25f * tooltipGlassConfig.opacity);
-                pDC->FillRoundedRectangle(D2D1::RoundedRect(tooltipRect, 6.0f * g_uiScale, 6.0f * g_uiScale), m_brushBg.Get());
-                
-                m_geekGlass.DrawGeekGlassPanel(pDC, tooltipGlassConfig);
-                glassDrawn = true;
+
+            // [UX Fix] Auto-fit width based on content (filename and info text) using DWrite text layout measurements
+            float wName = 0.0f;
+            float wStats = 0.0f;
+            if (m_dwriteFactory) {
+                ComPtr<IDWriteTextLayout> layoutName, layoutStats;
+                if (SUCCEEDED(m_dwriteFactory->CreateTextLayout(filenameStr.c_str(), (UINT32)filenameStr.length(), m_textFormat.Get(), 1000.0f * g_uiScale, 100.0f * g_uiScale, &layoutName))) {
+                    DWRITE_TEXT_METRICS m = {};
+                    if (SUCCEEDED(layoutName->GetMetrics(&m))) wName = m.width;
+                }
+                if (SUCCEEDED(m_dwriteFactory->CreateTextLayout(statsBuf, (UINT32)wcslen(statsBuf), m_textFormatStats.Get(), 1000.0f * g_uiScale, 100.0f * g_uiScale, &layoutStats))) {
+                    DWRITE_TEXT_METRICS m = {};
+                    if (SUCCEEDED(layoutStats->GetMetrics(&m))) wStats = m.width;
+                }
             }
-            
-            if (!glassDrawn) {
-                float panelOpacity = (g_config.GlassPanelsOpacity / 100.0f) * m_transitionProgress;
-                D2D1_COLOR_F tipBgClr = isLight ? D2D1::ColorF(0.95f, 0.95f, 0.95f, 0.75f) : D2D1::ColorF(0.1f, 0.1f, 0.1f, 0.75f);
-                m_brushOverlay->SetColor(tipBgClr);
-                m_brushOverlay->SetOpacity(panelOpacity);
-                pDC->FillRoundedRectangle(D2D1::RoundedRect(tooltipRect, 6.0f * g_uiScale, 6.0f * g_uiScale), m_brushOverlay.Get());
+            if (wName <= 0.0f) wName = filenameStr.length() * 8.0f * g_uiScale;
+            if (wStats <= 0.0f) wStats = wcslen(statsBuf) * 7.0f * g_uiScale;
+
+            float maxTooltipW = 240.0f * g_uiScale;
+            float textPadding = 24.0f * g_uiScale; // 12px padding on each side
+            float measuredW = (std::max)(wName, wStats) + textPadding;
+            float tooltipW = (std::min)(maxTooltipW, measuredW);
+            float tooltipH = 54.0f * g_uiScale;
+
+            extern std::unique_ptr<UIRenderer> g_uiRenderer;
+            if (g_uiRenderer) {
+                filenameStr = g_uiRenderer->MakeMiddleEllipsis(tooltipW - 20.0f * g_uiScale, filenameStr, m_textFormat.Get());
             }
+
+            // [UX Fix] Prevent tooltip clipping by window boundaries (auto-avoidance offset)
+            float tooltipX = cellRect.left + 8.0f * g_uiScale;
+            float tooltipY = cellRect.top + 8.0f * g_uiScale;
+            float rightSafetyMargin = 12.0f * g_uiScale; // Margin for window scrollbar/frame
+            if (tooltipX + tooltipW > size.width - rightSafetyMargin) {
+                tooltipX = size.width - rightSafetyMargin - tooltipW;
+            }
+            if (tooltipX < 8.0f * g_uiScale) {
+                tooltipX = 8.0f * g_uiScale;
+            }
+
+            D2D1_RECT_F tooltipRect = D2D1::RectF(tooltipX, tooltipY, tooltipX + tooltipW, tooltipY + tooltipH);
+
+            // [UX Design] Readability ceiling: we want 100% full opacity at 100% panels concentration,
+            // while retaining 60% minimum opacity at 0% panels concentration to protect text contrast.
+            float panelsOpacity = g_config.GlassPanelsOpacity / 100.0f;
+            float protectedOpacity = 0.60f + panelsOpacity * 0.40f;
+            float finalAlpha = protectedOpacity * m_transitionProgress;
+            
+            D2D1_COLOR_F tipBgClr = isLight 
+                ? D2D1::ColorF(0.96f, 0.96f, 0.98f, finalAlpha) 
+                : D2D1::ColorF(0.11f, 0.11f, 0.13f, finalAlpha);
+                
+            m_brushOverlay->SetColor(tipBgClr);
+            m_brushOverlay->SetOpacity(1.0f);
+            pDC->FillRoundedRectangle(D2D1::RoundedRect(tooltipRect, 6.0f * g_uiScale, 6.0f * g_uiScale), m_brushOverlay.Get());
             
             // Draw subtle 1.0px border
             D2D1_COLOR_F tipBorderClr = isLight ? D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.08f) : D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.15f);
@@ -705,8 +713,8 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size, ID
     // 6b. Bottom drag indicator / visual cue (handle strip)
     // Draw OUTSIDE clip area so it renders below the filmstrip edge
     {
-        float handleW = 48.0f * g_uiScale;
-        float handleH = 3.0f * g_uiScale;
+        float handleW = 32.0f * g_uiScale;
+        float handleH = 1.5f * g_uiScale;
         float cx = size.width / 2.0f;
         float cy = galleryH + 5.0f * g_uiScale; // Below filmstrip edge
         
@@ -719,43 +727,47 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size, ID
             m_brushSelection->SetOpacity(m_transitionProgress);
             pHandleBrush = m_brushSelection.Get();
         } else {
-            D2D1_COLOR_F handleClr = isLight ? D2D1::ColorF(0.12f, 0.12f, 0.15f) : D2D1::ColorF(0.9f, 0.9f, 0.9f);
+            D2D1_COLOR_F handleClr = isLight ? D2D1::ColorF(0.12f, 0.12f, 0.15f) : D2D1::ColorF(0.90f, 0.90f, 0.92f);
             m_brushBg->SetColor(handleClr);
             m_brushBg->SetOpacity(m_transitionProgress);
             pHandleBrush = m_brushBg.Get();
         }
         
         if (pHandleBrush && m_brushOverlay) {
-            // 1. Draw Inverse Glow / Stroke
+            // 1. Draw 1px Bottom Drop Shadow (Single-Edge displacement)
             if (m_gridProgress < 0.2f) {
+                // [UX Design] Light theme uses white bottom-glow to contrast on dark backgrounds.
+                // Dark theme uses black shadow to contrast on light backgrounds.
+                // [UX Polish] Boost shadow opacities to ensure legibility on noisy background details.
                 D2D1_COLOR_F strokeClr = isLight ? D2D1::ColorF(1.0f, 1.0f, 1.0f) : D2D1::ColorF(0.0f, 0.0f, 0.0f);
+                float shadowOpacityMultiplier = isLight ? 0.75f : 0.60f;
                 m_brushOverlay->SetColor(strokeClr);
-                m_brushOverlay->SetOpacity(m_transitionProgress * 0.8f);
+                m_brushOverlay->SetOpacity(m_transitionProgress * shadowOpacityMultiplier);
 
-                // Handle Outline
-                D2D1_RECT_F handleStrokeRect = D2D1::RectF(
-                    cx - handleW / 2.0f - 1.5f * g_uiScale, cy - handleH / 2.0f - 1.5f * g_uiScale,
-                    cx + handleW / 2.0f + 1.5f * g_uiScale, cy + handleH / 2.0f + 1.5f * g_uiScale);
-                pDC->FillRoundedRectangle(D2D1::RoundedRect(handleStrokeRect, handleH / 2.0f + 1.5f * g_uiScale, handleH / 2.0f + 1.5f * g_uiScale), m_brushOverlay.Get());
+                // Handle Shadow (shifted down by 1px)
+                D2D1_RECT_F handleShadowRect = D2D1::RectF(
+                    cx - handleW / 2.0f, cy - handleH / 2.0f + 1.0f * g_uiScale,
+                    cx + handleW / 2.0f, cy + handleH / 2.0f + 1.0f * g_uiScale);
+                pDC->FillRoundedRectangle(D2D1::RoundedRect(handleShadowRect, handleH / 2.0f, handleH / 2.0f), m_brushOverlay.Get());
                 
-                // Chevron Outline
-                float chevronSize = 6.0f * g_uiScale;
-                float chevronY = cy + 5.0f * g_uiScale;
-                float strokeThickness = 4.5f * g_uiScale;
-                pDC->DrawLine(D2D1::Point2F(cx - chevronSize, chevronY - chevronSize / 2.0f), D2D1::Point2F(cx, chevronY + chevronSize / 2.0f), m_brushOverlay.Get(), strokeThickness);
-                pDC->DrawLine(D2D1::Point2F(cx, chevronY + chevronSize / 2.0f), D2D1::Point2F(cx + chevronSize, chevronY - chevronSize / 2.0f), m_brushOverlay.Get(), strokeThickness);
+                // Chevron Shadow (shifted down by 1px)
+                float chevronSize = 4.5f * g_uiScale;
+                float chevronY = cy + 4.0f * g_uiScale;
+                float shadowY = chevronY + 1.0f * g_uiScale;
+                pDC->DrawLine(D2D1::Point2F(cx - chevronSize, shadowY - chevronSize / 2.0f), D2D1::Point2F(cx, shadowY + chevronSize / 2.0f), m_brushOverlay.Get(), 1.2f * g_uiScale);
+                pDC->DrawLine(D2D1::Point2F(cx, shadowY + chevronSize / 2.0f), D2D1::Point2F(cx + chevronSize, shadowY - chevronSize / 2.0f), m_brushOverlay.Get(), 1.2f * g_uiScale);
             }
             
-            // 2. Draw Foreground
+            // 2. Draw Foreground (White/Light/Hover Solid)
             if (m_gridProgress < 0.2f) {
                 D2D1_RECT_F handleRect = D2D1::RectF(cx - handleW / 2.0f, cy - handleH / 2.0f, cx + handleW / 2.0f, cy + handleH / 2.0f);
                 pDC->FillRoundedRectangle(D2D1::RoundedRect(handleRect, handleH / 2.0f, handleH / 2.0f), pHandleBrush);
                 
                 // Chevron Foreground
-                float chevronSize = 6.0f * g_uiScale;
-                float chevronY = cy + 5.0f * g_uiScale;
-                pDC->DrawLine(D2D1::Point2F(cx - chevronSize, chevronY - chevronSize / 2.0f), D2D1::Point2F(cx, chevronY + chevronSize / 2.0f), pHandleBrush, 2.0f * g_uiScale);
-                pDC->DrawLine(D2D1::Point2F(cx, chevronY + chevronSize / 2.0f), D2D1::Point2F(cx + chevronSize, chevronY - chevronSize / 2.0f), pHandleBrush, 2.0f * g_uiScale);
+                float chevronSize = 4.5f * g_uiScale;
+                float chevronY = cy + 4.0f * g_uiScale;
+                pDC->DrawLine(D2D1::Point2F(cx - chevronSize, chevronY - chevronSize / 2.0f), D2D1::Point2F(cx, chevronY + chevronSize / 2.0f), pHandleBrush, 1.2f * g_uiScale);
+                pDC->DrawLine(D2D1::Point2F(cx, chevronY + chevronSize / 2.0f), D2D1::Point2F(cx + chevronSize, chevronY - chevronSize / 2.0f), pHandleBrush, 1.2f * g_uiScale);
             }
         }
         

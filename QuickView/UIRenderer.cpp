@@ -1169,19 +1169,19 @@ void UIRenderer::DrawOSD(ID2D1DeviceContext* dc, HWND hwnd) {
                 config.specularOpacity = g_config.GlassSpecularOpacity;
                 config.blurStandardDeviation = g_config.GlassBlurSigma * s;
                 config.shadowOpacity = g_config.GlassShadowOpacity;
-                config.opacity = g_config.GlassPanelsOpacity / 100.0f;
+                config.opacity = g_config.GlassOsdOpacity / 100.0f;
                 
                 if (g_config.EnableGeekGlass) {
                     // Compensate shadow intensity to remain invariant to concentration balancing
-                    // but maintain consistency with the Panel Density scaling used in other windows.
-                    float density = g_config.GlassPanelsOpacity / 100.0f;
+                    // but maintain consistency with the OSD Density scaling used in other windows.
+                    float density = g_config.GlassOsdOpacity / 100.0f;
                     config.shadowOpacity = g_config.GlassShadowOpacity * density;
 
                     // Material Booster Layer (Theme-Aware and Full Range)
                     ComPtr<ID2D1SolidColorBrush> boosterBrush;
                     bool isLight = (config.theme == QuickView::UI::GeekGlass::ThemeMode::Light);
                     D2D1_COLOR_F fillerBase = isLight ? D2D1::ColorF(0.95f, 0.95f, 0.97f, 1.0f) : D2D1::ColorF(0.04f, 0.04f, 0.04f, 1.0f);
-                    float baseAlpha = (g_config.GlassPanelsOpacity / 100.0f);
+                    float baseAlpha = (g_config.GlassOsdOpacity / 100.0f);
                     D2D1_COLOR_F boosterColor = D2D1::ColorF(fillerBase.r, fillerBase.g, fillerBase.b, baseAlpha);
                     dc->CreateSolidColorBrush(boosterColor, &boosterBrush);
                     dc->FillRoundedRectangle(D2D1::RoundedRect(r, 6.0f * s, 6.0f * s), boosterBrush.Get());
@@ -1261,19 +1261,19 @@ void UIRenderer::DrawOSD(ID2D1DeviceContext* dc, HWND hwnd) {
         config.specularOpacity = g_config.GlassSpecularOpacity;
         config.blurStandardDeviation = g_config.GlassBlurSigma * s;
         config.shadowOpacity = g_config.GlassShadowOpacity;
-        config.opacity = g_config.GlassPanelsOpacity / 100.0f;
+        config.opacity = g_config.GlassOsdOpacity / 100.0f;
 
         if (g_config.EnableGeekGlass) {
             // Compensate shadow intensity to remain invariant to concentration balancing
-            // but maintain consistency with the Panel Density scaling used in other windows.
-            float density = g_config.GlassPanelsOpacity / 100.0f;
+            // but maintain consistency with the OSD Density scaling used in other windows.
+            float density = g_config.GlassOsdOpacity / 100.0f;
             config.shadowOpacity = g_config.GlassShadowOpacity * density;
 
             // Material Booster Layer (Theme-Aware and Full Range)
             ComPtr<ID2D1SolidColorBrush> boosterBrush;
             bool isLight = (config.theme == QuickView::UI::GeekGlass::ThemeMode::Light);
             D2D1_COLOR_F fillerBase = isLight ? D2D1::ColorF(0.95f, 0.95f, 0.97f, 1.0f) : D2D1::ColorF(0.04f, 0.04f, 0.04f, 1.0f);
-            float baseAlpha = (g_config.GlassPanelsOpacity / 100.0f);
+            float baseAlpha = (g_config.GlassOsdOpacity / 100.0f);
             D2D1_COLOR_F boosterColor = D2D1::ColorF(fillerBase.r, fillerBase.g, fillerBase.b, baseAlpha);
             dc->CreateSolidColorBrush(boosterColor, &boosterBrush);
             dc->FillRoundedRectangle(D2D1::RoundedRect(bgRect, 8.0f * s, 8.0f * s), boosterBrush.Get());
@@ -1578,24 +1578,25 @@ void UIRenderer::DrawWindowControls(ID2D1DeviceContext* dc, HWND hwnd) {
         // Window controls need high visibility, slightly more opaque
         float capsuleOpacity = (g_config.GlassPanelsOpacity / 100.0f);
         config.opacity = std::min(1.0f, capsuleOpacity);
-        config.shadowOpacity = g_config.GlassShadowOpacity * 1.5f;
+        config.shadowOpacity = g_config.GlassShadowOpacity;
         config.pBackgroundCommandList = m_bgCommandList.Get();
         config.backgroundTransform = m_compEngine ? m_compEngine->GetScreenTransform() : D2D1::Matrix3x2F::Identity();
         
         if (g_config.EnableGeekGlass) {
-            // Material Booster Layer for contrast
+            geekGlass.DrawGeekGlassPanel(dc, config);
+
+            // Material Booster Layer for contrast (aligned with toolbar/infopanel master opacity)
+            // Rendered on top of GeekGlass to match Toolbar & InfoPanel solid transition at 100% concentration.
             ComPtr<ID2D1SolidColorBrush> boosterBrush;
-            D2D1_COLOR_F fillerBase = isLight ? D2D1::ColorF(0.95f, 0.95f, 0.97f, 1.0f) : D2D1::ColorF(0.04f, 0.04f, 0.04f, 1.0f);
-            float baseAlpha = 0.25f * config.opacity;
+            D2D1_COLOR_F fillerBase = isLight ? D2D1::ColorF(0.95f, 0.95f, 0.97f, 1.0f) : D2D1::ColorF(0.08f, 0.08f, 0.10f, 1.0f);
+            float baseAlpha = config.opacity;
             dc->CreateSolidColorBrush(D2D1::ColorF(fillerBase.r, fillerBase.g, fillerBase.b, baseAlpha), &boosterBrush);
             dc->FillRoundedRectangle(D2D1::RoundedRect(capsuleRect, cornerRadius, cornerRadius), boosterBrush.Get());
             
-            geekGlass.DrawGeekGlassPanel(dc, config);
-            
-            // Replaced ugly 3D Toppings with a designer 1px subtle inner glow border
+            // Replaced ugly 3D Toppings with a designer 1px subtle inner glow border (scaled with config.opacity for consistency)
             if (g_config.GlassShowBorders) {
                 ComPtr<ID2D1SolidColorBrush> borderBrush;
-                D2D1_COLOR_F borderColor = isLight ? D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.08f) : D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.15f);
+                D2D1_COLOR_F borderColor = isLight ? D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.08f * config.opacity) : D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.15f * config.opacity);
                 dc->CreateSolidColorBrush(borderColor, &borderBrush);
                 dc->DrawRoundedRectangle(D2D1::RoundedRect(capsuleRect, cornerRadius, cornerRadius), borderBrush.Get(), 1.0f * s);
             }

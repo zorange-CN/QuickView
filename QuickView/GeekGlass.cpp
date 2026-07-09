@@ -159,10 +159,14 @@ void GeekGlassEngine::CreateOrUpdateBrushes(ID2D1RenderTarget* pRT, const GeekGl
     float glowG = isLight ? 0.0f : 1.0f;
     float glowB = isLight ? 0.0f : 1.0f;
 
-    borderStops[0] = {0.00f, D2D1::ColorF(glowR, glowG, glowB,
-                                          0.30f)}; // Top-Left: Light-catcher
-    borderStops[1] = { 0.50f, D2D1::ColorF(glowR, glowG, glowB, 0.15f) }; // Middle: Transition
-    borderStops[2] = { 1.00f, D2D1::ColorF(glowR, glowG, glowB, 0.05f) }; // Bottom-Right: Backlight fade
+    // [UX Fix] Soften the starting gradient borders to reduce harsh lines, especially for white borders on dark themes.
+    float startAlpha = isLight ? 0.15f : 0.18f;
+    float midAlpha   = isLight ? 0.08f : 0.08f;
+    float endAlpha   = isLight ? 0.02f : 0.02f;
+
+    borderStops[0] = {0.00f, D2D1::ColorF(glowR, glowG, glowB, startAlpha)}; // Top-Left: Light-catcher
+    borderStops[1] = {0.50f, D2D1::ColorF(glowR, glowG, glowB, midAlpha)};   // Middle: Transition
+    borderStops[2] = {1.00f, D2D1::ColorF(glowR, glowG, glowB, endAlpha)};   // Bottom-Right: Backlight fade
     
     pStops.Reset();
     pRT->CreateGradientStopCollection(borderStops, 3, &pStops);
@@ -372,6 +376,12 @@ void GeekGlassEngine::DrawGeekGlassPanel(ID2D1RenderTarget* pRT, const GeekGlass
             pRT->FillRoundedRectangle(roundedRect, pImageBrush.Get());
         }
 
+        // [UX Fix] Draw tint overlay on top of blurred background only for successful blur rendering.
+        // This avoids double tint overlay fill in flicker fallback mode.
+        if (m_baseTintBrush) {
+            pRT->FillRoundedRectangle(roundedRect, m_baseTintBrush.Get());
+        }
+
         // Nano-Grain (Micro-Texture)
         ComPtr<ID2D1SolidColorBrush> grain;
         pRT->CreateSolidColorBrush(D2D1::ColorF(1, 1, 1, 0.012f * config.opacity), &grain);
@@ -386,8 +396,6 @@ void GeekGlassEngine::DrawGeekGlassPanel(ID2D1RenderTarget* pRT, const GeekGlass
             m_baseTintBrush->SetOpacity(config.opacity * config.tintAlpha); // Restore immediately
         }
     }
-
-    if (m_baseTintBrush) pRT->FillRoundedRectangle(roundedRect, m_baseTintBrush.Get());
 
     DrawGeekGlassToppings(pRT, config);
 }

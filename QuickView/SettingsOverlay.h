@@ -230,4 +230,5 @@ private:
     QuickView::UI::GeekGlass::GeekGlassEngine m_geekGlass;
     ID2D1CommandList* m_bgCmdList = nullptr;
     D2D1_MATRIX_3X2_F m_bgTransform = D2D1::Matrix3x2F::Identity();
+    int m_borderStrokeOption = 0; // [UX Fix] 3-state border options (0=None, 1=Fine, 2=Standard)
 };
