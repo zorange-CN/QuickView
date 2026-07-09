@@ -158,7 +158,14 @@ void FileNavigator::Initialize(const std::wstring& currentPath, HWND hwnd) {
     }
 
     SortEntries(entries, sortOrder, sortDesc);
-    
+
+    // [RAW+JPEG Pairing] Fold same-name RAW + rendered pairs (real folders
+    // only; archives are never paired)
+    m_pairedRaws.clear();
+    if (g_config.PairRawJpeg && !m_archive) {
+        ApplyRawJpegPairing(entries, m_pairedRaws);
+    }
+
     // Write back
     m_files.clear();
     m_sizes.clear();
@@ -189,6 +196,22 @@ void FileNavigator::Initialize(const std::wstring& currentPath, HWND hwnd) {
                 if (m_files[i] == currentFull) {
                     m_currentIndex = (int)i;
                     break;
+                }
+            }
+
+            // [RAW+JPEG Pairing] The opened file may be a RAW folded behind
+            // its rendered sibling -- land on the pair instead.
+            if (m_currentIndex < 0 && !m_pairedRaws.empty()) {
+                for (const auto& [renderedId, raw] : m_pairedRaws) {
+                    if (raw.path == currentFull) {
+                        for (size_t i = 0; i < m_ids.size(); ++i) {
+                            if (m_ids[i] == renderedId) {
+                                m_currentIndex = (int)i;
+                                break;
+                            }
+                        }
+                        break;
+                    }
                 }
             }
         }
@@ -395,6 +418,21 @@ std::wstring FileNavigator::GetResolvedPath(const std::wstring& requestedPath) c
             return m_files[m_currentIndex];
         }
     }
+
+    // [RAW+JPEG Pairing] A RAW folded behind its rendered sibling resolves to
+    // that sibling: with pairing enabled the pair is one logical photo and the
+    // rendered file is its visible face, regardless of which file was opened.
+    if (!m_pairedRaws.empty()) {
+        for (const auto& [renderedId, raw] : m_pairedRaws) {
+            if (raw.path == requestedPath) {
+                for (size_t i = 0; i < m_ids.size(); ++i) {
+                    if (m_ids[i] == renderedId) return m_files[i];
+                }
+                break;
+            }
+        }
+    }
+
     return requestedPath;
 }
 
@@ -454,6 +492,7 @@ void FileNavigator::ApplyPendingScanResult() {
     m_files = std::move(result.files);
     m_sizes = std::move(result.sizes);
     m_ids = std::move(result.ids);
+    m_pairedRaws = std::move(result.pairedRaws);
 
     // Relocate current index in new list
     if (!currentPath.empty()) {
@@ -461,13 +500,97 @@ void FileNavigator::ApplyPendingScanResult() {
         if (it != m_files.end()) {
             m_currentIndex = (int)std::distance(m_files.begin(), it);
         } else {
-            // Fallback: file was deleted externally — clamp to nearest valid index
-            if (m_currentIndex >= (int)m_files.size()) {
-                m_currentIndex = (int)m_files.size() - 1;
+            // [RAW+JPEG Pairing] The viewed RAW may have just been folded
+            // behind its rendered sibling (e.g. its JPG appeared on disk) --
+            // relocate to the pair instead of clamping.
+            bool redirected = false;
+            for (const auto& [renderedId, raw] : m_pairedRaws) {
+                if (raw.path == currentPath) {
+                    for (size_t i = 0; i < m_ids.size(); ++i) {
+                        if (m_ids[i] == renderedId) {
+                            m_currentIndex = (int)i;
+                            redirected = true;
+                            break;
+                        }
+                    }
+                    break;
+                }
             }
-            if (m_files.empty()) m_currentIndex = -1;
+
+            // Fallback: file was deleted externally — clamp to nearest valid index
+            if (!redirected) {
+                if (m_currentIndex >= (int)m_files.size()) {
+                    m_currentIndex = (int)m_files.size() - 1;
+                }
+                if (m_files.empty()) m_currentIndex = -1;
+            }
         }
     }
+}
+
+void FileNavigator::ApplyRawJpegPairing(std::vector<SortEntry>& entries,
+                                        std::unordered_map<ImageID, PairedRaw>& outPairedRaws) {
+    outPairedRaws.clear();
+
+    // Early exit: pairing is only possible when the folder mixes camera RAWs
+    // with whitelisted rendered stills. One cheap in-memory pass, no I/O.
+    bool anyRaw = false, anyRendered = false;
+    for (const auto& e : entries) {
+        anyRaw = anyRaw || QuickView::IsRawExtension(e.t);
+        anyRendered = anyRendered || QuickView::IsRenderedPairExtension(e.t);
+        if (anyRaw && anyRendered) break;
+    }
+    if (!anyRaw || !anyRendered) return;
+
+    // Group pairing candidates by lowercase stem (file name minus extension;
+    // the scan covers a single directory, so the stem identifies the shot).
+    // Non-candidates (e.g. a same-name .png screenshot) neither pair nor
+    // block a pair.
+    struct Group {
+        int rawIdx = -1;
+        int renderedIdx = -1;
+        int rawCount = 0;
+        int renderedCount = 0;
+    };
+    std::unordered_map<std::wstring, Group> groups;
+    groups.reserve(entries.size());
+    for (int i = 0; i < (int)entries.size(); ++i) {
+        const auto& e = entries[i];
+        const bool isRaw = QuickView::IsRawExtension(e.t);
+        const bool isRendered = !isRaw && QuickView::IsRenderedPairExtension(e.t);
+        if (!isRaw && !isRendered) continue;
+
+        const size_t sep = e.p.find_last_of(L"\\/");
+        const size_t start = (sep == std::wstring::npos) ? 0 : sep + 1;
+        std::wstring stem = e.p.substr(start, e.p.size() - start - e.t.size());
+        std::transform(stem.begin(), stem.end(), stem.begin(), [](wchar_t c){ return std::towlower(c); });
+
+        Group& g = groups[stem];
+        if (isRaw) { g.rawCount++; g.rawIdx = i; }
+        else       { g.renderedCount++; g.renderedIdx = i; }
+    }
+
+    // Strict 1:1: fold only when a stem has exactly one RAW and exactly one
+    // rendered still. Ambiguous groups (rename collisions, bracketing
+    // leftovers) stay fully visible so the user can see and resolve them.
+    std::vector<char> hide(entries.size(), 0);
+    for (const auto& [stem, g] : groups) {
+        if (g.rawCount != 1 || g.renderedCount != 1) continue;
+        const SortEntry& raw = entries[g.rawIdx];
+        const SortEntry& rendered = entries[g.renderedIdx];
+        outPairedRaws.emplace(ComputePathHash(rendered.p),
+                              PairedRaw{ raw.p, raw.s, ComputePathHash(raw.p) });
+        hide[g.rawIdx] = 1;
+    }
+    if (outPairedRaws.empty()) return;
+
+    // Drop the hidden RAW entries, preserving sort order.
+    std::vector<SortEntry> kept;
+    kept.reserve(entries.size() - outPairedRaws.size());
+    for (size_t i = 0; i < entries.size(); ++i) {
+        if (!hide[i]) kept.push_back(std::move(entries[i]));
+    }
+    entries = std::move(kept);
 }
 
 void FileNavigator::SortEntries(std::vector<SortEntry>& entries, int sortOrder, bool sortDesc) {
@@ -687,6 +810,11 @@ FileNavigator::DirectoryScanResult FileNavigator::PerformDirectoryScan() {
     int sortOrder = g_runtime.SortOrder;
     bool sortDesc = g_runtime.SortDescending;
     SortEntries(entries, sortOrder, sortDesc);
+
+    // [RAW+JPEG Pairing] Same fold as Initialize (watcher rescan path)
+    if (g_config.PairRawJpeg) {
+        ApplyRawJpegPairing(entries, result.pairedRaws);
+    }
 
     result.files.clear();
     result.sizes.clear();

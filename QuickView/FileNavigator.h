@@ -3,6 +3,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <unordered_map>
 #include <filesystem>
 #include <algorithm>
 #include <cwctype>
@@ -30,11 +31,19 @@ inline ImageID ComputePathHash(const std::wstring& path) {
 
 class FileNavigator {
 public:
+    // [RAW+JPEG Pairing] A RAW hidden behind its same-name rendered sibling
+    struct PairedRaw {
+        std::wstring path;
+        uintmax_t size = 0;
+        ImageID id = 0;
+    };
+
     // Background scan result (produced by watcher thread, consumed by main thread)
     struct DirectoryScanResult {
         std::vector<std::wstring> files;
         std::vector<uintmax_t> sizes;
         std::vector<ImageID> ids;
+        std::unordered_map<ImageID, PairedRaw> pairedRaws;
     };
 
     FileNavigator() = default;
@@ -98,6 +107,18 @@ public:
         return ComputePathHash(path);
     }
 
+    // [RAW+JPEG Pairing] Query the RAW hidden behind a rendered file (by the
+    // rendered file's ImageID); nullptr if that file has no hidden RAW.
+    inline const PairedRaw* GetPairedRaw(ImageID renderedId) const {
+        auto it = m_pairedRaws.find(renderedId);
+        return it == m_pairedRaws.end() ? nullptr : &it->second;
+    }
+    inline bool HasPairedRaw(ImageID renderedId) const {
+        return m_pairedRaws.find(renderedId) != m_pairedRaws.end();
+    }
+    inline size_t PairedRawCount() const { return m_pairedRaws.size(); }
+
+
     // [Directory Watcher] Apply pending scan result from background thread (main thread only)
     void ApplyPendingScanResult();
 
@@ -111,6 +132,14 @@ public:
     };
 
     static void SortEntries(std::vector<SortEntry>& entries, int sortOrder, bool sortDesc);
+
+    // [RAW+JPEG Pairing] Fold same-name RAW + rendered pairs: strict 1:1 per
+    // stem (exactly one RAW and exactly one whitelisted rendered still), the
+    // RAW entry is removed and recorded in outPairedRaws keyed by the rendered
+    // file's ImageID. Shared by Initialize and PerformDirectoryScan; pure on
+    // its inputs so it is unit-testable.
+    static void ApplyRawJpegPairing(std::vector<SortEntry>& entries,
+                                    std::unordered_map<ImageID, PairedRaw>& outPairedRaws);
 
 private:
     static std::wstring_view GetPhysicalHostPath(std::wstring_view vfsPath);
@@ -127,6 +156,8 @@ private:
     std::vector<std::wstring> m_files;
     std::vector<uintmax_t> m_sizes;
     std::vector<ImageID> m_ids;  // [ImageID] Precomputed path hashes
+    // [RAW+JPEG Pairing] Hidden RAWs keyed by their rendered sibling's ImageID
+    std::unordered_map<ImageID, PairedRaw> m_pairedRaws;
     int m_currentIndex = -1;
     bool m_hitEnd = false;
     std::wstring m_crossFolderMessage;
