@@ -1145,6 +1145,16 @@ void SettingsOverlay::BuildMenu() {
     }
     tabTheme.items.push_back(itemRounded);
 
+    // UI Borders
+    SettingsItem itemBorders = { AppStrings::Settings_Label_UIBorders, OptionType::Toggle, &g_config.GlassShowBorders };
+    itemBorders.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
+        SaveConfig();
+        if (overlay && overlay->m_hwnd) {
+            InvalidateRect(overlay->m_hwnd, nullptr, FALSE);
+        }
+    };
+    tabTheme.items.push_back(itemBorders);
+
     if (g_config.ThemeMode == 3) {
         // Custom Theme Mode options
         SettingsItem itemAccentColor = { AppStrings::Settings_Label_AccentColor, OptionType::CustomColorRow, nullptr, {} };
@@ -1353,9 +1363,6 @@ void SettingsOverlay::BuildMenu() {
     itemMenus.tooltipText = AppStrings::Settings_Tooltip_MenusDensity;
     itemMenus.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) { overlay->AutoSwitchToCustom(); };
     tabTheme.items.push_back(itemMenus);
-
-    SettingsItem itemBorders = { AppStrings::Settings_Label_UIBorders, OptionType::Toggle, &g_config.GlassShowBorders };
-    tabTheme.items.push_back(itemBorders);
 
 
     // Theme Management

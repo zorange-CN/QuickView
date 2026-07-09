@@ -2312,7 +2312,7 @@ std::vector<InfoRow> UIRenderer::BuildGridRows(const CImageLoader::ImageMetadata
         const bool hdrLikeContent = IsHdrLikeContent(metadata);
         if (hdrLikeContent &&
             (colorText.empty() ||
-             colorText == L"sRGB (Untagged)" ||
+             colorText == L"sRGB" ||
              colorText == L"Embedded Profile" ||
              colorText == L"Uncalibrated")) {
             const wchar_t* primaries = QuickView::ToString(
@@ -2330,8 +2330,12 @@ std::vector<InfoRow> UIRenderer::BuildGridRows(const CImageLoader::ImageMetadata
             }
         }
         if (!colorText.empty()) {
-        if (metadata.HasEmbeddedColorProfile) colorText += L" [ICC]";
-        rows.push_back({L"\U0001F3A8", L"Profile", colorText, L"", L"", TruncateMode::None, false});
+            // Suffix: determined solely by HasEmbeddedColorProfile state
+            if (metadata.HasEmbeddedColorProfile.has_value()) {
+                colorText += (*metadata.HasEmbeddedColorProfile) ? L" [ICC]" : L" (Untagged)";
+            }
+
+            rows.push_back({L"\U0001F3A8", L"Profile", colorText, L"", L"", TruncateMode::None, false});
         }
     }
 

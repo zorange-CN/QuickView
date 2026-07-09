@@ -3870,6 +3870,7 @@ void SaveConfig() {
     WritePrivateProfileStringW(L"Theme", L"CustomTextB", std::to_wstring(g_config.ThemeCustomTextB).c_str(), iniPath.c_str());
 
     WritePrivateProfileStringW(L"GeekGlass", L"EnableGeekGlass", g_config.EnableGeekGlass ? L"1" : L"0", iniPath.c_str());
+    WritePrivateProfileStringW(L"GeekGlass", L"GlassShowBorders", g_config.GlassShowBorders ? L"1" : L"0", iniPath.c_str());
     WritePrivateProfileStringW(L"GeekGlass", L"GlassUIAnimations", g_config.GlassUIAnimations ? L"1" : L"0", iniPath.c_str());
     WritePrivateProfileStringW(L"GeekGlass", L"GlassBlurSigma", std::to_wstring(g_config.GlassBlurSigma).c_str(), iniPath.c_str());
     WritePrivateProfileStringW(L"GeekGlass", L"GlassTintAlpha", std::to_wstring(g_config.GlassTintAlpha).c_str(), iniPath.c_str());
@@ -4081,6 +4082,7 @@ void LoadConfig() {
     g_config.ThemeCustomTextB = (float)_wtof(bufTCTB);
 
     g_config.EnableGeekGlass = GetPrivateProfileIntW(L"GeekGlass", L"EnableGeekGlass", 1, iniPath.c_str()) != 0;
+    g_config.GlassShowBorders = GetPrivateProfileIntW(L"GeekGlass", L"GlassShowBorders", 1, iniPath.c_str()) != 0;
     g_config.GlassUIAnimations = GetPrivateProfileIntW(L"GeekGlass", L"GlassUIAnimations", 1, iniPath.c_str()) != 0;
     
     wchar_t bufGGB[32], bufGGTA[32], bufGGSO[32], bufGGSH[32], bufGGO[32], bufGGP[32], bufGGM[32], bufGGMenu[32];
@@ -10344,12 +10346,11 @@ void ProcessEngineEvents(HWND hwnd) {
                 if (finalMetadata.MeteringMode.empty() && !GetPaneContext(PaneSlot::Primary).metadata.MeteringMode.empty()) finalMetadata.MeteringMode = GetPaneContext(PaneSlot::Primary).metadata.MeteringMode;
                 if (finalMetadata.ExposureProgram.empty() && !GetPaneContext(PaneSlot::Primary).metadata.ExposureProgram.empty()) finalMetadata.ExposureProgram = GetPaneContext(PaneSlot::Primary).metadata.ExposureProgram;
                 if (finalMetadata.WhiteBalance.empty() && !GetPaneContext(PaneSlot::Primary).metadata.WhiteBalance.empty()) finalMetadata.WhiteBalance = GetPaneContext(PaneSlot::Primary).metadata.WhiteBalance;
-                
-                // [Phase 18 Fix] Preserve Embedded Profile Flag
-                if (!finalMetadata.HasEmbeddedColorProfile && GetPaneContext(PaneSlot::Primary).metadata.HasEmbeddedColorProfile) {
-                    finalMetadata.HasEmbeddedColorProfile = true;
+                if (finalMetadata.ColorSpace.empty() && !GetPaneContext(PaneSlot::Primary).metadata.ColorSpace.empty()) finalMetadata.ColorSpace = GetPaneContext(PaneSlot::Primary).metadata.ColorSpace;
+                if (!finalMetadata.HasEmbeddedColorProfile.has_value() && GetPaneContext(PaneSlot::Primary).metadata.HasEmbeddedColorProfile.has_value()) {
+                    finalMetadata.HasEmbeddedColorProfile = GetPaneContext(PaneSlot::Primary).metadata.HasEmbeddedColorProfile;
                 }
-
+                
                 // 8. HDR / Pixel Workspace: preserve decoder-provided high-value metadata
                 if (finalMetadata.colorInfo.dataSpace == QuickView::PixelDataSpace::Unknown &&
                     GetPaneContext(PaneSlot::Primary).metadata.colorInfo.dataSpace != QuickView::PixelDataSpace::Unknown) {
@@ -10637,7 +10638,7 @@ void ProcessEngineEvents(HWND hwnd) {
                  if (!evt.metadata.MeteringMode.empty()) GetPaneContext(PaneSlot::Primary).metadata.MeteringMode = evt.metadata.MeteringMode;
                  if (!evt.metadata.ExposureProgram.empty()) GetPaneContext(PaneSlot::Primary).metadata.ExposureProgram = evt.metadata.ExposureProgram;
                  if (!evt.metadata.ColorSpace.empty()) GetPaneContext(PaneSlot::Primary).metadata.ColorSpace = evt.metadata.ColorSpace;
-                 if (evt.metadata.HasEmbeddedColorProfile) GetPaneContext(PaneSlot::Primary).metadata.HasEmbeddedColorProfile = true;
+                 if (evt.metadata.HasEmbeddedColorProfile.has_value()) GetPaneContext(PaneSlot::Primary).metadata.HasEmbeddedColorProfile = evt.metadata.HasEmbeddedColorProfile;
                  if (evt.metadata.colorInfo.dataSpace != QuickView::PixelDataSpace::Unknown) GetPaneContext(PaneSlot::Primary).metadata.colorInfo = evt.metadata.colorInfo;
                  if (evt.metadata.hdrMetadata.isValid || evt.metadata.hdrMetadata.hasGainMap) GetPaneContext(PaneSlot::Primary).metadata.hdrMetadata = evt.metadata.hdrMetadata;
                  

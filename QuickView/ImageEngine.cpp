@@ -360,8 +360,10 @@ void ImageEngine::DispatchImageLoad(const std::wstring& path, ImageID imageId, u
                 e.metadata.FormatDetails = cachedFrame->formatDetails;
                 e.metadata.colorInfo = cachedFrame->colorInfo;
                 e.metadata.hdrMetadata = cachedFrame->hdrMetadata;
-                e.metadata.HasEmbeddedColorProfile =
-                    cachedFrame->colorInfo.hasEmbeddedIcc || !cachedFrame->iccProfile.empty();
+                if (!e.metadata.HasEmbeddedColorProfile.has_value()) {
+                    e.metadata.HasEmbeddedColorProfile =
+                        cachedFrame->colorInfo.hasEmbeddedIcc || !cachedFrame->iccProfile.empty();
+                }
                 
                 if (cachedFrame->IsSvg()) e.metadata.Format = L"SVG"; 
 
@@ -1269,9 +1271,11 @@ void ImageEngine::FastLane::QueueWorker() {
                 e.metadata.FileSize = info.fileSize;
                 e.metadata.colorInfo = rawFrame.colorInfo;
                 e.metadata.hdrMetadata = rawFrame.hdrMetadata;
-                e.metadata.HasEmbeddedColorProfile =
-                    rawFrame.colorInfo.hasEmbeddedIcc || !safeFrame->iccProfile.empty();
-
+                if (!e.metadata.HasEmbeddedColorProfile.has_value()) {
+                    e.metadata.HasEmbeddedColorProfile =
+                        rawFrame.colorInfo.hasEmbeddedIcc || !safeFrame->iccProfile.empty();
+                }
+                    
                 // [v5.3] Metadata is now populated by LoadToFrame (Unified path)
                 // We don't call LoadToFrame with pMetadata in FastLane currently, 
                 // but info.format from PeekHeader is sufficient for Scout mismatch check.

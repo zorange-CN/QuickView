@@ -481,7 +481,7 @@ struct AppConfig {
     float ThemeCustomTextB = 1.0f;
 
     // --- Geek Glass Pipeline ---
-    bool GlassShowBorders = false;         // Global toggle for UI Borders
+    bool GlassShowBorders = true;         // Global toggle for UI Borders
     bool EnableGeekGlass = true;           // Master switch (fallback to pure colors)
     bool GlassUIAnimations = true;         // UI animations (0ms hard cut if false)
     float GlassBlurSigma = 3.0f;           // Blur radius (5.0f to 40.0f)

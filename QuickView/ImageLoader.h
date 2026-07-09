@@ -7,6 +7,7 @@
 #include <memory_resource>
 #include <stop_token>
 #include <vector>
+#include <optional>
 #include <string>
 #include <cwchar>
 #include <type_traits>
@@ -69,7 +70,7 @@ public:
     DWORD LoadTimeMs = 0;    // Load time in milliseconds
 
     // [Phase 18] Embedded Profile Flag
-    bool HasEmbeddedColorProfile = false;
+    std::optional<bool> HasEmbeddedColorProfile;
 
     // GPS
     bool HasGPS = false;
