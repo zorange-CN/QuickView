@@ -140,6 +140,8 @@ const wchar_t *Toolbar_Tooltip_Gallery = nullptr;
 const wchar_t *Toolbar_Tooltip_Info = nullptr;
 const wchar_t *Toolbar_Tooltip_RawPreview = nullptr;
 const wchar_t *Toolbar_Tooltip_RawFull = nullptr;
+const wchar_t *Toolbar_Tooltip_RawPairView = nullptr;
+const wchar_t *Toolbar_Tooltip_RawPairBack = nullptr;
 const wchar_t *Toolbar_Tooltip_FixExtension = nullptr;
 const wchar_t *Toolbar_Tooltip_Pin = nullptr;
 const wchar_t *Toolbar_Tooltip_Unpin = nullptr;
@@ -626,6 +628,8 @@ struct LanguageTable {
     const wchar_t *Toolbar_Tooltip_Info;
     const wchar_t *Toolbar_Tooltip_RawPreview;
     const wchar_t *Toolbar_Tooltip_RawFull;
+    const wchar_t *Toolbar_Tooltip_RawPairView;
+    const wchar_t *Toolbar_Tooltip_RawPairBack;
     const wchar_t *Toolbar_Tooltip_FixExtension;
     const wchar_t *Toolbar_Tooltip_Pin;
     const wchar_t *Toolbar_Tooltip_Unpin;
@@ -1109,6 +1113,8 @@ static const LanguageTable Table_EN = {
     L"Info Panel", // Toolbar_Tooltip_Info
     L"RAW: Preview (Click for Full)", // Toolbar_Tooltip_RawPreview
     L"RAW: Full Decode (Click for Preview)", // Toolbar_Tooltip_RawFull
+    L"RAW: View paired RAW (Full Decode)", // Toolbar_Tooltip_RawPairView
+    L"RAW: Back to paired image", // Toolbar_Tooltip_RawPairBack
     L"Extension Mismatch (Fix)", // Toolbar_Tooltip_FixExtension
     L"Pin Toolbar", // Toolbar_Tooltip_Pin
     L"Unpin Toolbar", // Toolbar_Tooltip_Unpin
@@ -1592,6 +1598,8 @@ static const LanguageTable Table_CN = {
     L"信息面板", // Toolbar_Tooltip_Info
     L"RAW: 快速预览 (点击切换完整)", // Toolbar_Tooltip_RawPreview
     L"RAW: 完整解码 (点击切换预览)", // Toolbar_Tooltip_RawFull
+    L"RAW: 查看配对 RAW (完整解码)", // Toolbar_Tooltip_RawPairView
+    L"RAW: 返回配对图像", // Toolbar_Tooltip_RawPairBack
     L"扩展名不匹配 (修复)", // Toolbar_Tooltip_FixExtension
     L"固定工具栏", // Toolbar_Tooltip_Pin
     L"取消固定工具栏", // Toolbar_Tooltip_Unpin
@@ -2075,6 +2083,8 @@ static const LanguageTable Table_TW = {
     L"資訊面板", // Toolbar_Tooltip_Info
     L"RAW: 快速預覽 (點選切換完整)", // Toolbar_Tooltip_RawPreview
     L"RAW: 完整解碼 (點選切換預覽)", // Toolbar_Tooltip_RawFull
+    L"RAW: 檢視配對 RAW (完整解碼)", // Toolbar_Tooltip_RawPairView
+    L"RAW: 返回配對圖像", // Toolbar_Tooltip_RawPairBack
     L"副檔名不符 (修復)", // Toolbar_Tooltip_FixExtension
     L"固定工具列", // Toolbar_Tooltip_Pin
     L"取消固定工具列", // Toolbar_Tooltip_Unpin
@@ -2558,6 +2568,8 @@ static const LanguageTable Table_JA = {
     L"情報パネル", // Toolbar_Tooltip_Info
     L"RAW: プレビュー (クリックでフル)", // Toolbar_Tooltip_RawPreview
     L"RAW: フルデコード (クリックでプレビュー)", // Toolbar_Tooltip_RawFull
+    L"RAW: ペアのRAWを表示 (フルデコード)", // Toolbar_Tooltip_RawPairView
+    L"RAW: ペア画像に戻る", // Toolbar_Tooltip_RawPairBack
     L"拡張子不一致 (修正)", // Toolbar_Tooltip_FixExtension
     L"ツールバーを固定", // Toolbar_Tooltip_Pin
     L"ツールバーの固定を解除", // Toolbar_Tooltip_Unpin
@@ -3041,6 +3053,8 @@ static const LanguageTable Table_RU = {
     L"Информационная панель", // Toolbar_Tooltip_Info
     L"RAW: Предпросмотр (нажмите для полного)", // Toolbar_Tooltip_RawPreview
     L"RAW: Полное декодирование (нажмите для предпросмотра)", // Toolbar_Tooltip_RawFull
+    L"RAW: Показать парный RAW (полное декодирование)", // Toolbar_Tooltip_RawPairView
+    L"RAW: Вернуться к парному изображению", // Toolbar_Tooltip_RawPairBack
     L"Несоответствие расширения (исправить)", // Toolbar_Tooltip_FixExtension
     L"Закрепить панель", // Toolbar_Tooltip_Pin
     L"Открепить панель", // Toolbar_Tooltip_Unpin
@@ -3524,6 +3538,8 @@ static const LanguageTable Table_DE = {
     L"Info-Panel", // Toolbar_Tooltip_Info
     L"RAW: Vorschau (Klick für Voll)", // Toolbar_Tooltip_RawPreview
     L"RAW: Volle Dekodierung (Klick für Vorschau)", // Toolbar_Tooltip_RawFull
+    L"RAW: Gepaartes RAW anzeigen (volle Dekodierung)", // Toolbar_Tooltip_RawPairView
+    L"RAW: Zurück zum gepaarten Bild", // Toolbar_Tooltip_RawPairBack
     L"Erweiterung stimmt nicht (Reparieren)", // Toolbar_Tooltip_FixExtension
     L"Symbolleiste anheften", // Toolbar_Tooltip_Pin
     L"Symbolleiste lösen", // Toolbar_Tooltip_Unpin
@@ -4007,6 +4023,8 @@ static const LanguageTable Table_ES = {
     L"Panel de información", // Toolbar_Tooltip_Info
     L"RAW: Vista previa (Clic para completo)", // Toolbar_Tooltip_RawPreview
     L"RAW: Decodificación completa (Clic para vista previa)", // Toolbar_Tooltip_RawFull
+    L"RAW: Ver RAW emparejado (decodificación completa)", // Toolbar_Tooltip_RawPairView
+    L"RAW: Volver a la imagen emparejada", // Toolbar_Tooltip_RawPairBack
     L"Extensión no coincide (Reparar)", // Toolbar_Tooltip_FixExtension
     L"Fijar barra de herramientas", // Toolbar_Tooltip_Pin
     L"Soltar barra de herramientas", // Toolbar_Tooltip_Unpin
@@ -4490,6 +4508,8 @@ static const LanguageTable Table_FR = {
     L"Info Panel", // Toolbar_Tooltip_Info
     L"RAW: Preview (Click for Full)", // Toolbar_Tooltip_RawPreview
     L"RAW: Full Decode (Click for Preview)", // Toolbar_Tooltip_RawFull
+    L"RAW : Voir le RAW associé (décodage complet)", // Toolbar_Tooltip_RawPairView
+    L"RAW : Revenir à l'image associée", // Toolbar_Tooltip_RawPairBack
     L"Extension Mismatch (Fix)", // Toolbar_Tooltip_FixExtension
     L"Pin Toolbar", // Toolbar_Tooltip_Pin
     L"Unpin Toolbar", // Toolbar_Tooltip_Unpin
@@ -4973,6 +4993,8 @@ void Apply(const LanguageTable& t) {
   Toolbar_Tooltip_Info = t.Toolbar_Tooltip_Info;
   Toolbar_Tooltip_RawPreview = t.Toolbar_Tooltip_RawPreview;
   Toolbar_Tooltip_RawFull = t.Toolbar_Tooltip_RawFull;
+  Toolbar_Tooltip_RawPairView = t.Toolbar_Tooltip_RawPairView;
+  Toolbar_Tooltip_RawPairBack = t.Toolbar_Tooltip_RawPairBack;
   Toolbar_Tooltip_FixExtension = t.Toolbar_Tooltip_FixExtension;
   Toolbar_Tooltip_Pin = t.Toolbar_Tooltip_Pin;
   Toolbar_Tooltip_Unpin = t.Toolbar_Tooltip_Unpin;
@@ -5622,6 +5644,9 @@ std::wstring GetHotkeyActionName(HotkeyAction action) {
         break;
     case HotkeyAction::FlipV:
         raw = AppStrings::Context_FlipV;
+        break;
+    case HotkeyAction::RenderRaw:
+        raw = AppStrings::Context_RenderRAW;
         break;
     case HotkeyAction::ToggleAnimation: {
         // Special case: returns concatenated string

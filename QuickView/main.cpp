@@ -310,6 +310,7 @@ std::array<HotkeyBinding, static_cast<size_t>(HotkeyAction::Count)> g_hotkeys = 
     HotkeyBinding{ HotkeyAction::ToggleFullscreen, KeyCombo{ VK_F11, 0 }, KeyCombo{ VK_F11, 0 } },
     HotkeyBinding{ HotkeyAction::ToggleSpan, KeyCombo{ VK_F11, 1 }, KeyCombo{ VK_F11, 1 } }, // Ctrl + F11
     HotkeyBinding{ HotkeyAction::ToggleSlideshow, KeyCombo{ VK_F10, 0 }, KeyCombo{ VK_F10, 0 } },
+    HotkeyBinding{ HotkeyAction::RenderRaw, KeyCombo{ 'D', 0 }, KeyCombo{ 'D', 0 } }, // Decode RAW / switch to paired RAW
     HotkeyBinding{ HotkeyAction::OpenFile, KeyCombo{ 'O', 0 }, KeyCombo{ 'O', 0 } },
     HotkeyBinding{ HotkeyAction::EditFile, KeyCombo{ 'E', 0 }, KeyCombo{ 'E', 0 } },
     HotkeyBinding{ HotkeyAction::RenameFile, KeyCombo{ VK_F2, 0 }, KeyCombo{ VK_F2, 0 } },
@@ -329,6 +330,14 @@ std::array<HotkeyBinding, static_cast<size_t>(HotkeyAction::Count)> g_hotkeys = 
 };
 RuntimeConfig g_runtime;
 SlideshowState g_slideshowState;
+
+// [RAW+JPEG Pairing] The pair currently being viewed through the RAW switch
+// (IDM_RENDER_RAW on a paired item). Tracked explicitly so switching back to
+// the rendered file works even if a rescan unfolds the pair meanwhile, and so
+// the load pipeline treats the switch as "same photo" (temporary state such
+// as ForceRawDecode survives). Cleared when navigating anywhere else.
+static std::wstring g_pairViewRawPath;
+static std::wstring g_pairViewRenderedPath;
 bool HandleHotkeyAction(HWND hwnd, HotkeyAction action);
 bool g_preserveViewStateOnNextLoad = false;
 
@@ -9015,6 +9024,10 @@ SKIP_EDGE_NAV:;
         if (hasImage && !targetPath.empty()) {
              extensionFixNeeded = CheckExtensionMismatch(targetPath, targetFmt);
              isRaw = QuickView::IsRawPath(targetPath);
+             // [RAW+JPEG Pairing] "Render RAW" also switches a paired item
+             if (!isRaw && !IsCompareModeActive()) {
+                 isRaw = GetPaneContext(PaneSlot::Primary).navigator.HasPairedRaw(FileNavigator::PathToImageID(targetPath));
+             }
         }
         
         bool isPixelArtMode = GetCurrentPixelArtState(hwnd);
@@ -9686,6 +9699,47 @@ SKIP_EDGE_NAV:;
         case IDM_FLIP_V:     PerformTransform(hwnd, TransformType::FlipVertical); break;
 
         case IDM_RENDER_RAW: {
+             // [RAW+JPEG Pairing] For a paired item in single view this action
+             // switches the DISPLAYED FILE: rendered JPG <-> hidden RAW (full
+             // decode -- the RAW's embedded preview is essentially the JPG).
+             if (!contextLeft && !IsCompareModeActive() && !contextPath.empty()) {
+                 const auto& nav = GetPaneContext(PaneSlot::Primary).navigator;
+                 const FileNavigator::PairedRaw* pairedRaw = nav.GetPairedRaw(FileNavigator::PathToImageID(contextPath));
+                 std::wstring renderedBack;
+                 if (!pairedRaw) {
+                     if (!g_pairViewRawPath.empty() && contextPath == g_pairViewRawPath) {
+                         // Currently viewing the RAW side (tracked state: robust
+                         // even if a rescan unfolded the pair meanwhile)
+                         renderedBack = g_pairViewRenderedPath;
+                     } else {
+                         std::wstring r = nav.GetResolvedPath(contextPath);
+                         if (r != contextPath) renderedBack = std::move(r);
+                     }
+                 }
+                 if (pairedRaw || !renderedBack.empty()) {
+                     const bool toRaw = (pairedRaw != nullptr);
+                     // Remember the pair BEFORE loading: the load pipeline uses
+                     // this to treat the switch as "same photo" (preserves
+                     // ForceRawDecode and other temporary state)
+                     g_pairViewRawPath = toRaw ? pairedRaw->path : contextPath;
+                     g_pairViewRenderedPath = toRaw ? contextPath : renderedBack;
+
+                     g_runtime.ForceRawDecode = toRaw;
+                     g_toolbar.SetRawState(true, toRaw, true);
+                     if (g_imageEngine) {
+                         g_imageEngine->UpdateConfig(g_runtime);
+                         g_imageEngine->SetForceRefresh(true);
+                     }
+                     g_preservedViewState = GetPaneContext(PaneSlot::Primary).view;
+                     g_preserveViewStateOnNextLoad = true;
+                     ReleaseImageResources();
+                     LoadImageAsync(hwnd, toRaw ? g_pairViewRawPath.c_str() : g_pairViewRenderedPath.c_str());
+                     g_osd.Show(hwnd, toRaw ? L"Paired RAW (Full Decode)" : L"Paired Rendered Image", false);
+                     RequestRepaint(PaintLayer::All);
+                     break;
+                 }
+             }
+
              // [Fix] Toggle Force RAW Decode based on the selected pane's ACTUAL decode state.
              // This prevents "double click required" bugs when switching panes with mismatched states.
              bool isFullDecode = contextLeft ? GetPaneContext(PaneSlot::Left).metadata.IsRawFullDecode : GetPaneContext(PaneSlot::Primary).metadata.IsRawFullDecode;
@@ -11256,7 +11310,16 @@ void StartNavigation(HWND hwnd, std::wstring path, [[maybe_unused]] bool showOSD
     
     // [Fix] Only reset Runtime State if loading a NEW file.
     // If reloading the same file (e.g. RAW Toggle), preserve g_runtime.ForceRawDecode.
-    if (GetPaneContext(PaneSlot::Primary).path != path) {
+    // [RAW+JPEG Pairing] Switching between the two files of one pair is the
+    // same photo, not a new file -- temporary state survives the switch.
+    const bool pairViewSwitch = !g_pairViewRawPath.empty() &&
+        (path == g_pairViewRawPath || path == g_pairViewRenderedPath);
+    if (!pairViewSwitch && !g_pairViewRawPath.empty() &&
+        GetPaneContext(PaneSlot::Primary).path != path) {
+        g_pairViewRawPath.clear();
+        g_pairViewRenderedPath.clear();
+    }
+    if (GetPaneContext(PaneSlot::Primary).path != path && !pairViewSwitch) {
         g_runtime.ForceRawDecode = g_config.ForceRawDecode;
         
         // [Fix] Reverted to preserve manual LockWindowSize during navigation.
@@ -11337,7 +11400,14 @@ void StartNavigation(HWND hwnd, std::wstring path, [[maybe_unused]] bool showOSD
     
     // Update Toolbar State for RAW
     // [Fix] Ensure RAW button visibility is updated immediately on navigation
-    g_toolbar.SetRawState(QuickView::IsRawPath(path), g_runtime.ForceRawDecode);
+    // [RAW+JPEG Pairing] The button also switches a paired item to its RAW
+    {
+        const bool navHasPairedRaw = GetPaneContext(PaneSlot::Primary).navigator.HasPairedRaw(FileNavigator::PathToImageID(path));
+        const bool isPairedView = navHasPairedRaw
+            || (!g_pairViewRawPath.empty() && path == g_pairViewRawPath);
+        g_toolbar.SetRawState(QuickView::IsRawPath(path) || navHasPairedRaw,
+                              g_runtime.ForceRawDecode, isPairedView);
+    }
     if (IsCompareModeActive()) {
         RefreshCompareRawUI(hwnd);
     }
@@ -12595,6 +12665,26 @@ bool HandleHotkeyAction(HWND hwnd, HotkeyAction action) {
 
     case HotkeyAction::FlipV:
         PerformTransform(hwnd, TransformType::FlipVertical);
+        return true;
+
+    case HotkeyAction::RenderRaw:
+        if (IsCompareModeActive()) {
+            // Same routing as the compare toolbar RAW button
+            bool selIsRaw = false, selFull = false;
+            if (AppContext::GetInstance().CompareCtrl->GetPaneRawState(AppContext::GetInstance().Compare.selectedPane, selIsRaw, selFull) && selIsRaw) {
+                AppContext::GetInstance().Compare.contextPane = AppContext::GetInstance().Compare.selectedPane;
+                SendMessage(hwnd, WM_COMMAND, IDM_RENDER_RAW, 0);
+                RefreshCompareRawUI(hwnd);
+            }
+        } else {
+            const std::wstring& curPath = GetPaneContext(PaneSlot::Primary).path;
+            const bool applicable = !curPath.empty() &&
+                (QuickView::IsRawPath(curPath)
+                 || GetPaneContext(PaneSlot::Primary).navigator.HasPairedRaw(FileNavigator::PathToImageID(curPath)));
+            if (applicable) {
+                SendMessage(hwnd, WM_COMMAND, IDM_RENDER_RAW, 0);
+            }
+        }
         return true;
 
     case HotkeyAction::ToggleAnimation:

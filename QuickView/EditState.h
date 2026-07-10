@@ -144,6 +144,7 @@ enum class HotkeyAction : uint8_t {
     ToggleFullscreen,  // Toggle Fullscreen
     ToggleSpan,        // Toggle Span Displays
     ToggleSlideshow,   // Toggle Slideshow Mode
+    RenderRaw,         // Toggle RAW decode / switch to the paired RAW
     OpenFile,          // Open File Dialog
     EditFile,          // Edit with External Editor
     RenameFile,        // Rename File Dialog
@@ -181,6 +182,7 @@ inline std::wstring_view HotkeyActionToString(HotkeyAction action) noexcept {
         case HotkeyAction::RotateCCW: return L"RotateCCW";
         case HotkeyAction::FlipH: return L"FlipH";
         case HotkeyAction::FlipV: return L"FlipV";
+        case HotkeyAction::RenderRaw: return L"RenderRaw";
         case HotkeyAction::ToggleAnimation: return L"ToggleAnimation";
         case HotkeyAction::AnimNextFrame: return L"AnimNextFrame";
         case HotkeyAction::AnimPrevFrame: return L"AnimPrevFrame";
@@ -226,6 +228,7 @@ inline HotkeyAction StringToHotkeyAction(std::wstring_view sv) noexcept {
     if (sv == L"RotateCCW") return HotkeyAction::RotateCCW;
     if (sv == L"FlipH") return HotkeyAction::FlipH;
     if (sv == L"FlipV") return HotkeyAction::FlipV;
+    if (sv == L"RenderRaw") return HotkeyAction::RenderRaw;
     if (sv == L"ToggleAnimation") return HotkeyAction::ToggleAnimation;
     if (sv == L"AnimNextFrame") return HotkeyAction::AnimNextFrame;
     if (sv == L"AnimPrevFrame") return HotkeyAction::AnimPrevFrame;

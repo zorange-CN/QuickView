@@ -119,6 +119,8 @@ namespace AppStrings {
     extern const wchar_t* Toolbar_Tooltip_Info;
     extern const wchar_t* Toolbar_Tooltip_RawPreview; // Fast
     extern const wchar_t* Toolbar_Tooltip_RawFull;    // Full
+    extern const wchar_t* Toolbar_Tooltip_RawPairView; // Paired item: switch to the RAW
+    extern const wchar_t* Toolbar_Tooltip_RawPairBack; // Paired RAW view: back to rendered
     extern const wchar_t* Toolbar_Tooltip_FixExtension;
     extern const wchar_t* Toolbar_Tooltip_Pin;
     extern const wchar_t* Toolbar_Tooltip_Unpin;
