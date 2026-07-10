@@ -10353,6 +10353,84 @@ static HRESULT GetMetadataGPS(IWICMetadataQueryReader *reader,
   return S_OK;
 }
 
+// [RAW+JPEG Pairing] Capture-time fallback reader for everything easyexif
+// (JPEG-only) cannot parse. Dispatches by classification: RAW via a LibRaw
+// metadata parse (open_file only, no unpack -- a few ms), anything else
+// (HEIF, XMP-only JPEG) via a WIC metadata-only query (the same query paths
+// PopulateExifFromQueryReader uses). Registered into FileNavigator at
+// startup; it lives here because the unit-test binary links FileNavigator
+// without LibRaw/WIC. Returns 0 when unavailable.
+int64_t ReadCaptureTimeFallback(const wchar_t *filePath) {
+  if (!filePath)
+    return 0;
+
+  if (QuickView::IsRawPath(filePath)) {
+    LibRaw RawProcessor;
+
+    std::string pathUtf8;
+    int len = WideCharToMultiByte(CP_UTF8, 0, filePath, -1, NULL, 0, NULL, NULL);
+    if (len <= 0)
+      return 0;
+    pathUtf8.resize(len);
+    WideCharToMultiByte(CP_UTF8, 0, filePath, -1, &pathUtf8[0], len, NULL, NULL);
+    pathUtf8.pop_back();
+
+    if (RawProcessor.open_file(pathUtf8.c_str()) != LIBRAW_SUCCESS)
+      return 0;
+    return (int64_t)RawProcessor.imgdata.other.timestamp;
+  }
+
+  // WIC metadata-only read. The verification thread owns no COM apartment,
+  // so initialize one locally; scope the COM objects so they release first.
+  const HRESULT coInit = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+  int64_t result = 0;
+  {
+    ComPtr<IWICImagingFactory> factory;
+    ComPtr<IWICBitmapDecoder> decoder;
+    ComPtr<IWICBitmapFrameDecode> frame;
+    ComPtr<IWICMetadataQueryReader> reader;
+    if (SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr,
+                                   CLSCTX_INPROC_SERVER,
+                                   IID_PPV_ARGS(&factory))) &&
+        SUCCEEDED(factory->CreateDecoderFromFilename(
+            filePath, nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand,
+            &decoder)) &&
+        SUCCEEDED(decoder->GetFrame(0, &frame)) &&
+        SUCCEEDED(frame->GetMetadataQueryReader(&reader))) {
+      static const wchar_t *kDateQueries[] = {
+          L"/app1/ifd/exif/{ushort=36867}", L"/ifd/exif/{ushort=36867}",
+          L"/xmp/exif:DateTimeOriginal",    L"/app1/ifd/{ushort=306}",
+          L"/ifd/{ushort=306}",             L"/xmp/tiff:DateTime",
+          L"/xmp/xmp:CreateDate"};
+      for (const auto *query : kDateQueries) {
+        PROPVARIANT var;
+        PropVariantInit(&var);
+        if (FAILED(reader->GetMetadataByName(query, &var)))
+          continue;
+        std::string dateStr;
+        if (var.vt == VT_LPSTR && var.pszVal) {
+          dateStr = var.pszVal;
+        } else if ((var.vt == VT_LPWSTR && var.pwszVal) ||
+                   (var.vt == VT_BSTR && var.bstrVal)) {
+          // EXIF timestamps are ASCII digits/colons; narrow directly
+          const wchar_t *w = (var.vt == VT_LPWSTR) ? var.pwszVal : var.bstrVal;
+          for (; *w; ++w)
+            dateStr.push_back((char)(*w & 0x7F));
+        }
+        PropVariantClear(&var);
+        if (!dateStr.empty()) {
+          result = FileNavigator::ParseExifDateTime(dateStr);
+          if (result != 0)
+            break;
+        }
+      }
+    }
+  }
+  if (SUCCEEDED(coInit))
+    CoUninitialize();
+  return result;
+}
+
 // [v5.1] LibRaw Metadata Helper
 static HRESULT ReadMetadataLibRaw(LPCWSTR filePath,
                                   CImageLoader::ImageMetadata *pMetadata) {

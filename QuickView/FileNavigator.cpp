@@ -7,7 +7,8 @@ extern AppConfig g_config;
 // defined in header: constexpr UINT WM_NAVIGATOR_DIR_CHANGED = WM_APP + 50;
 
 void FileNavigator::Initialize(const std::wstring& currentPath, HWND hwnd) {
-    // Stop existing watcher before mutating state
+    // Stop existing watcher and pair verification before mutating state
+    StopPairVerification();
     StopDirectoryWatcher();
     if (hwnd) m_hwnd = hwnd;
 
@@ -32,6 +33,17 @@ void FileNavigator::Initialize(const std::wstring& currentPath, HWND hwnd) {
     // If a directory is passed in, scan it directly. Otherwise scan the parent directory.
     fs::path dir = isDirectory ? p : p.parent_path();
     if (dir.empty()) return;
+
+    // [RAW+JPEG Pairing] Verification results belong to one folder
+    {
+        std::wstring dirStr = dir.wstring();
+        if (_wcsicmp(dirStr.c_str(), m_verifyDir.c_str()) != 0) {
+            std::lock_guard<std::mutex> lock(m_verifyMutex);
+            m_verifyDone.clear();
+            m_verifyUnpaired.clear();
+            m_verifyDir = std::move(dirStr);
+        }
+    }
 
     // Supported extensions (comprehensive list including RAW formats)
     // using QuickView::SUPPORTED_EXTENSIONS from SupportedExtensions.h
@@ -163,7 +175,12 @@ void FileNavigator::Initialize(const std::wstring& currentPath, HWND hwnd) {
     // only; archives are never paired)
     m_pairedRaws.clear();
     if (g_config.PairRawJpeg && !m_archive) {
-        ApplyRawJpegPairing(entries, m_pairedRaws);
+        std::unordered_set<ImageID> skip;
+        {
+            std::lock_guard<std::mutex> lock(m_verifyMutex);
+            skip = m_verifyUnpaired;
+        }
+        ApplyRawJpegPairing(entries, m_pairedRaws, skip.empty() ? nullptr : &skip);
     }
 
     // Write back
@@ -224,6 +241,9 @@ void FileNavigator::Initialize(const std::wstring& currentPath, HWND hwnd) {
             StartDirectoryWatcher(watchDir);
         }
     }
+
+    // [RAW+JPEG Pairing] Kick off capture-time verification for fresh pairs
+    StartPairVerification();
 }
 
 std::wstring FileNavigator::Next(bool /*unused*/) {
@@ -526,10 +546,120 @@ void FileNavigator::ApplyPendingScanResult() {
             }
         }
     }
+
+    // [RAW+JPEG Pairing] A rescan may have folded new pairs -- verify them.
+    // Already-verified pairs are skipped, so this cannot loop.
+    StartPairVerification();
+}
+
+int64_t FileNavigator::ParseExifDateTime(const std::string& exifDateTime) {
+    int y = 0, mo = 0, d = 0, h = 0, mi = 0, se = 0;
+    if (sscanf_s(exifDateTime.c_str(), "%d:%d:%d %d:%d:%d", &y, &mo, &d, &h, &mi, &se) != 6) return 0;
+    if (y < 1970 || y > 3000 || mo < 1 || mo > 12 || d < 1 || d > 31) return 0;
+    std::tm t{};
+    t.tm_year = y - 1900;
+    t.tm_mon = mo - 1;
+    t.tm_mday = d;
+    t.tm_hour = h;
+    t.tm_min = mi;
+    t.tm_sec = se;
+    t.tm_isdst = -1;
+    const time_t tt = std::mktime(&t); // local time, matching LibRaw's own conversion
+    return tt <= 0 ? 0 : (int64_t)tt;
+}
+
+// [RAW+JPEG Pairing] Capture time (DateTimeOriginal) of a JPEG file via
+// easyexif (a JPEG-only parser: exif.cpp rejects anything not starting with
+// FFD8); 0 when unreadable.
+static int64_t ReadJpegCaptureTime(const std::wstring& path) {
+    FILE* fp = nullptr;
+    _wfopen_s(&fp, path.c_str(), L"rb");
+    if (!fp) return 0;
+    unsigned char buf[65536];
+    size_t bytes = fread(buf, 1, sizeof(buf), fp);
+    fclose(fp);
+    if (bytes == 0) return 0;
+    easyexif::EXIFInfo info;
+    if (info.parseFrom(buf, (unsigned)bytes) != PARSE_EXIF_SUCCESS) return 0;
+    return FileNavigator::ParseExifDateTime(info.DateTimeOriginal);
+}
+
+void FileNavigator::StartPairVerification() {
+    if (!m_hwnd || m_pairedRaws.empty() || m_watchedDir.empty()) return;
+
+    // Snapshot the pairs that still need a capture-time check
+    struct VerifyItem {
+        std::wstring renderedPath;
+        std::wstring rawPath;
+        ImageID renderedId = 0;
+    };
+    std::vector<VerifyItem> todo;
+    {
+        std::lock_guard<std::mutex> lock(m_verifyMutex);
+        for (const auto& [renderedId, raw] : m_pairedRaws) {
+            if (m_verifyDone.find(renderedId) != m_verifyDone.end()) continue;
+            for (size_t i = 0; i < m_ids.size(); ++i) {
+                if (m_ids[i] == renderedId) {
+                    todo.push_back({ m_files[i], raw.path, renderedId });
+                    break;
+                }
+            }
+        }
+    }
+    if (todo.empty()) return;
+
+    StopPairVerification();
+    const uint32_t gen = ++m_verifyGeneration;
+    m_verifyThread = std::thread([this, gen, todo = std::move(todo)]() {
+        bool anyUnpaired = false;
+        for (const auto& item : todo) {
+            if (m_verifyGeneration.load() != gen) return; // superseded
+
+            // Rendered side: dispatch by extension -- JPEG through easyexif
+            // (fastest), everything else (HEIF) straight to the fallback
+            // reader (WIC). A JPEG whose date lives only in XMP gets one WIC
+            // retry too.
+            const std::wstring_view rext = QuickView::ExtensionOf(item.renderedPath);
+            const bool isJpeg = QuickView::ExtEqualsIgnoreCase(rext, L".jpg")
+                             || QuickView::ExtEqualsIgnoreCase(rext, L".jpeg");
+            int64_t tRendered = isJpeg ? ReadJpegCaptureTime(item.renderedPath) : 0;
+            if (tRendered == 0 && s_captureTimeFallback) {
+                tRendered = s_captureTimeFallback(item.renderedPath.c_str());
+            }
+
+            // RAW side: always the fallback reader (LibRaw branch)
+            const int64_t tRaw = s_captureTimeFallback ? s_captureTimeFallback(item.rawPath.c_str()) : 0;
+
+            std::lock_guard<std::mutex> lock(m_verifyMutex);
+            m_verifyDone.insert(item.renderedId);
+            if (PairVerificationFails(tRendered, tRaw)) {
+                m_verifyUnpaired.insert(item.renderedId);
+                anyUnpaired = true;
+            }
+        }
+        if (!anyUnpaired || m_verifyGeneration.load() != gen) return;
+
+        // Split the mismatched pairs back up: rescan with the blacklist in
+        // effect and hand the result to the main thread through the exact
+        // channel the directory watcher already uses (one atomic list swap).
+        DirectoryScanResult result = PerformDirectoryScan();
+        if (m_verifyGeneration.load() != gen) return;
+        {
+            std::lock_guard<std::mutex> lock(m_scanResultMutex);
+            m_pendingScanResult = std::move(result);
+        }
+        PostMessageW(m_hwnd, WM_NAVIGATOR_DIR_CHANGED, 0, 0);
+    });
+}
+
+void FileNavigator::StopPairVerification() {
+    ++m_verifyGeneration; // cancel the running pass, if any
+    if (m_verifyThread.joinable()) m_verifyThread.join();
 }
 
 void FileNavigator::ApplyRawJpegPairing(std::vector<SortEntry>& entries,
-                                        std::unordered_map<ImageID, PairedRaw>& outPairedRaws) {
+                                        std::unordered_map<ImageID, PairedRaw>& outPairedRaws,
+                                        const std::unordered_set<ImageID>* skipRendered) {
     outPairedRaws.clear();
 
     // Early exit: pairing is only possible when the folder mixes camera RAWs
@@ -578,7 +708,10 @@ void FileNavigator::ApplyRawJpegPairing(std::vector<SortEntry>& entries,
         if (g.rawCount != 1 || g.renderedCount != 1) continue;
         const SortEntry& raw = entries[g.rawIdx];
         const SortEntry& rendered = entries[g.renderedIdx];
-        outPairedRaws.emplace(ComputePathHash(rendered.p),
+        const ImageID renderedId = ComputePathHash(rendered.p);
+        // Capture-time verification confirmed these are different shots
+        if (skipRendered && skipRendered->find(renderedId) != skipRendered->end()) continue;
+        outPairedRaws.emplace(renderedId,
                               PairedRaw{ raw.p, raw.s, ComputePathHash(raw.p) });
         hide[g.rawIdx] = 1;
     }
@@ -813,7 +946,12 @@ FileNavigator::DirectoryScanResult FileNavigator::PerformDirectoryScan() {
 
     // [RAW+JPEG Pairing] Same fold as Initialize (watcher rescan path)
     if (g_config.PairRawJpeg) {
-        ApplyRawJpegPairing(entries, result.pairedRaws);
+        std::unordered_set<ImageID> skip;
+        {
+            std::lock_guard<std::mutex> lock(m_verifyMutex);
+            skip = m_verifyUnpaired;
+        }
+        ApplyRawJpegPairing(entries, result.pairedRaws, skip.empty() ? nullptr : &skip);
     }
 
     result.files.clear();

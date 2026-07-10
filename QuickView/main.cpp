@@ -5610,6 +5610,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, [[maybe_unused]] LPWSTR lpCm
     AppStrings::Init();
     AppStrings::SetLanguage((AppStrings::Language)g_config.Language);
 
+    // [RAW+JPEG Pairing] Capture-time fallback reader (LibRaw for RAW, WIC
+    // for HEIF etc.; lives in ImageLoader.cpp -- FileNavigator itself must
+    // stay LibRaw/WIC-free for the unit-test binary)
+    extern int64_t ReadCaptureTimeFallback(const wchar_t* filePath);
+    FileNavigator::SetCaptureTimeFallbackReader(&ReadCaptureTimeFallback);
+
     // Now safe to start ETW
     EtwScope etwScope;
 

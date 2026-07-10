@@ -265,6 +265,55 @@ TEST(RawJpegPairingTest, MultiDotStemsMatchExactly) {
     EXPECT_TRUE(paired.empty());
 }
 
+TEST(RawJpegPairingTest, ParseExifDateTime) {
+    const int64_t a = FileNavigator::ParseExifDateTime("2026:07:09 14:30:45");
+    const int64_t b = FileNavigator::ParseExifDateTime("2026:07:09 14:30:45");
+    const int64_t c = FileNavigator::ParseExifDateTime("2026:07:09 14:30:48");
+    ASSERT_NE(a, 0);
+    EXPECT_EQ(a, b);            // deterministic
+    EXPECT_EQ(c - a, 3);        // second-level arithmetic
+    // Unparsable inputs
+    EXPECT_EQ(FileNavigator::ParseExifDateTime(""), 0);
+    EXPECT_EQ(FileNavigator::ParseExifDateTime("not a date"), 0);
+    EXPECT_EQ(FileNavigator::ParseExifDateTime("2026-07-09 14:30:45"), 0); // wrong separator
+    EXPECT_EQ(FileNavigator::ParseExifDateTime("1899:01:01 00:00:00"), 0); // pre-epoch
+}
+
+TEST(RawJpegPairingTest, PairVerificationIsStrict) {
+    // One shutter actuation writes the identical DateTimeOriginal into both
+    // files: only an exact match passes.
+    EXPECT_FALSE(FileNavigator::PairVerificationFails(1000, 1000));
+    // Any difference splits the pair, even one second
+    EXPECT_TRUE(FileNavigator::PairVerificationFails(1000, 1001));
+    EXPECT_TRUE(FileNavigator::PairVerificationFails(1001, 1000));
+    EXPECT_TRUE(FileNavigator::PairVerificationFails(1000, 5000));
+    // An unreadable side fails verification: a same-name file without a
+    // readable capture time is likely not the camera's output of this shot
+    EXPECT_TRUE(FileNavigator::PairVerificationFails(0, 0));
+    EXPECT_TRUE(FileNavigator::PairVerificationFails(0, 1000));
+    EXPECT_TRUE(FileNavigator::PairVerificationFails(1000, 0));
+}
+
+TEST(RawJpegPairingTest, VerifiedMismatchBlacklistPreventsFold) {
+    std::vector<FileNavigator::SortEntry> entries = {
+        MakeEntry(L"C:\\p\\IMG_001.JPG"),
+        MakeEntry(L"C:\\p\\IMG_001.CR3"),
+        MakeEntry(L"C:\\p\\IMG_002.JPG"),
+        MakeEntry(L"C:\\p\\IMG_002.NEF"),
+    };
+    // IMG_001's capture times were verified as mismatching
+    std::unordered_set<ImageID> skip = { ComputePathHash(L"C:\\p\\IMG_001.JPG") };
+    std::unordered_map<ImageID, FileNavigator::PairedRaw> paired;
+    FileNavigator::ApplyRawJpegPairing(entries, paired, &skip);
+
+    // IMG_001 stays split; IMG_002 still folds
+    ASSERT_EQ(entries.size(), 3u);
+    EXPECT_EQ(paired.size(), 1u);
+    EXPECT_TRUE(paired.count(ComputePathHash(L"C:\\p\\IMG_002.JPG")) == 1);
+    EXPECT_TRUE(std::any_of(entries.begin(), entries.end(),
+        [](const auto& e) { return e.p == L"C:\\p\\IMG_001.CR3"; }));
+}
+
 // Integration: pairing through FileNavigator::Initialize on a real directory
 TEST(RawJpegPairingTest, InitializePairsAndRedirectsRawOpen) {
     namespace fs = std::filesystem;

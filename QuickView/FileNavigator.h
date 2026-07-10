@@ -4,6 +4,9 @@
 #include <string_view>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
+#include <atomic>
+#include <thread>
 #include <filesystem>
 #include <algorithm>
 #include <cwctype>
@@ -47,7 +50,7 @@ public:
     };
 
     FileNavigator() = default;
-    ~FileNavigator() { StopDirectoryWatcher(); }
+    ~FileNavigator() { StopPairVerification(); StopDirectoryWatcher(); }
     FileNavigator(const FileNavigator&) = delete;
     FileNavigator& operator=(const FileNavigator&) = delete;
 
@@ -146,10 +149,32 @@ public:
     // [RAW+JPEG Pairing] Fold same-name RAW + rendered pairs: strict 1:1 per
     // stem (exactly one RAW and exactly one whitelisted rendered still), the
     // RAW entry is removed and recorded in outPairedRaws keyed by the rendered
-    // file's ImageID. Shared by Initialize and PerformDirectoryScan; pure on
-    // its inputs so it is unit-testable.
+    // file's ImageID. Pairs whose rendered ImageID is in skipRendered (capture
+    // times verified as mismatching) are left unfolded. Shared by Initialize
+    // and PerformDirectoryScan; pure on its inputs so it is unit-testable.
     static void ApplyRawJpegPairing(std::vector<SortEntry>& entries,
-                                    std::unordered_map<ImageID, PairedRaw>& outPairedRaws);
+                                    std::unordered_map<ImageID, PairedRaw>& outPairedRaws,
+                                    const std::unordered_set<ImageID>* skipRendered = nullptr);
+
+    // [RAW+JPEG Pairing] Parse an EXIF "YYYY:MM:DD HH:MM:SS" timestamp to a
+    // local-time epoch value (the same convention LibRaw uses); 0 = unparsable.
+    static int64_t ParseExifDateTime(const std::string& exifDateTime);
+
+    // STRICT verification: a pair holds only when both capture times were
+    // read successfully AND are exactly equal (one shutter actuation writes
+    // the identical DateTimeOriginal into both files). An unreadable side
+    // fails verification too -- a same-name file without a readable capture
+    // time is likely not the camera's rendered output of this shot.
+    static bool PairVerificationFails(int64_t rendered, int64_t raw) {
+        return rendered == 0 || raw == 0 || rendered != raw;
+    }
+
+    // [RAW+JPEG Pairing] Capture-time reader for everything easyexif (JPEG
+    // only) cannot parse: RAW via LibRaw, HEIF etc. via WIC. Injected at
+    // startup because the unit-test binary links FileNavigator without
+    // LibRaw/WIC. Returns 0 when unavailable.
+    using CaptureTimeFallbackReader = int64_t (*)(const wchar_t* path);
+    static void SetCaptureTimeFallbackReader(CaptureTimeFallbackReader reader) { s_captureTimeFallback = reader; }
 
 private:
     static std::wstring_view GetPhysicalHostPath(std::wstring_view vfsPath);
@@ -162,12 +187,29 @@ private:
     void StartDirectoryWatcher(const std::wstring& dirPath);
     void StopDirectoryWatcher();
 
+    // [RAW+JPEG Pairing] Asynchronous capture-time verification of the folded
+    // pairs. Confirmed mismatches go into m_verifyUnpaired and a rescan is
+    // handed to the main thread through the directory-watcher channel.
+    void StartPairVerification();
+    void StopPairVerification();
+
     // Data Members
     std::vector<std::wstring> m_files;
     std::vector<uintmax_t> m_sizes;
     std::vector<ImageID> m_ids;  // [ImageID] Precomputed path hashes
     // [RAW+JPEG Pairing] Hidden RAWs keyed by their rendered sibling's ImageID
     std::unordered_map<ImageID, PairedRaw> m_pairedRaws;
+
+    // [RAW+JPEG Pairing] Capture-time verification state. Sets are keyed by
+    // the rendered file's ImageID and guarded by m_verifyMutex; they belong to
+    // m_verifyDir and reset when the browsed folder changes.
+    std::thread m_verifyThread;
+    std::mutex m_verifyMutex;
+    std::unordered_set<ImageID> m_verifyDone;      // checked (match or mismatch)
+    std::unordered_set<ImageID> m_verifyUnpaired;  // confirmed mismatch: never fold
+    std::wstring m_verifyDir;
+    std::atomic<uint32_t> m_verifyGeneration{ 0 }; // cancels superseded runs
+    inline static CaptureTimeFallbackReader s_captureTimeFallback = nullptr;
     int m_currentIndex = -1;
     bool m_hitEnd = false;
     std::wstring m_crossFolderMessage;
