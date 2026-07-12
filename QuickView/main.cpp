@@ -112,7 +112,8 @@ static std::string GetAppVersionUTF8() {
             if (VerQueryValueW(data.data(), L"\\", (void**)&pFileInfo, &len)) {
                 std::wstring ver = std::to_wstring(HIWORD(pFileInfo->dwProductVersionMS)) + L"." +
                                    std::to_wstring(LOWORD(pFileInfo->dwProductVersionMS)) + L"." +
-                                   std::to_wstring(HIWORD(pFileInfo->dwProductVersionLS));
+                                   std::to_wstring(HIWORD(pFileInfo->dwProductVersionLS)) + L"." +
+                                   std::to_wstring(LOWORD(pFileInfo->dwProductVersionLS));
                 
                 int size_needed = WideCharToMultiByte(CP_UTF8, 0, ver.c_str(), (int)ver.length(), NULL, 0, NULL, NULL);
                 std::string strTo(size_needed, 0);

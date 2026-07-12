@@ -209,7 +209,8 @@ std::wstring SettingsOverlay::GetAppVersion() {
             if (VerQueryValueW(data.data(), L"\\", (void**)&pFileInfo, &len)) {
                 return std::to_wstring(HIWORD(pFileInfo->dwProductVersionMS)) + L"." +
                        std::to_wstring(LOWORD(pFileInfo->dwProductVersionMS)) + L"." +
-                       std::to_wstring(HIWORD(pFileInfo->dwProductVersionLS));
+                       std::to_wstring(HIWORD(pFileInfo->dwProductVersionLS)) + L"." +
+                       std::to_wstring(LOWORD(pFileInfo->dwProductVersionLS));
             }
         }
     }
