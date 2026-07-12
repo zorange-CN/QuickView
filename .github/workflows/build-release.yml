@@ -50,6 +50,7 @@ jobs:
       - name: Bootstrap vcpkg
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force -Path "${{ env.VCPKG_DEFAULT_BINARY_CACHE }}"
           cd third_party/vcpkg
           if (-not (Test-Path "vcpkg.exe")) {
             ./bootstrap-vcpkg.bat
