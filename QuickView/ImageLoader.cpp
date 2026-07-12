@@ -429,6 +429,16 @@ static void ProbeHdrMetadataNative(const uint8_t *data, size_t size,
   }
 }
 
+// [Phase 18] Determine whether a JXL color encoding is the default sRGB
+// (i.e. no custom profile was explicitly embedded). uses_original_profile is
+// NOT a reliable signal — it only controls the output color transform, not
+// whether a profile exists.
+static bool IsJxlDefaultSrgb(const JxlColorEncoding& enc) {
+  return enc.color_space == JXL_COLOR_SPACE_RGB &&
+         enc.primaries == JXL_PRIMARIES_SRGB &&
+         enc.transfer_function == JXL_TRANSFER_FUNCTION_SRGB;
+}
+
 // [v18] Fallback Metadata Prober for Native JXL Path
 static void ProbeJxlMetadataNative(const uint8_t *data, size_t size,
                                    CImageLoader::ImageMetadata *pMetadata) {
@@ -454,30 +464,35 @@ static void ProbeJxlMetadataNative(const uint8_t *data, size_t size,
   
   while ((status = JxlDecoderProcessInput(dec)) != JXL_DEC_ERROR && status != JXL_DEC_SUCCESS) {
     if (status == JXL_DEC_BASIC_INFO) {
-      if (JXL_DEC_SUCCESS == JxlDecoderGetBasicInfo(dec, &info)) {
-        pMetadata->HasEmbeddedColorProfile = (info.uses_original_profile == JXL_TRUE);
-      }
+      JxlDecoderGetBasicInfo(dec, &info);
+      // Note: do NOT set HasEmbeddedColorProfile from uses_original_profile.
+      // That flag controls XYB transform, not whether an ICC exists.
     } else if (status == JXL_DEC_COLOR_ENCODING) {
+      // 1. Always extract ICC profile name → ColorSpace
       size_t iccSize = 0;
       JxlColorProfileTarget target = JXL_COLOR_PROFILE_TARGET_ORIGINAL;
       if (JXL_DEC_SUCCESS != JxlDecoderGetICCProfileSize(dec, target, &iccSize)) {
         target = JXL_COLOR_PROFILE_TARGET_DATA;
         JxlDecoderGetICCProfileSize(dec, target, &iccSize);
       }
-      
-      if (iccSize > 0 && pMetadata->HasEmbeddedColorProfile.value_or(false)) {
-        pMetadata->iccProfileData.resize(iccSize);
-        if (JXL_DEC_SUCCESS == JxlDecoderGetColorAsICCProfile(dec, target, pMetadata->iccProfileData.data(), iccSize)) {
-          pMetadata->colorInfo.hasEmbeddedIcc = true;
-          std::wstring desc = CImageLoader::ParseICCProfileName(pMetadata->iccProfileData.data(), iccSize);
-          if (!desc.empty()) {
+      if (iccSize > 0) {
+        std::vector<uint8_t> icc(iccSize);
+        if (JXL_DEC_SUCCESS == JxlDecoderGetColorAsICCProfile(dec, target, icc.data(), iccSize)) {
+          std::wstring desc = CImageLoader::ParseICCProfileName(icc.data(), iccSize);
+          if (!desc.empty())
             pMetadata->ColorSpace = desc;
-          }
-        } else {
-          pMetadata->iccProfileData.clear();
         }
       }
-      
+
+      // 2. Determine HasEmbeddedColorProfile from encoded color parameters
+      JxlColorEncoding enc = {};
+      if (JXL_DEC_SUCCESS == JxlDecoderGetColorAsEncodedProfile(
+              dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL, &enc)) {
+        pMetadata->HasEmbeddedColorProfile = !IsJxlDefaultSrgb(enc);
+      } else {
+        // No parametric encoding → custom ICC profile → tagged
+        pMetadata->HasEmbeddedColorProfile = true;
+      }
 
       break;
     } else if (status == JXL_DEC_NEED_MORE_INPUT) {
@@ -3889,9 +3904,8 @@ static HRESULT LoadThumbJXL_Sampled(const uint8_t *pFile, size_t fileSize,
         return cleanup(E_FAIL);
       }
       
-      if (pMetadata) {
-        pMetadata->HasEmbeddedColorProfile = (info.uses_original_profile == JXL_TRUE);
-      }
+      
+      // Note: do NOT set HasEmbeddedColorProfile from uses_original_profile.
 
       JxlColorEncoding colorEncoding = {};
       colorEncoding.color_space = JXL_COLOR_SPACE_RGB;
@@ -3950,7 +3964,8 @@ static HRESULT LoadThumbJXL_Sampled(const uint8_t *pFile, size_t fileSize,
       }
       callbackSet = true;
     } else if (status == JXL_DEC_COLOR_ENCODING) {
-      if (pMetadata && pMetadata->HasEmbeddedColorProfile.value_or(false)) {
+      if (pMetadata) {
+        // Always extract ICC profile
         size_t iccSize = 0;
         JxlColorProfileTarget target = JXL_COLOR_PROFILE_TARGET_ORIGINAL;
         if (JXL_DEC_SUCCESS != JxlDecoderGetICCProfileSize(dec, target, &iccSize)) {
@@ -3958,18 +3973,23 @@ static HRESULT LoadThumbJXL_Sampled(const uint8_t *pFile, size_t fileSize,
           JxlDecoderGetICCProfileSize(dec, target, &iccSize);
         }
         if (iccSize > 0) {
-          pMetadata->iccProfileData.resize(iccSize);
+          std::vector<uint8_t> icc(iccSize);
           if (JXL_DEC_SUCCESS ==
-              JxlDecoderGetColorAsICCProfile(dec, target,
-                                             pMetadata->iccProfileData.data(), iccSize)) {
-            pMetadata->colorInfo.hasEmbeddedIcc = true;
+              JxlDecoderGetColorAsICCProfile(dec, target, icc.data(), iccSize)) {
             std::wstring desc =
-                CImageLoader::ParseICCProfileName(pMetadata->iccProfileData.data(), iccSize);
+                CImageLoader::ParseICCProfileName(icc.data(), iccSize);
             if (!desc.empty())
               pMetadata->ColorSpace = desc;
-          } else {
-            pMetadata->iccProfileData.clear();
           }
+        }
+
+        // Determine HasEmbeddedColorProfile from encoded parameters
+        JxlColorEncoding enc = {};
+        if (JXL_DEC_SUCCESS == JxlDecoderGetColorAsEncodedProfile(
+                dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL, &enc)) {
+          pMetadata->HasEmbeddedColorProfile = !IsJxlDefaultSrgb(enc);
+        } else {
+          pMetadata->HasEmbeddedColorProfile = true;
         }
       }
     } else if (status == JXL_DEC_FULL_IMAGE) {
@@ -5266,7 +5286,8 @@ HRESULT CImageLoader::LoadJXL(LPCWSTR filePath, IWICBitmap **ppBitmap,
         break;
       }
       if (pMetadata) {
-        pMetadata->HasEmbeddedColorProfile = (info.uses_original_profile == JXL_TRUE);
+        // Note: do NOT set HasEmbeddedColorProfile from uses_original_profile.
+        // That flag controls XYB transform, not whether an ICC exists.
       }
       // Removed Force sRGB output color profile so original color gets
       // preserved.
@@ -5285,30 +5306,23 @@ HRESULT CImageLoader::LoadJXL(LPCWSTR filePath, IWICBitmap **ppBitmap,
         }
       }
     } else if (status == JXL_DEC_COLOR_ENCODING) {
-      // [CMS] Extract exact original ICC Profile from JXL Stream
       if (pMetadata) {
-        const bool hasRealIcc = pMetadata->HasEmbeddedColorProfile.value_or(false);
+        // Always extract ICC profile for ColorSpace name
         size_t icc_size = 0;
         JxlColorProfileTarget target = JXL_COLOR_PROFILE_TARGET_ORIGINAL;
-        if (hasRealIcc) {
-          if (JXL_DEC_SUCCESS != JxlDecoderGetICCProfileSize(dec, target, &icc_size)) {
-            target = JXL_COLOR_PROFILE_TARGET_DATA;
-            JxlDecoderGetICCProfileSize(dec, target, &icc_size);
-          }
-          if (icc_size > 0) {
-            pMetadata->iccProfileData.resize(icc_size);
-            if (JXL_DEC_SUCCESS ==
-                JxlDecoderGetColorAsICCProfile(dec, target,
-                                               pMetadata->iccProfileData.data(),
-                                               icc_size)) {
-              pMetadata->colorInfo.hasEmbeddedIcc = true;
-              std::wstring desc = CImageLoader::ParseICCProfileName(
-                  pMetadata->iccProfileData.data(), icc_size);
-              if (!desc.empty())
-                pMetadata->ColorSpace = desc;
-            } else {
-              pMetadata->iccProfileData.clear();
-            }
+        if (JXL_DEC_SUCCESS == JxlDecoderGetICCProfileSize(dec, target, &icc_size) && icc_size > 0) {
+          pMetadata->iccProfileData.resize(icc_size);
+          if (JXL_DEC_SUCCESS ==
+              JxlDecoderGetColorAsICCProfile(dec, target,
+                                             pMetadata->iccProfileData.data(),
+                                             icc_size)) {
+            pMetadata->colorInfo.hasEmbeddedIcc = true;
+            std::wstring desc = CImageLoader::ParseICCProfileName(
+                pMetadata->iccProfileData.data(), icc_size);
+            if (!desc.empty())
+              pMetadata->ColorSpace = desc;
+          } else {
+            pMetadata->iccProfileData.clear();
           }
         }
 
@@ -5344,6 +5358,14 @@ HRESULT CImageLoader::LoadJXL(LPCWSTR filePath, IWICBitmap **ppBitmap,
                                              QuickView::TransferFunction::PQ ||
                                          pMetadata->hdrMetadata.transfer ==
                                              QuickView::TransferFunction::HLG;
+        }
+
+        // [Phase 18] Determine HasEmbeddedColorProfile from encoded parameters
+        if (!pMetadata->HasEmbeddedColorProfile.has_value()) {
+          if (colorEncoding.color_space != JXL_COLOR_SPACE_UNKNOWN)
+            pMetadata->HasEmbeddedColorProfile = !IsJxlDefaultSrgb(colorEncoding);
+          else
+            pMetadata->HasEmbeddedColorProfile = true; // Custom ICC → tagged
         }
       }
     } else if (status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
@@ -7057,9 +7079,8 @@ static HRESULT Load(const uint8_t *data, size_t size, const DecodeContext &ctx,
       }
 
       // [v6.2] Populate Metadata
-      result.metadata.HasEmbeddedColorProfile = (info.uses_original_profile == JXL_TRUE);
       if (ctx.pMetadata) {
-        ctx.pMetadata->HasEmbeddedColorProfile = result.metadata.HasEmbeddedColorProfile;
+        // Note: do NOT set HasEmbeddedColorProfile from uses_original_profile.
         CImageLoader::PopulateFormatDetails(
             ctx.pMetadata, L"JXL", info.bits_per_sample,
             info.uses_original_profile, // likely lossless
@@ -7068,44 +7089,54 @@ static HRESULT Load(const uint8_t *data, size_t size, const DecodeContext &ctx,
     }
 
     else if (status == JXL_DEC_COLOR_ENCODING) {
-      if (result.metadata.HasEmbeddedColorProfile.value_or(false)) {
-        size_t iccSize = 0;
-        JxlColorProfileTarget target = JXL_COLOR_PROFILE_TARGET_ORIGINAL;
-        if (JXL_DEC_SUCCESS != JxlDecoderGetICCProfileSize(dec, target, &iccSize)) {
-          target = JXL_COLOR_PROFILE_TARGET_DATA;
-          JxlDecoderGetICCProfileSize(dec, target, &iccSize);
+      // Always extract ICC profile
+      size_t iccSize = 0;
+      JxlColorProfileTarget target = JXL_COLOR_PROFILE_TARGET_ORIGINAL;
+      if (JXL_DEC_SUCCESS != JxlDecoderGetICCProfileSize(dec, target, &iccSize)) {
+        target = JXL_COLOR_PROFILE_TARGET_DATA;
+        JxlDecoderGetICCProfileSize(dec, target, &iccSize);
+      }
+      
+      if (iccSize > 0) {
+        result.metadata.iccProfileData.resize(iccSize);
+        if (JXL_DEC_SUCCESS ==
+            JxlDecoderGetColorAsICCProfile(
+                dec, target, result.metadata.iccProfileData.data(), iccSize)) {
+          result.metadata.colorInfo.hasEmbeddedIcc = true;
+          std::wstring desc =
+              CImageLoader::ParseICCProfileName(result.metadata.iccProfileData.data(), iccSize);
+          if (!desc.empty())
+            result.metadata.ColorSpace = desc;
+        } else {
+          result.metadata.iccProfileData.clear();
         }
-        
-        if (iccSize > 0) {
-          result.metadata.iccProfileData.resize(iccSize);
-          if (JXL_DEC_SUCCESS ==
-              JxlDecoderGetColorAsICCProfile(
-                  dec, target, result.metadata.iccProfileData.data(), iccSize)) {
-            result.metadata.colorInfo.hasEmbeddedIcc = true;
-            std::wstring desc =
-                CImageLoader::ParseICCProfileName(result.metadata.iccProfileData.data(), iccSize);
-            if (!desc.empty())
-              result.metadata.ColorSpace = desc;
-          } else {
-            result.metadata.iccProfileData.clear();
-          }
-        }
-        if (ctx.pMetadata) {
-          ctx.pMetadata->iccProfileData = result.metadata.iccProfileData;
-          ctx.pMetadata->colorInfo.hasEmbeddedIcc = result.metadata.colorInfo.hasEmbeddedIcc;
-          if (!result.metadata.ColorSpace.empty())
-            ctx.pMetadata->ColorSpace = result.metadata.ColorSpace;
-        }
+      }
+      if (ctx.pMetadata) {
+        ctx.pMetadata->iccProfileData = result.metadata.iccProfileData;
+        ctx.pMetadata->colorInfo.hasEmbeddedIcc = result.metadata.colorInfo.hasEmbeddedIcc;
+        if (!result.metadata.ColorSpace.empty())
+          ctx.pMetadata->ColorSpace = result.metadata.ColorSpace;
       }
 
-      JxlColorProfileTarget target = JXL_COLOR_PROFILE_TARGET_ORIGINAL;
+      JxlColorProfileTarget target2 = JXL_COLOR_PROFILE_TARGET_ORIGINAL;
       if (JXL_DEC_SUCCESS !=
-          JxlDecoderGetColorAsEncodedProfile(dec, target, &encodedColor)) {
-        if (target != JXL_COLOR_PROFILE_TARGET_DATA) {
-          target = JXL_COLOR_PROFILE_TARGET_DATA;
-          JxlDecoderGetColorAsEncodedProfile(dec, target, &encodedColor);
+          JxlDecoderGetColorAsEncodedProfile(dec, target2, &encodedColor)) {
+        if (target2 != JXL_COLOR_PROFILE_TARGET_DATA) {
+          target2 = JXL_COLOR_PROFILE_TARGET_DATA;
+          JxlDecoderGetColorAsEncodedProfile(dec, target2, &encodedColor);
         }
       }
+      
+      // Determine HasEmbeddedColorProfile from encoded parameters
+      if (encodedColor.color_space != JXL_COLOR_SPACE_UNKNOWN) {
+        result.metadata.HasEmbeddedColorProfile = !IsJxlDefaultSrgb(encodedColor);
+      } else {
+        result.metadata.HasEmbeddedColorProfile = true;
+      }
+      if (ctx.pMetadata) {
+        ctx.pMetadata->HasEmbeddedColorProfile = result.metadata.HasEmbeddedColorProfile;
+      }
+
       if (encodedColor.color_space != JXL_COLOR_SPACE_UNKNOWN) {
         transfer = MapJxlTransferFunction(encodedColor.transfer_function);
         primaries = MapJxlPrimaries(encodedColor.primaries);
