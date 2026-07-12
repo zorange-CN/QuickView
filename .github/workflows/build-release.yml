@@ -29,8 +29,8 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Install LLVM/Clang
-        run: choco install llvm -y
+      - name: Install Toolchain
+        run: choco install llvm ninja -y
 
       - name: Restore vcpkg Cache
         id: vcpkg-cache
