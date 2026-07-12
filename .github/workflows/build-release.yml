@@ -30,7 +30,10 @@ jobs:
           fetch-depth: 0
 
       - name: Install Toolchain
-        run: choco install llvm ninja -y
+        run: choco install llvm -y
+
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@master
 
       - name: Restore vcpkg Cache
         id: vcpkg-cache
