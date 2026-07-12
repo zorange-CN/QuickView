@@ -60,7 +60,9 @@ jobs:
           # Fallback URL for legacy clients (pointing to X64)
           URL=$URL_X64
           
-          jq -n \
+          IS_PRERELEASE="${{ github.event.release.prerelease }}"
+          
+          JSON_DATA=$(jq -n \
             --arg v "$VERSION" \
             --arg u "$URL" \
             --arg u_x64 "$URL_X64" \
@@ -69,11 +71,18 @@ jobs:
             --arg sha_arm "$SHA_ARM64" \
             --arg d "$DATE" \
             --arg c "$RELEASE_BODY" \
-            '{version: $v, url: $u, url_x64: $u_x64, url_arm64: $u_arm, sha256_x64: $sha_x64, sha256_arm64: $sha_arm, date: $d, changelog: $c}' \
-            > public/version.json
+            '{version: $v, url: $u, url_x64: $u_x64, url_arm64: $u_arm, sha256_x64: $sha_x64, sha256_arm64: $sha_arm, date: $d, changelog: $c}')
           
-          echo "=== Generated JSON Content ==="
-          cat public/version.json
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            echo "$JSON_DATA" > public/version-prerelease.json
+            echo "=== Generated Pre-release JSON Content ==="
+            cat public/version-prerelease.json
+          else
+            echo "$JSON_DATA" > public/version.json
+            echo "$JSON_DATA" > public/version-prerelease.json
+            echo "=== Generated Stable JSON Content ==="
+            cat public/version.json
+          fi
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3

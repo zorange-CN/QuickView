@@ -10,6 +10,7 @@ on:
 
 jobs:
   winget:
+    if: github.event.release.prerelease == false
     name: Submit to WinGet
     runs-on: ubuntu-latest
     steps:

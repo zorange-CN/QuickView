@@ -57,6 +57,10 @@ const wchar_t *Settings_Group_Habits = nullptr;
 const wchar_t *Settings_Label_Language = nullptr;
 const wchar_t *Settings_Label_SingleInstance = nullptr;
 const wchar_t *Settings_Label_CheckUpdates = nullptr;
+const wchar_t *Settings_Label_UpdateChannel = nullptr;
+const wchar_t *Settings_Option_UpdateStable = nullptr;
+const wchar_t *Settings_Option_UpdatePreRelease = nullptr;
+const wchar_t *Settings_Tooltip_PreRelease = nullptr;
 const wchar_t *Settings_Label_NavLoopMode = nullptr;
 const wchar_t *Settings_Label_SortOrder = nullptr;
 const wchar_t *Settings_Label_SortDescending = nullptr;
@@ -543,6 +547,10 @@ struct LanguageTable {
     const wchar_t *Settings_Label_Language;
     const wchar_t *Settings_Label_SingleInstance;
     const wchar_t *Settings_Label_CheckUpdates;
+    const wchar_t *Settings_Label_UpdateChannel;
+    const wchar_t *Settings_Option_UpdateStable;
+    const wchar_t *Settings_Option_UpdatePreRelease;
+    const wchar_t *Settings_Tooltip_PreRelease;
     const wchar_t *Settings_Label_NavLoopMode;
     const wchar_t *Settings_Label_SortOrder;
     const wchar_t *Settings_Label_SortDescending;
@@ -1026,6 +1034,10 @@ static const LanguageTable Table_EN = {
     L"Language", // Settings_Label_Language
     L"Single Instance", // Settings_Label_SingleInstance
     L"Check Updates", // Settings_Label_CheckUpdates
+    L"Update Channel", // Settings_Label_UpdateChannel
+    L"Stable", // Settings_Option_UpdateStable
+    L"Pre-release", // Settings_Option_UpdatePreRelease
+    L"Stable: Published after a preview version proves stable.\nPre-release: Delivers the latest code changes immediately to collect your feedback. Note: These changes are not strictly tested.", // Settings_Tooltip_PreRelease
     L"Loop", // Settings_Label_NavLoopMode
     L"Sort Order", // Settings_Label_SortOrder
     L"Descending", // Settings_Label_SortDescending
@@ -1509,6 +1521,10 @@ static const LanguageTable Table_CN = {
     L"语言", // Settings_Label_Language
     L"单实例模式", // Settings_Label_SingleInstance
     L"检查更新", // Settings_Label_CheckUpdates
+    L"更新通道", // Settings_Label_UpdateChannel
+    L"正式版", // Settings_Option_UpdateStable
+    L"预览版 (Pre-release)", // Settings_Option_UpdatePreRelease
+    L"正式版：预览版发布一段时间后未收到Bug报告，将发布正式版。\n预览版：第一时间发布最新的代码修改，用于收集您的测试反馈。注意，这些修改并未经过严格测试。", // Settings_Tooltip_PreRelease
     L"循环播放", // Settings_Label_NavLoopMode
     L"列表排序方式", // Settings_Label_SortOrder
     L"降序", // Settings_Label_SortDescending
@@ -1992,6 +2008,10 @@ static const LanguageTable Table_TW = {
     L"語言", // Settings_Label_Language
     L"單一實例模式", // Settings_Label_SingleInstance
     L"檢查更新", // Settings_Label_CheckUpdates
+    L"更新通道", // Settings_Label_UpdateChannel
+    L"正式版", // Settings_Option_UpdateStable
+    L"預覽版 (Pre-release)", // Settings_Option_UpdatePreRelease
+    L"正式版：預覽版發布一段時間後未收到Bug報告，將發布正式版。\n預覽版：第一時間發布最新的代碼修改，用於收集您的測試反饋。注意，這些修改並未經過嚴格測試。", // Settings_Tooltip_PreRelease
     L"循環導覽", // Settings_Label_NavLoopMode
     L"排序方式", // Settings_Label_SortOrder
     L"降冪", // Settings_Label_SortDescending
@@ -2475,6 +2495,10 @@ static const LanguageTable Table_JA = {
     L"言語", // Settings_Label_Language
     L"単一インスタンス", // Settings_Label_SingleInstance
     L"更新確認", // Settings_Label_CheckUpdates
+    L"アップデートチャンネル", // Settings_Label_UpdateChannel
+    L"安定版", // Settings_Option_UpdateStable
+    L"プレリリース (Pre-release)", // Settings_Option_UpdatePreRelease
+    L"安定版: プレリリース版が一定期間安定して動作した後に公開されます。\nプレリリース: 最新の変更をいち早くお届けし、フィードバックを収集します。これらの変更は厳密なテストを受けていないことにご注意ください。", // Settings_Tooltip_PreRelease
     L"ループナビゲーション", // Settings_Label_NavLoopMode
     L"並べ替え順序", // Settings_Label_SortOrder
     L"降順", // Settings_Label_SortDescending
@@ -2958,6 +2982,10 @@ static const LanguageTable Table_RU = {
     L"Язык", // Settings_Label_Language
     L"Один экземпляр", // Settings_Label_SingleInstance
     L"Проверка обновлений", // Settings_Label_CheckUpdates
+    L"Канал обновлений", // Settings_Label_UpdateChannel
+    L"Стабильный", // Settings_Option_UpdateStable
+    L"Предварительный (Pre-release)", // Settings_Option_UpdatePreRelease
+    L"Стабильный: Выпускается после того, как предварительная версия доказала свою стабильность.\nПредварительный (Pre-release): Моментальная доставка последних изменений для сбора отзывов. Внимание: эти изменения не прошли строгую проверку.", // Settings_Tooltip_PreRelease
     L"Циклическая навигация", // Settings_Label_NavLoopMode
     L"Порядок сортировки", // Settings_Label_SortOrder
     L"По убыванию", // Settings_Label_SortDescending
@@ -3441,6 +3469,10 @@ static const LanguageTable Table_DE = {
     L"Sprache", // Settings_Label_Language
     L"Einzelinstanz", // Settings_Label_SingleInstance
     L"Updates prüfen", // Settings_Label_CheckUpdates
+    L"Update-Kanal", // Settings_Label_UpdateChannel
+    L"Stabil", // Settings_Option_UpdateStable
+    L"Vorabversion (Pre-release)", // Settings_Option_UpdatePreRelease
+    L"Stabil: Wird veröffentlicht, nachdem sich eine Vorabversion als stabil erwiesen hat.\nVorabversion (Pre-release): Liefert sofort die neuesten Code-Änderungen, um Ihr Feedback zu sammeln. Hinweis: Diese Änderungen sind nicht streng getestet.", // Settings_Tooltip_PreRelease
     L"Endlosnavigation", // Settings_Label_NavLoopMode
     L"Sortierreihenfolge", // Settings_Label_SortOrder
     L"Absteigend", // Settings_Label_SortDescending
@@ -3924,6 +3956,10 @@ static const LanguageTable Table_ES = {
     L"Idioma", // Settings_Label_Language
     L"Instancia única", // Settings_Label_SingleInstance
     L"Buscar actualizaciones", // Settings_Label_CheckUpdates
+    L"Canal de actualización", // Settings_Label_UpdateChannel
+    L"Estable", // Settings_Option_UpdateStable
+    L"Versión preliminar (Pre-release)", // Settings_Option_UpdatePreRelease
+    L"Estable: Se publica después de que una versión preliminar demuestre ser estable.\nVersión preliminar (Pre-release): Entrega los últimos cambios de código de inmediato para recopilar sus comentarios. Nota: Estos cambios no han sido probados estrictamente.", // Settings_Tooltip_PreRelease
     L"Navegación en bucle", // Settings_Label_NavLoopMode
     L"Orden de clasificación", // Settings_Label_SortOrder
     L"Descendente", // Settings_Label_SortDescending
@@ -4407,6 +4443,10 @@ static const LanguageTable Table_FR = {
     L"Language", // Settings_Label_Language
     L"Single Instance", // Settings_Label_SingleInstance
     L"Check Updates", // Settings_Label_CheckUpdates
+    L"Canal de mise à jour", // Settings_Label_UpdateChannel
+    L"Stable", // Settings_Option_UpdateStable
+    L"Pré-version (Pre-release)", // Settings_Option_UpdatePreRelease
+    L"Stable : Publié après qu'une pré-version se soit avérée stable.\nPré-version (Pre-release) : Fournit immédiatement les dernières modifications pour recueillir vos retours. Remarque : Ces modifications ne sont pas strictement testées.", // Settings_Tooltip_PreRelease
     L"Loop", // Settings_Label_NavLoopMode
     L"Sort Order", // Settings_Label_SortOrder
     L"Descending", // Settings_Label_SortDescending
@@ -4890,6 +4930,10 @@ void Apply(const LanguageTable& t) {
   Settings_Label_Language = t.Settings_Label_Language;
   Settings_Label_SingleInstance = t.Settings_Label_SingleInstance;
   Settings_Label_CheckUpdates = t.Settings_Label_CheckUpdates;
+  Settings_Label_UpdateChannel = t.Settings_Label_UpdateChannel;
+  Settings_Option_UpdateStable = t.Settings_Option_UpdateStable;
+  Settings_Option_UpdatePreRelease = t.Settings_Option_UpdatePreRelease;
+  Settings_Tooltip_PreRelease = t.Settings_Tooltip_PreRelease;
   Settings_Label_NavLoopMode = t.Settings_Label_NavLoopMode;
   Settings_Label_SortOrder = t.Settings_Label_SortOrder;
   Settings_Label_SortDescending = t.Settings_Label_SortDescending;

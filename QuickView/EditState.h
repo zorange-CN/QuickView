@@ -462,6 +462,7 @@ struct AppConfig {
     int Language = 0;                   // 0=Auto, 1=EN, 2=CN
     bool SingleInstance = false;
     bool CheckUpdates = true;
+    int UpdateChannel = 0;              // 0=Stable, 1=Pre-release
     bool NavLoop = true;                // Loop at limits (Global or Folder)
     bool NavTraverse = false;           // Reach outside current folder (Subfolders)
     int SortOrder = 0;                  // 0=Auto(Name), 1=Name, 2=Modified, 3=DateTaken, 4=Size, 5=Type

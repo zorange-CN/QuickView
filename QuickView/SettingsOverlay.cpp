@@ -973,6 +973,14 @@ void SettingsOverlay::BuildMenu() {
     
     tabGeneral.items.push_back({ AppStrings::Settings_Label_CheckUpdates, OptionType::Toggle, &g_config.CheckUpdates });
     
+    SettingsItem itemUpdateChannel;
+    itemUpdateChannel.label = AppStrings::Settings_Label_UpdateChannel;
+    itemUpdateChannel.type = OptionType::ComboBox;
+    itemUpdateChannel.pIntVal = &g_config.UpdateChannel;
+    itemUpdateChannel.options = { AppStrings::Settings_Option_UpdateStable, AppStrings::Settings_Option_UpdatePreRelease };
+    itemUpdateChannel.tooltipText = AppStrings::Settings_Tooltip_PreRelease;
+    tabGeneral.items.push_back(itemUpdateChannel);
+    
     // Pro Habits
     tabGeneral.items.push_back({ AppStrings::Settings_Group_Habits, OptionType::Header });
 

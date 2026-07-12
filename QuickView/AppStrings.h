@@ -245,6 +245,10 @@ namespace AppStrings {
     extern const wchar_t* Settings_Label_Language;
     extern const wchar_t* Settings_Label_SingleInstance;
     extern const wchar_t* Settings_Label_CheckUpdates;
+    extern const wchar_t* Settings_Label_UpdateChannel;
+    extern const wchar_t* Settings_Option_UpdateStable;
+    extern const wchar_t* Settings_Option_UpdatePreRelease;
+    extern const wchar_t* Settings_Tooltip_PreRelease;
     extern const wchar_t* Settings_Label_NavLoopMode;
     extern const wchar_t* Settings_Label_SortOrder;
     extern const wchar_t* Settings_Label_SortDescending;

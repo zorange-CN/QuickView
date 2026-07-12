@@ -8,7 +8,9 @@
 #include <shellapi.h>
 #include <shlwapi.h>
 #include <wincrypt.h>
+#include "EditState.h"
 
+extern AppConfig g_config;
 
 #pragma comment(lib, "winhttp.lib")
 #pragma comment(lib, "shlwapi.lib")
@@ -201,7 +203,8 @@ bool UpdateManager::CheckVersion() {
     
     // Timestamp for cache busting
     std::time_t now = std::time(nullptr);
-    std::wstring path = L"/QuickView/version.json?t=" + std::to_wstring(now);
+    std::wstring jsonName = (g_config.UpdateChannel == 1) ? L"version-prerelease.json" : L"version.json";
+    std::wstring path = L"/QuickView/" + jsonName + L"?t=" + std::to_wstring(now);
     
     std::string response = HttpGet(L"justnullname.github.io", path);
     if (response.empty()) return false;
