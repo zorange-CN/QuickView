@@ -260,9 +260,19 @@ void DialogController::Render(ID2D1DeviceContext* context) {
 static LRESULT CALLBACK InputHostWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (msg == WM_CTLCOLOREDIT) {
         HDC hdc = (HDC)wParam;
-        SetTextColor(hdc, RGB(255, 255, 255));
-        SetBkColor(hdc, RGB(30, 30, 30));
-        static HBRUSH hBrush = CreateSolidBrush(RGB(30, 30, 30));
+        bool isLight = IsLightThemeActive();
+        COLORREF bgClr = isLight ? RGB(245, 245, 248) : RGB(30, 30, 35);
+        COLORREF fgClr = isLight ? RGB(20, 20, 25) : RGB(240, 240, 245);
+        SetTextColor(hdc, fgClr);
+        SetBkColor(hdc, bgClr);
+        // Recreate brush each time to track theme changes
+        static HBRUSH hBrush = nullptr;
+        static COLORREF lastBg = 0;
+        if (!hBrush || lastBg != bgClr) {
+            if (hBrush) DeleteObject(hBrush);
+            hBrush = CreateSolidBrush(bgClr);
+            lastBg = bgClr;
+        }
         return (LRESULT)hBrush;
     }
     return DefWindowProcW(hwnd, msg, wParam, lParam);
@@ -278,8 +288,8 @@ static void CreateDialogInputInternal(HWND parent, DialogState& dialog) {
         wc.lpfnWndProc = InputHostWndProc;
         wc.hInstance = GetModuleHandle(nullptr);
         wc.lpszClassName = L"QuickViewInputHost";
-        wc.hbrBackground = CreateSolidBrush(RGB(30, 30, 30));
-        wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+        wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1); // Fallback; actual color is handled in WM_CTLCOLOREDIT
+        wc.hCursor = LoadCursor(nullptr, IDC_IBEAM);
         RegisterClassExW(&wc);
         registered = true;
     }
@@ -299,7 +309,7 @@ static void CreateDialogInputInternal(HWND parent, DialogState& dialog) {
     int w = (ptBR.x - ptTL.x) - 16;
     int h = (ptBR.y - ptTL.y) - 12;
     
-    dialog.hInputHost = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, L"QuickViewInputHost", L"", 
+    dialog.hInputHost = CreateWindowExW(WS_EX_TOOLWINDOW, L"QuickViewInputHost", L"", 
         WS_POPUP | WS_VISIBLE, x, y, w, h, parent, nullptr, GetModuleHandle(nullptr), nullptr);
         
     if (dialog.hInputHost) {

@@ -110,8 +110,8 @@ void GeekGlassEngine::CreateOrUpdateBrushes(ID2D1RenderTarget* pRT, const GeekGl
 
     // 2. [Physical Bevel] Dual-tone Inner Edge (Inner Glow + Edge Depth)
     D2D1_GRADIENT_STOP bevelStops[2];
-    float bevelLightAlpha = isLight ? 0.05f : 0.12f;
-    float bevelDarkAlpha = isLight ? 0.15f : 0.05f;
+    float bevelLightAlpha = isLight ? 0.05f : 0.06f; // Reduced from 0.12f to soften inner white rim on dark
+    float bevelDarkAlpha = isLight ? 0.12f : 0.03f;
 
     bevelStops[0] = { 0.00f, D2D1::ColorF(isLight ? 0.0f : 1.0f, isLight ? 0.0f : 1.0f, isLight ? 0.0f : 1.0f, bevelLightAlpha) };
     bevelStops[1] = { 1.00f, D2D1::ColorF(isLight ? 1.0f : 0.0f, isLight ? 1.0f : 0.0f, isLight ? 1.0f : 0.0f, bevelDarkAlpha) };
@@ -155,14 +155,15 @@ void GeekGlassEngine::CreateOrUpdateBrushes(ID2D1RenderTarget* pRT, const GeekGl
 
     // 4. [Geek Scheme] Gradient Border Brush (135-degree logic)
     D2D1_GRADIENT_STOP borderStops[3];
-    float glowR = isLight ? 0.0f : 1.0f;
-    float glowG = isLight ? 0.0f : 1.0f;
-    float glowB = isLight ? 0.0f : 1.0f;
+    // [UX Fix] Inject subtle cool tint instead of harsh pure white/black
+    float glowR = isLight ? 0.20f : 0.65f;
+    float glowG = isLight ? 0.25f : 0.70f;
+    float glowB = isLight ? 0.35f : 0.85f;
 
     // [UX Fix] Soften the starting gradient borders to reduce harsh lines, especially for white borders on dark themes.
-    float startAlpha = isLight ? 0.15f : 0.18f;
-    float midAlpha   = isLight ? 0.08f : 0.08f;
-    float endAlpha   = isLight ? 0.02f : 0.02f;
+    float startAlpha = isLight ? 0.12f : 0.08f;
+    float midAlpha   = isLight ? 0.06f : 0.04f;
+    float endAlpha   = isLight ? 0.02f : 0.01f;
 
     borderStops[0] = {0.00f, D2D1::ColorF(glowR, glowG, glowB, startAlpha)}; // Top-Left: Light-catcher
     borderStops[1] = {0.50f, D2D1::ColorF(glowR, glowG, glowB, midAlpha)};   // Middle: Transition
@@ -411,7 +412,7 @@ void GeekGlassEngine::DrawGeekGlassToppings(ID2D1RenderTarget* pRT, const GeekGl
     if (pContext) oldBlend = pContext->GetPrimitiveBlend();
 
     // State-folding: Group all Additive primitives together
-    if (pContext && (m_diagonalBrush || m_borderBrush)) {
+    if (pContext && m_diagonalBrush) {
         pContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_ADD);
     }
 
@@ -420,14 +421,14 @@ void GeekGlassEngine::DrawGeekGlassToppings(ID2D1RenderTarget* pRT, const GeekGl
         pRT->FillRoundedRectangle(roundedRect, m_diagonalBrush.Get());
     }
 
-    // 2. [Geek Upgrade] Gradient Border with Additive Blending
-    if (g_config.GlassShowBorders && m_borderBrush && config.strokeWeight > 0.0f) {
-        pRT->DrawRoundedRectangle(roundedRect, m_borderBrush.Get(), config.strokeWeight);
+    // State-folding: Transition to SOURCE_OVER for smooth anti-aliased borders
+    if (pContext) {
+        pContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
     }
 
-    // State-folding: Transition to SOURCE_OVER
-    if (pContext && m_bevelBrush) {
-        pContext->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
+    // 2. [Geek Upgrade] Gradient Border (Standard Alpha Blend)
+    if (g_config.GlassShowBorders && m_borderBrush && config.strokeWeight > 0.0f) {
+        pRT->DrawRoundedRectangle(roundedRect, m_borderBrush.Get(), config.strokeWeight);
     }
 
     // 3. [Structural Depth] Inner Bevel (Micro-refraction)

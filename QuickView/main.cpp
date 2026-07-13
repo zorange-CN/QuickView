@@ -6968,9 +6968,53 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
               }
               return 0; // Handled
           }
+
+          // [Topmost Priority] Window Controls Auto-Show & Hover Logic
+          // Executes before any overlays (Settings, Help, Gallery) to guarantee window controls auto-show and react even if Gallery is in full-grid mode.
+          {
+              float s = g_uiScale;
+              float rightMargin = winW - (float)pt.x;
+              // Narrowed trigger area: Top 65px and rightmost 360px (top-right corner only)
+              bool inTopRightArea = (pt.y <= 65.0f * s) && (rightMargin <= 360.0f * s);
+
+              if (g_config.AutoHideWindowControls) {
+                  if (inTopRightArea != g_showControls) {
+                      g_showControls = inTopRightArea;
+                      if (g_uiRenderer) g_uiRenderer->SetControlsVisible(g_showControls);
+                      RequestRepaint(PaintLayer::Static);
+                  }
+              } else {
+                  if (!g_showControls) {
+                      g_showControls = true;
+                      if (g_uiRenderer) g_uiRenderer->SetControlsVisible(g_showControls);
+                      RequestRepaint(PaintLayer::Static);
+                  }
+              }
+
+              int oldHoverIdx = g_winCtrlHoverState;
+              if (g_showControls && g_uiRenderer) {
+                  g_winCtrlHoverState = HitTestWindowControlButton(pt);
+                  if (g_winCtrlHoverState != -1) {
+                      g_currentCursor = LoadCursor(nullptr, IDC_HAND);
+                  }
+              } else {
+                  g_winCtrlHoverState = -1;
+              }
+
+              if (oldHoverIdx != g_winCtrlHoverState) {
+                  if (g_uiRenderer) g_uiRenderer->SetWindowControlHover(g_winCtrlHoverState);
+                  MarkStaticLayerDirty();
+              }
+
+              // If hovering directly over a window control button, intercept immediately
+              if (g_winCtrlHoverState != -1) {
+                  return 0;
+              }
+          }
+
           if (GetPaneContext(PaneSlot::Primary).view.IsDragging) {
               g_currentCursor = LoadCursor(nullptr, IDC_SIZEALL);
-          } else if (g_config.EdgeNavClick && !hasGallery && !g_settingsOverlay.IsVisible() && !g_helpOverlay.IsVisible() && !AppContext::GetInstance().Dialog.IsVisible) {
+          } else if (g_config.EdgeNavClick && (!g_gallery.IsVisible() || (g_gallery.GetMode() != GalleryMode::FullGrid && !hasGallery)) && !g_settingsOverlay.IsVisible() && !g_helpOverlay.IsVisible() && !AppContext::GetInstance().Dialog.IsVisible) {
               bool hoverEdge = false;
               if (g_config.NavIndicator == 0) {
                   if (IsCompareModeActive() && !g_config.DisableEdgeNavInCompare) {
@@ -7084,7 +7128,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
           }
           
             // Edge Navigation Hover Detection
-            if (g_config.EdgeNavClick && !g_gallery.IsVisible() && !g_settingsOverlay.IsVisible() && !g_helpOverlay.IsVisible() && !AppContext::GetInstance().Dialog.IsVisible) {
+            if (g_config.EdgeNavClick && (!g_gallery.IsVisible() || (g_gallery.GetMode() != GalleryMode::FullGrid && !g_gallery.HitTestArea(pt.x, pt.y, (float)winW, (float)winH))) && !g_settingsOverlay.IsVisible() && !g_helpOverlay.IsVisible() && !AppContext::GetInstance().Dialog.IsVisible) {
                 RECT rcv; GetClientRect(hwnd, &rcv);
                 int w = rcv.right - rcv.left;
                 int h = rcv.bottom - rcv.top;
@@ -7218,43 +7262,6 @@ SKIP_EDGE_NAV:;
           SetTimer(hwnd, 997, 16, nullptr); // Drive animation logic
           // Note: Toolbar.OnMouseMove handles hover state changes and 
           // WM_TIMER 997 will refresh if animation is active
-          
-          // Update Button Hover using UIRenderer::HitTestWindowControls
-          int oldHoverIdx = g_winCtrlHoverState;
-          g_winCtrlHoverState = -1;
-          
-          // Auto-Show Controls Logic
-          RECT rcClient; GetClientRect(hwnd, &rcClient);
-          bool inTopArea = (pt.y <= 60); // 60px top area
-          
-          if (g_config.AutoHideWindowControls) {
-              // Simpler: Just rely on mouse Y.
-              if (inTopArea != g_showControls) {
-                  g_showControls = inTopArea;
-                  if (g_uiRenderer) g_uiRenderer->SetControlsVisible(g_showControls);
-                  RequestRepaint(PaintLayer::Static);  // WinControls are on Static layer
-              }
-          } else {
-              if (!g_showControls) { 
-                  g_showControls = true; 
-                  if (g_uiRenderer) g_uiRenderer->SetControlsVisible(g_showControls);
-                  RequestRepaint(PaintLayer::Static); 
-              }
-          }
-          
-          if (g_showControls && g_uiRenderer) {
-              g_winCtrlHoverState = HitTestWindowControlButton(pt);
-
-              // Hand cursor for window control buttons
-              if (g_winCtrlHoverState != -1) {
-                  g_currentCursor = LoadCursor(nullptr, IDC_HAND);
-              }
-          }
-
-          if (oldHoverIdx != g_winCtrlHoverState) {
-              if (g_uiRenderer) g_uiRenderer->SetWindowControlHover(g_winCtrlHoverState);
-              MarkStaticLayerDirty();  // Window Controls hover change (includes InvalidateRect)
-          }
 
          if (GetPaneContext(PaneSlot::Primary).view.IsRightButtonDown && !GetPaneContext(PaneSlot::Primary).view.IsRightButtonDragZoom) {
              POINT cursorPos{};
@@ -8080,7 +8087,7 @@ SKIP_EDGE_NAV:;
         int w = rcCheck.right - rcCheck.left;
         int h = rcCheck.bottom - rcCheck.top;
         bool inEdgeZone = false;
-        if (g_config.EdgeNavClick && !g_gallery.IsVisible() && !g_settingsOverlay.IsVisible() && !g_helpOverlay.IsVisible() && !AppContext::GetInstance().Dialog.IsVisible) {
+        if (g_config.EdgeNavClick && (!g_gallery.IsVisible() || (g_gallery.GetMode() != GalleryMode::FullGrid && !g_gallery.HitTestArea(pt.x, pt.y, (float)w, (float)h))) && !g_settingsOverlay.IsVisible() && !g_helpOverlay.IsVisible() && !AppContext::GetInstance().Dialog.IsVisible) {
             if (IsCompareModeActive()) {
                 if (!g_config.DisableEdgeNavInCompare) {
                     inEdgeZone = AppContext::GetInstance().CompareCtrl->HitTestEdgeZone(hwnd, pt);
@@ -8508,7 +8515,8 @@ SKIP_EDGE_NAV:;
         GetPaneContext(PaneSlot::Primary).view.IsInteracting = false;  // End interaction mode
 
         // Edge Navigation Click
-        if (g_config.EdgeNavClick && !g_gallery.IsVisible() && !g_settingsOverlay.IsVisible() && !g_helpOverlay.IsVisible() && !AppContext::GetInstance().Dialog.IsVisible && !AppContext::GetInstance().Compare.draggingDivider && !GetPaneContext(PaneSlot::Primary).view.IsDragging) {
+        RECT rc; GetClientRect(hwnd, &rc);
+        if (g_config.EdgeNavClick && (!g_gallery.IsVisible() || (g_gallery.GetMode() != GalleryMode::FullGrid && !g_gallery.HitTestArea(pt.x, pt.y, (float)(rc.right - rc.left), (float)(rc.bottom - rc.top)))) && !g_settingsOverlay.IsVisible() && !g_helpOverlay.IsVisible() && !AppContext::GetInstance().Dialog.IsVisible && !AppContext::GetInstance().Compare.draggingDivider && !GetPaneContext(PaneSlot::Primary).view.IsDragging) {
             // [Fix] Block edge nav if clicking on Info UI / HUD
             if (g_uiRenderer) {
                 auto hit = g_uiRenderer->HitTest((float)pt.x, (float)pt.y);
@@ -8516,7 +8524,6 @@ SKIP_EDGE_NAV:;
                     return 0; // Handled by Info UI
                 }
             }
-            RECT rc; GetClientRect(hwnd, &rc);
             int width = rc.right - rc.left;
             int height = rc.bottom - rc.top;
 

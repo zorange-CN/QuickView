@@ -4,6 +4,9 @@
 #include "EditState.h"
 #include "GeekIconRenderer.h"
 #include "FileNavigator.h"
+#include "GalleryOverlay.h"
+#include "SettingsOverlay.h"
+#include "HelpOverlay.h"
 
 using QuickView::UI::GeekIconRenderer;
 
@@ -568,6 +571,12 @@ void Toolbar::Render(ID2D1RenderTarget *pRT) {
   if (m_windowTooNarrow)
     return;
 
+  extern GalleryOverlay g_gallery;
+  extern SettingsOverlay g_settingsOverlay;
+  extern HelpOverlay g_helpOverlay;
+  bool isFullGridGallery = g_gallery.IsVisible() && g_gallery.GetMode() == GalleryMode::FullGrid;
+  if (g_settingsOverlay.IsVisible() || g_helpOverlay.IsVisible() || isFullGridGallery) return;
+
   CreateResources(pRT);
 
   bool isLight = IsLightThemeActive();
@@ -1080,6 +1089,11 @@ bool Toolbar::OnClick(float x, float y, ToolbarButtonID &outId) {
 
 bool Toolbar::HitTest(float x, float y) {
   if (!IsVisible() || m_windowTooNarrow) return false;
+  extern GalleryOverlay g_gallery;
+  extern SettingsOverlay g_settingsOverlay;
+  extern HelpOverlay g_helpOverlay;
+  bool isFullGridGallery = g_gallery.IsVisible() && g_gallery.GetMode() == GalleryMode::FullGrid;
+  if (g_settingsOverlay.IsVisible() || g_helpOverlay.IsVisible() || isFullGridGallery) return false;
   
   // 1. Standard background capsule
   if (x >= m_bgRect.rect.left && x <= m_bgRect.rect.right && y >= m_bgRect.rect.top && y <= m_bgRect.rect.bottom) return true;

@@ -359,31 +359,93 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size, ID
     glassConfig.pBackgroundCommandList = pBgCmdList;
     glassConfig.backgroundTransform = bgTransform;
     
-    m_geekGlass.DrawGeekGlassPanel(pDC, glassConfig);
-    
-    // Setup brushes
-    if (!m_brushBg) pDC->CreateSolidColorBrush(D2D1::ColorF(0.0f, 0.0f, 0.0f, 1.0f), &m_brushBg);
+    bool isPinnedFilmstrip = (m_isPinned && m_mode == GalleryMode::Filmstrip);
+    bool isLight = IsLightThemeActive();
+
+    if (isPinnedFilmstrip) {
+        // [Pinned Filmstrip Mode] Ambient Cyber Gradient Injection (3% Cold Slate / Cyber Blue Mist)
+        // When pinned, the main image shifts down below galleryH, leaving a black void in pBgCmdList.
+        // Instead of sampling the black void which turns the glass dark/dirty, we render a high-end ambient gradient base.
+        if (!m_brushPinnedGradient || m_pinnedGradientIsLight != isLight || fabsf(m_pinnedGradientHeight - galleryH) > 1.0f) {
+            m_pinnedGradientStops.Reset();
+            m_brushPinnedGradient.Reset();
+
+            D2D1_GRADIENT_STOP stops[3];
+            if (isLight) {
+                // [High-End Cyber-Mica 3-Stop Gradient - Light Mode] Glacier Aurora Crystal
+                // Top: Crisp Glacier Specular Shine (99% White with subtle ice tint)
+                stops[0].position = 0.0f;
+                stops[0].color = D2D1::ColorF(0.990f, 0.992f, 1.000f, 1.0f);
+                // Middle: Refined Cool Cyber-Slate Glass Core
+                stops[1].position = 0.42f;
+                stops[1].color = D2D1::ColorF(0.915f, 0.935f, 0.970f, 1.0f);
+                // Bottom: Deep Structural Cyan-Titanium Edge providing noticeable 3D levitation
+                stops[2].position = 1.0f;
+                stops[2].color = D2D1::ColorF(0.825f, 0.855f, 0.910f, 1.0f);
+            } else {
+                // [High-End Cyber-Mica 3-Stop Gradient - Dark Mode] Midnight Titanium Cyber-Mica
+                // Top: Cyan-Titanium Crest reflecting top ambient lighting
+                stops[0].position = 0.0f;
+                stops[0].color = D2D1::ColorF(0.145f, 0.165f, 0.220f, 1.0f);
+                // Middle: Deep Cyber-Blue Obsidian Core (atmospheric & durable)
+                stops[1].position = 0.38f;
+                stops[1].color = D2D1::ColorF(0.088f, 0.105f, 0.150f, 1.0f);
+                // Bottom: Heavy Deep Space Void anchoring the suspended top band
+                stops[2].position = 1.0f;
+                stops[2].color = D2D1::ColorF(0.035f, 0.040f, 0.060f, 1.0f);
+            }
+
+            pDC->CreateGradientStopCollection(stops, 3, D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP, &m_pinnedGradientStops);
+            if (m_pinnedGradientStops) {
+                pDC->CreateLinearGradientBrush(
+                    D2D1::LinearGradientBrushProperties(D2D1::Point2F(0.0f, 0.0f), D2D1::Point2F(0.0f, galleryH)),
+                    D2D1::BrushProperties(),
+                    m_pinnedGradientStops.Get(),
+                    &m_brushPinnedGradient
+                );
+                m_pinnedGradientIsLight = isLight;
+                m_pinnedGradientHeight = galleryH;
+            }
+        }
+
+        if (m_brushPinnedGradient) {
+            m_brushPinnedGradient->SetOpacity(m_transitionProgress);
+            pDC->FillRectangle(panelRect, m_brushPinnedGradient.Get());
+        }
+
+        // Apply GeekGlass toppings (specular border, vector stroke, lighting reflections) on top of the ambient gradient
+        if (g_config.EnableGeekGlass) {
+            m_geekGlass.DrawGeekGlassToppings(pDC, glassConfig);
+        }
+    } else {
+        // [Floating Mode] Normal GeekGlass sampling from background image
+        m_geekGlass.DrawGeekGlassPanel(pDC, glassConfig);
+        
+        // Setup brushes
+        if (!m_brushBg) pDC->CreateSolidColorBrush(D2D1::ColorF(0.0f, 0.0f, 0.0f, 1.0f), &m_brushBg);
+        
+        D2D1_COLOR_F bgClr = isLight ? D2D1::ColorF(0.95f, 0.95f, 0.97f, 1.0f) : D2D1::ColorF(0.08f, 0.08f, 0.10f, 1.0f);
+        
+        // Material Boost Fill - only if GeekGlass is enabled (matches InfoPanel and Toolbar)
+        if (g_config.EnableGeekGlass) {
+            m_brushBg->SetColor(bgClr);
+            m_brushBg->SetOpacity(glassConfig.opacity);
+            pDC->FillRectangle(panelRect, m_brushBg.Get());
+            
+            m_geekGlass.DrawGeekGlassToppings(pDC, glassConfig);
+        }
+    }
+
     if (!m_brushSelection) pDC->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::DodgerBlue), &m_brushSelection);
     if (!m_brushText) pDC->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White), &m_brushText);
     if (!m_brushOverlay) pDC->CreateSolidColorBrush(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.5f), &m_brushOverlay);
-    
-    bool isLight = IsLightThemeActive();
-    // Use the exact same colors as info panel
-    D2D1_COLOR_F bgClr = isLight ? D2D1::ColorF(0.95f, 0.95f, 0.97f, 1.0f) : D2D1::ColorF(0.08f, 0.08f, 0.10f, 1.0f);
-    D2D1_COLOR_F txtClr = isLight ? D2D1::ColorF(0.12f, 0.12f, 0.15f, 1.0f) : D2D1::ColorF(D2D1::ColorF::White);
-    D2D1_COLOR_F accClr = isLight ? D2D1::ColorF(0.0f, 0.45f, 0.9f, 1.0f) : D2D1::ColorF(D2D1::ColorF::DodgerBlue);
+
+    bool isLightForText = IsLightThemeActive();
+    D2D1_COLOR_F txtClr = isLightForText ? D2D1::ColorF(0.12f, 0.12f, 0.15f, 1.0f) : D2D1::ColorF(D2D1::ColorF::White);
+    D2D1_COLOR_F accClr = isLightForText ? D2D1::ColorF(0.0f, 0.45f, 0.9f, 1.0f) : D2D1::ColorF(D2D1::ColorF::DodgerBlue);
     
     m_brushSelection->SetColor(accClr);
     m_brushText->SetColor(txtClr);
-    
-    // Material Boost Fill - only if GeekGlass is enabled (matches InfoPanel and Toolbar)
-    if (g_config.EnableGeekGlass) {
-        m_brushBg->SetColor(bgClr);
-        m_brushBg->SetOpacity(glassConfig.opacity);
-        pDC->FillRectangle(panelRect, m_brushBg.Get());
-        
-        m_geekGlass.DrawGeekGlassToppings(pDC, glassConfig);
-    }
     
     // 2. Text Format Initialization
     static float lastScale = 0.0f;
@@ -639,41 +701,54 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size, ID
     
     pDC->PopAxisAlignedClip(); // Pop thumbsClip
     
-    // 5. Left/Right Navigation Arrows Rendering (Only in Filmstrip Mode with Floating Circle buttons)
+    // 5. Left/Right Navigation Arrows Rendering (Refined Mini-Glass Circle Buttons)
     if (m_gridProgress < 0.2f) {
-        float arrowSize = 12.0f * g_uiScale;
-        float btnRadius = 18.0f * g_uiScale;
+        float arrowSize = 7.5f * g_uiScale;
+        float btnRadius = 13.0f * g_uiScale;
+        float strokeW = 1.5f * g_uiScale;
         
+        D2D1_COLOR_F fillClr = isLight ? D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.85f) : D2D1::ColorF(0.10f, 0.12f, 0.16f, 0.85f);
+        D2D1_COLOR_F borderClr = isLight ? D2D1::ColorF(0.70f, 0.75f, 0.85f, 0.60f) : D2D1::ColorF(0.35f, 0.40f, 0.52f, 0.50f);
+        D2D1_COLOR_F arrowClr = isLight ? D2D1::ColorF(0.12f, 0.12f, 0.15f, 1.0f) : D2D1::ColorF(0.96f, 0.98f, 1.0f, 1.0f);
+
         // Left Arrow
         if (m_arrowLeftAlpha > 0.01f) {
-            float cx = 24.0f * g_uiScale;
+            float cx = 20.0f * g_uiScale;
             float cy = PADDING + filmCellH / 2.0f;
+            D2D1_ELLIPSE ellipse = D2D1::Ellipse(D2D1::Point2F(cx, cy), btnRadius, btnRadius);
             
-            // Draw floating glass-morphic circle background
-            m_brushOverlay->SetColor(D2D1::ColorF(0.0f, 0.0f, 0.0f));
-            m_brushOverlay->SetOpacity(m_arrowLeftAlpha * m_transitionProgress * 0.45f);
-            pDC->FillEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy), btnRadius, btnRadius), m_brushOverlay.Get());
+            m_brushBg->SetColor(fillClr);
+            m_brushBg->SetOpacity(m_arrowLeftAlpha * m_transitionProgress);
+            pDC->FillEllipse(ellipse, m_brushBg.Get());
             
-            // Draw arrow chevron lines
+            m_brushOverlay->SetColor(borderClr);
+            m_brushOverlay->SetOpacity(m_arrowLeftAlpha * m_transitionProgress);
+            pDC->DrawEllipse(ellipse, m_brushOverlay.Get(), 0.75f * g_uiScale);
+            
+            m_brushText->SetColor(arrowClr);
             m_brushText->SetOpacity(m_arrowLeftAlpha * m_transitionProgress);
-            pDC->DrawLine(D2D1::Point2F(cx + arrowSize / 2.0f - 1.0f * g_uiScale, cy - arrowSize / 2.0f), D2D1::Point2F(cx - arrowSize / 2.0f - 1.0f * g_uiScale, cy), m_brushText.Get(), 2.5f * g_uiScale);
-            pDC->DrawLine(D2D1::Point2F(cx - arrowSize / 2.0f - 1.0f * g_uiScale, cy), D2D1::Point2F(cx + arrowSize / 2.0f - 1.0f * g_uiScale, cy + arrowSize / 2.0f), m_brushText.Get(), 2.5f * g_uiScale);
+            pDC->DrawLine(D2D1::Point2F(cx + arrowSize * 0.4f, cy - arrowSize * 0.6f), D2D1::Point2F(cx - arrowSize * 0.4f, cy), m_brushText.Get(), strokeW);
+            pDC->DrawLine(D2D1::Point2F(cx - arrowSize * 0.4f, cy), D2D1::Point2F(cx + arrowSize * 0.4f, cy + arrowSize * 0.6f), m_brushText.Get(), strokeW);
         }
         
         // Right Arrow
         if (m_arrowRightAlpha > 0.01f) {
-            float cx = size.width - 24.0f * g_uiScale;
+            float cx = size.width - 20.0f * g_uiScale;
             float cy = PADDING + filmCellH / 2.0f;
+            D2D1_ELLIPSE ellipse = D2D1::Ellipse(D2D1::Point2F(cx, cy), btnRadius, btnRadius);
             
-            // Draw floating glass-morphic circle background
-            m_brushOverlay->SetColor(D2D1::ColorF(0.0f, 0.0f, 0.0f));
-            m_brushOverlay->SetOpacity(m_arrowRightAlpha * m_transitionProgress * 0.45f);
-            pDC->FillEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy), btnRadius, btnRadius), m_brushOverlay.Get());
+            m_brushBg->SetColor(fillClr);
+            m_brushBg->SetOpacity(m_arrowRightAlpha * m_transitionProgress);
+            pDC->FillEllipse(ellipse, m_brushBg.Get());
             
-            // Draw arrow chevron lines
+            m_brushOverlay->SetColor(borderClr);
+            m_brushOverlay->SetOpacity(m_arrowRightAlpha * m_transitionProgress);
+            pDC->DrawEllipse(ellipse, m_brushOverlay.Get(), 0.75f * g_uiScale);
+            
+            m_brushText->SetColor(arrowClr);
             m_brushText->SetOpacity(m_arrowRightAlpha * m_transitionProgress);
-            pDC->DrawLine(D2D1::Point2F(cx - arrowSize / 2.0f + 1.0f * g_uiScale, cy - arrowSize / 2.0f), D2D1::Point2F(cx + arrowSize / 2.0f + 1.0f * g_uiScale, cy), m_brushText.Get(), 2.5f * g_uiScale);
-            pDC->DrawLine(D2D1::Point2F(cx + arrowSize / 2.0f + 1.0f * g_uiScale, cy), D2D1::Point2F(cx - arrowSize / 2.0f + 1.0f * g_uiScale, cy + arrowSize / 2.0f), m_brushText.Get(), 2.5f * g_uiScale);
+            pDC->DrawLine(D2D1::Point2F(cx - arrowSize * 0.4f, cy - arrowSize * 0.6f), D2D1::Point2F(cx + arrowSize * 0.4f, cy), m_brushText.Get(), strokeW);
+            pDC->DrawLine(D2D1::Point2F(cx + arrowSize * 0.4f, cy), D2D1::Point2F(cx - arrowSize * 0.4f, cy + arrowSize * 0.6f), m_brushText.Get(), strokeW);
         }
         
         m_brushText->SetOpacity(1.0f); // Reset opacity
@@ -875,15 +950,15 @@ bool GalleryOverlay::OnLButtonDown(int x, int y) {
     // Check filmstrip left/right arrows
     if (m_gridProgress < 0.2f) {
         float arrowCy = PADDING + FILM_CELL_SIZE / 2.0f;
-        float arrowR = 30.0f * g_uiScale;
+        float arrowR = 22.0f * g_uiScale;
         
-        if (fx < 48.0f * g_uiScale && fabsf(fy - arrowCy) < arrowR) {
+        if (fx < 36.0f * g_uiScale && fabsf(fy - arrowCy) < arrowR) {
             if (m_targetScrollLeft < 0.0f) m_targetScrollLeft = m_scrollLeft;
             m_targetScrollLeft = std::max(0.0f, m_targetScrollLeft - 300.0f);
             RequestRepaint(QuickView::PaintLayer::Gallery);
             return true;
         }
-        if (fx > m_lastSize.width - 48.0f * g_uiScale && fabsf(fy - arrowCy) < arrowR) {
+        if (fx > m_lastSize.width - 36.0f * g_uiScale && fabsf(fy - arrowCy) < arrowR) {
             if (m_targetScrollLeft < 0.0f) m_targetScrollLeft = m_scrollLeft;
             m_targetScrollLeft = std::min(m_maxScrollLeft, m_targetScrollLeft + 300.0f);
             RequestRepaint(QuickView::PaintLayer::Gallery);
@@ -928,9 +1003,9 @@ bool GalleryOverlay::OnMouseMove(int x, int y) {
     // Update arrow hover states (filmstrip mode)
     if (m_gridProgress < 0.2f) {
         float arrowCy = PADDING + FILM_CELL_SIZE / 2.0f;
-        float arrowR = 30.0f * g_uiScale;
-        bool leftHover = (fx < 48.0f * g_uiScale && fabsf(fy - arrowCy) < arrowR);
-        bool rightHover = (fx > m_lastSize.width - 48.0f * g_uiScale && fabsf(fy - arrowCy) < arrowR);
+        float arrowR = 22.0f * g_uiScale;
+        bool leftHover = (fx < 36.0f * g_uiScale && fabsf(fy - arrowCy) < arrowR);
+        bool rightHover = (fx > m_lastSize.width - 36.0f * g_uiScale && fabsf(fy - arrowCy) < arrowR);
         if (leftHover != m_arrowLeftHover || rightHover != m_arrowRightHover) {
             m_arrowLeftHover = leftHover;
             m_arrowRightHover = rightHover;

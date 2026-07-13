@@ -167,6 +167,10 @@ private:
     ComPtr<ID2D1SolidColorBrush> m_brushSelection;
     ComPtr<ID2D1SolidColorBrush> m_brushText;
     ComPtr<ID2D1SolidColorBrush> m_brushOverlay;
+    ComPtr<ID2D1LinearGradientBrush> m_brushPinnedGradient;
+    ComPtr<ID2D1GradientStopCollection> m_pinnedGradientStops;
+    bool m_pinnedGradientIsLight = false;
+    float m_pinnedGradientHeight = 0.0f;
     
     // Text Rendering
     ComPtr<IDWriteFactory> m_dwriteFactory;
