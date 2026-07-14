@@ -4221,7 +4221,7 @@ void UIRenderer::DrawCompareInfoHUD(ID2D1DeviceContext* dc) {
 		    const float rowH = 20.0f * s;
 		    const float padding = 6.0f * s;
 		    const float headerH = (leftTag.empty() && rightTag.empty()) ? 0 : 24.0f * s;
-		    const float labelW = 74.0f * s;
+		    const float labelW = 64.0f * s;
 		    const float valGap = 4.0f * s;
 
 			    float desiredValW = 120.0f * s;
@@ -4422,8 +4422,11 @@ void UIRenderer::DrawCompareInfoHUD(ID2D1DeviceContext* dc) {
             // Draw Label + Icon
             std::wstring icon = lRow ? lRow->icon : (rRow ? rRow->icon : L"");
             
+            // Reset text alignment to LEADING to prevent state leak from previous row's DrawValue (e.g. when right value is missing)
+            m_panelFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+            
             // [Layout Fix] Re-sync with DrawInfoGrid: Use Segoe UI (panelFormat) for icons to avoid box glyphs
-            float iconSize = 20.0f * s;
+            float iconSize = 16.0f * s;
             D2D1_RECT_F iconRect = D2D1::RectF(labelX, y, labelX + iconSize, y + rowH);
             D2D1_RECT_F nameRect = D2D1::RectF(labelX + iconSize, y, labelX + labelW, y + rowH);
             

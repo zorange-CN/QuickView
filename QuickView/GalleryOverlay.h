@@ -131,6 +131,7 @@ private:
     // Layout
     int m_cols = 6;
     int m_targetCols = 6;
+    float m_preferredCellWidth = 140.0f;
 
     float m_cellHeight = 0.0f;
 

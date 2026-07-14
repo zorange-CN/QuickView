@@ -1092,8 +1092,12 @@ bool Toolbar::HitTest(float x, float y) {
   extern GalleryOverlay g_gallery;
   extern SettingsOverlay g_settingsOverlay;
   extern HelpOverlay g_helpOverlay;
+  extern std::wstring& g_imagePath;
+  
   bool isFullGridGallery = g_gallery.IsVisible() && g_gallery.GetMode() == GalleryMode::FullGrid;
-  if (g_settingsOverlay.IsVisible() || g_helpOverlay.IsVisible() || isFullGridGallery) return false;
+  bool isWelcomeScreen = g_imagePath.empty() && !g_gallery.IsVisible();
+  
+  if (g_settingsOverlay.IsVisible() || g_helpOverlay.IsVisible() || isFullGridGallery || isWelcomeScreen) return false;
   
   // 1. Standard background capsule
   if (x >= m_bgRect.rect.left && x <= m_bgRect.rect.right && y >= m_bgRect.rect.top && y <= m_bgRect.rect.bottom) return true;

@@ -371,7 +371,8 @@ static float GetMinWindowWidth() {
         defaultMinW = std::max(defaultMinW, 500.0f * g_uiScale + 50.0f * g_uiScale);
     }
     if (g_gallery.IsVisible()) {
-        float galleryMinW = (g_gallery.GetMode() == GalleryMode::FullGrid) ? 660.0f : 450.0f;
+        // Lowered limits (2x2 thumbnail matrix baseline) to prevent unwanted layout jumps on normal-sized windows.
+        float galleryMinW = 250.0f;
         defaultMinW = std::max(defaultMinW, galleryMinW * g_uiScale + 50.0f * g_uiScale);
     }
     if (AppContext::GetInstance().Dialog.IsVisible) {
@@ -400,7 +401,8 @@ static float GetMinWindowHeight() {
         defaultMinH = std::max(defaultMinH, 600.0f * g_uiScale + 50.0f * g_uiScale);
     }
     if (g_gallery.IsVisible()) {
-        float galleryMinH = (g_gallery.GetMode() == GalleryMode::FullGrid) ? 720.0f : 400.0f;
+        // Lowered limits (2x2 thumbnail matrix baseline) to prevent unwanted layout jumps on normal-sized windows.
+        float galleryMinH = (g_gallery.GetMode() == GalleryMode::FullGrid) ? 250.0f : 180.0f;
         defaultMinH = std::max(defaultMinH, galleryMinH * g_uiScale + 50.0f * g_uiScale);
     }
     if (AppContext::GetInstance().Dialog.IsVisible) {

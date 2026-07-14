@@ -768,8 +768,9 @@ public:
                     memset(row, 0, (safeRight - safeLeft) * 4);
                 }
             } else if (m_lastDisposal == FrameDisposalMode::RestorePrevious) {
-                // To properly support RestorePrevious, we need a backup buffer...
-                // For now, RestoreBackground is the most common fallback.
+                if (m_restoreBuffer.size() == m_canvas.size()) {
+                    memcpy(m_canvas.data(), m_restoreBuffer.data(), m_canvas.size());
+                }
             }
         }
 
@@ -795,6 +796,12 @@ public:
         wuffs_base__pixel_blend blendMode = WUFFS_BASE__PIXEL_BLEND__SRC_OVER;
         if (wuffs_base__frame_config__overwrite_instead_of_blend(&fc)) {
             blendMode = WUFFS_BASE__PIXEL_BLEND__SRC;
+        }
+
+        uint8_t currentDisposal = wuffs_base__frame_config__disposal(&fc);
+        if (currentDisposal == WUFFS_BASE__ANIMATION_DISPOSAL__RESTORE_PREVIOUS) {
+            if (m_restoreBuffer.size() != m_canvas.size()) m_restoreBuffer.resize(m_canvas.size());
+            memcpy(m_restoreBuffer.data(), m_canvas.data(), m_canvas.size());
         }
 
         // Decode Frame Pixels into Canvas
@@ -987,6 +994,8 @@ private:
         uint32_t snapshotInterval = 20;
         size_t memoryLimit = 256 * 1024 * 1024; // 256MB
         size_t currentMemory = 0;
+        
+        std::vector<uint8_t> bgRestoreBuffer;
 
         while (!st.stop_requested()) {
             if (bgCurrentIndex > 0) {
@@ -999,10 +1008,14 @@ private:
                         uint8_t* row = bgCanvas.data() + (y * m_width * 4) + safeLeft * 4;
                         memset(row, 0, (safeRight - safeLeft) * 4);
                     }
+                } else if (bgLastDisposal == FrameDisposalMode::RestorePrevious) {
+                    if (bgRestoreBuffer.size() == bgCanvas.size()) {
+                        memcpy(bgCanvas.data(), bgRestoreBuffer.data(), bgCanvas.size());
+                    }
                 }
             }
 
-            if (bgCurrentIndex % snapshotInterval == 0) {
+            if (bgCurrentIndex % snapshotInterval == 0 && bgLastDisposal != FrameDisposalMode::RestorePrevious) {
                 Snapshot snap;
                 snap.index = bgCurrentIndex;
                 snap.canvas = bgCanvas;
@@ -1054,6 +1067,12 @@ private:
 
             wuffs_base__pixel_blend blendMode = WUFFS_BASE__PIXEL_BLEND__SRC_OVER;
             if (wuffs_base__frame_config__overwrite_instead_of_blend(&fc)) blendMode = WUFFS_BASE__PIXEL_BLEND__SRC;
+
+            uint8_t currentDisposal = wuffs_base__frame_config__disposal(&fc);
+            if (currentDisposal == WUFFS_BASE__ANIMATION_DISPOSAL__RESTORE_PREVIOUS) {
+                if (bgRestoreBuffer.size() != bgCanvas.size()) bgRestoreBuffer.resize(bgCanvas.size());
+                memcpy(bgRestoreBuffer.data(), bgCanvas.data(), bgCanvas.size());
+            }
 
             while (true) {
                 if (st.stop_requested()) return;
@@ -1111,6 +1130,7 @@ private:
     // Disposal State
     FrameDisposalMode m_lastDisposal = FrameDisposalMode::Unspecified;
     Rect m_lastRect;
+    std::vector<uint8_t> m_restoreBuffer;
 
     std::vector<Snapshot> m_snapshots;
     std::shared_mutex m_snapshotMutex;
