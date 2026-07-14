@@ -4,6 +4,7 @@
 #include "HelpOverlay.h"
 #include "AppStrings.h"
 #include "ImageEngine.h"
+#include "DialogController.h"
 #include "OSDState.h"
 #include <algorithm>
 #include <Shlobj.h>
@@ -1625,6 +1626,30 @@ void SettingsOverlay::BuildMenu() {
     tabControl.items.push_back({ AppStrings::Settings_Label_RightButtonDragZoom, OptionType::Toggle, &g_config.RightButtonDragZoom });
     tabControl.items.push_back({ AppStrings::Settings_Label_RightDragZoomSpeed, OptionType::Slider, nullptr, &g_config.RightDragZoomSpeed, nullptr, nullptr, 0.1f, 3.0f, {}, L"%.1fx" });
     tabControl.items.push_back({ AppStrings::Settings_Label_WheelZoomSpeed, OptionType::Slider, nullptr, &g_config.WheelZoomSpeed, nullptr, nullptr, 5.0f, 50.0f, {}, L"%.0f%%" });
+    
+    // Use Fixed Zoom Levels
+    SettingsItem itemUseFixedZoom = { AppStrings::Settings_Label_UseFixedZoom, OptionType::Toggle, &g_config.UseFixedZoom };
+    itemUseFixedZoom.tooltipText = AppStrings::Settings_Tooltip_UseFixedZoom;
+    itemUseFixedZoom.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) { SaveConfig(); };
+    tabControl.items.push_back(itemUseFixedZoom);
+    
+    // Fixed Zoom Levels Input
+    SettingsItem itemFixedZoomLevels;
+    itemFixedZoomLevels.label = AppStrings::Settings_Label_FixedZoomLevels;
+    itemFixedZoomLevels.type = OptionType::Input;
+    itemFixedZoomLevels.pStrVal = &g_config.FixedZoomLevels;
+    itemFixedZoomLevels.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
+        ParseFixedZoomLevels();
+        SaveConfig();
+    };
+    itemFixedZoomLevels.onReset = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) {
+        g_config.FixedZoomLevels = L"0.05,0.1,0.125,0.166,0.25,0.333,0.5,0.66,1,1.5,2,3,4,5,6,7,8,12,16,32,64,128";
+        ParseFixedZoomLevels();
+        SaveConfig();
+        overlay->RebuildMenu();
+    };
+    tabControl.items.push_back(itemFixedZoomLevels);
+
     tabControl.items.push_back({ AppStrings::Settings_Label_InvertButtons, OptionType::Toggle, &g_config.InvertXButton });
     
     // Left Drag
@@ -3039,6 +3064,51 @@ void SettingsOverlay::Render(ID2D1DeviceContext* pRT, float winW, float winH) {
                         }
                     }
                     break;
+                case OptionType::Input: {
+                    const float s = m_uiScale;
+                    const float padding = 12.0f * s;
+                    const float buttonW = 28.0f * s;
+                    
+                    if (item.onReset) {
+                        float buttonX = controlRect.left;
+                        item.interactRect2 = D2D1::RectF(buttonX, item.rect.top, buttonX + buttonW, item.rect.bottom);
+                        
+                        m_textFormatItem->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+                        m_textFormatItem->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+                        D2D1_RECT_F emojiRect = item.interactRect2;
+                        emojiRect.top += 1.0f * s;
+                        ComPtr<ID2D1SolidColorBrush> resetBrush = item.isHovered2 ? m_brushText : m_brushTextDim;
+                        pRT->DrawText(L"\u21BA", 1, m_textFormatItem.Get(), emojiRect, resetBrush.Get());
+                        m_textFormatItem->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+                    } else {
+                        item.interactRect2 = {};
+                    }
+                    
+                    float inputLeft = item.onReset ? (controlRect.left + buttonW + padding) : controlRect.left;
+                    float inputRight = controlRect.right;
+                    D2D1_RECT_F inputRect = D2D1::RectF(inputLeft, controlRect.top, inputRight, controlRect.bottom);
+                    item.interactRect = inputRect;
+                    
+                    D2D1_COLOR_F boxBg = palette.controlBg;
+                    D2D1_COLOR_F borderClr = palette.border;
+                    if (item.isHovered && !item.isDisabled) {
+                        borderClr = palette.accent;
+                    }
+                    
+                    ComPtr<ID2D1SolidColorBrush> brushBg, brushBorder;
+                    pRT->CreateSolidColorBrush(boxBg, &brushBg);
+                    pRT->CreateSolidColorBrush(borderClr, &brushBorder);
+                    
+                    pRT->FillRoundedRectangle(D2D1::RoundedRect(inputRect, 4.0f * s, 4.0f * s), brushBg.Get());
+                    pRT->DrawRoundedRectangle(D2D1::RoundedRect(inputRect, 4.0f * s, 4.0f * s), brushBorder.Get(), 1.0f * s);
+                    
+                    std::wstring valText = item.pStrVal ? *item.pStrVal : L"";
+                    D2D1_RECT_F textRect = D2D1::RectF(inputRect.left + 8.0f * s, inputRect.top, inputRect.right - 8.0f * s, inputRect.bottom);
+                    m_textFormatItem->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+                    
+                    pRT->DrawText(valText.c_str(), (UINT32)valText.length(), m_textFormatItem.Get(), textRect, m_brushText.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                    break;
+                }
                 case OptionType::Slider: {
                   const float s = m_uiScale;
                   const float trackW = 150.0f * s;
@@ -3983,6 +4053,32 @@ SettingsAction SettingsOverlay::OnLButtonDown(float x, float y) {
                  }
              }
              return SettingsAction::RepaintAll;
+        }
+        // Input Option Type Click
+        if (m_pHoverItem->type == OptionType::Input) {
+            if (m_pHoverItem->isDisabled) return SettingsAction::RepaintStatic;
+            
+            // Check for Reset button click
+            if (m_pHoverItem->onReset && m_pHoverItem->isHovered2) {
+                m_pHoverItem->onReset(this, m_pHoverItem);
+                return SettingsAction::RepaintAll;
+            }
+            
+            // Check for Input field click
+            if (m_pHoverItem->isHovered && m_pHoverItem->pStrVal) {
+                std::wstring title = AppStrings::Dialog_FixedZoomTitle;
+                std::wstring msg = AppStrings::Dialog_FixedZoomMsg;
+                std::wstring result = AppContext::GetInstance().DialogCtrl->ShowInputDialog(
+                    m_hwnd, title, msg, *m_pHoverItem->pStrVal, L"OK"
+                );
+                
+                if (!result.empty()) {
+                    *m_pHoverItem->pStrVal = result;
+                    if (m_pHoverItem->onChange) m_pHoverItem->onChange(this, m_pHoverItem);
+                    return SettingsAction::RepaintAll;
+                }
+            }
+            return SettingsAction::RepaintStatic;
         }
         // Hotkey binding row button
         if (m_pHoverItem->type == OptionType::HotkeyBindRow) {

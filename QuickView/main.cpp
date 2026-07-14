@@ -3347,7 +3347,7 @@ static float ClampTotalScale(HWND hwnd, float newTotalScale) {
 
 // [Shared] Unified Zoom Calculation
 // Handles robust size retrieval, fit scale, small image protection, and magnetic snap
-static float CalculateTargetZoom(HWND hwnd, float delta, bool isFineInterval = false) {
+static float CalculateTargetZoom(HWND hwnd, float delta, bool isFineInterval = false, bool bypassFixedZoom = false) {
     if (!GetPaneContext(PaneSlot::Primary).resource) return GetPaneContext(PaneSlot::Primary).view.Zoom;
 
     D2D1_SIZE_F visualSize = GetVisualImageSize();
@@ -3367,6 +3367,51 @@ static float CalculateTargetZoom(HWND hwnd, float delta, bool isFineInterval = f
     // Keyboard: Delta is +/- 1.0. 
     // Fine Interval (Ctrl): 1%
     float step = isFineInterval ? 0.01f : (g_config.WheelZoomSpeed / 100.0f);
+    
+    if (g_config.UseFixedZoom && !bypassFixedZoom && !g_runtime.ParsedFixedZoomLevels.empty() && !isFineInterval) {
+        float currentRealScale = GetCurrentRealScale(hwnd);
+        float newRealScale = currentRealScale;
+        const auto& levels = g_runtime.ParsedFixedZoomLevels;
+        
+        if (delta > 0) {
+            bool found = false;
+            for (float lvl : levels) {
+                if (lvl > currentRealScale + 0.001f) {
+                    newRealScale = lvl;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                newRealScale = currentRealScale * (1.0f + step * delta);
+            }
+        } else {
+            bool found = false;
+            for (auto it = levels.rbegin(); it != levels.rend(); ++it) {
+                float lvl = *it;
+                if (lvl < currentRealScale - 0.001f) {
+                    newRealScale = lvl;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                newRealScale = currentRealScale / (1.0f + step * abs(delta));
+            }
+        }
+        
+        float originalW = imageWidth;
+        if (GetPaneContext(PaneSlot::Primary).metadata.Width > 0 && GetPaneContext(PaneSlot::Primary).metadata.Height > 0) {
+            originalW = (float)GetPaneContext(PaneSlot::Primary).metadata.Width;
+            bool manualSwap = (GetPaneContext(PaneSlot::Primary).editState.TotalRotation % 180 != 0);
+            if (manualSwap) {
+                originalW = (float)GetPaneContext(PaneSlot::Primary).metadata.Height;
+            }
+        }
+        
+        float newTotalScale = newRealScale * (originalW / imageWidth);
+        return ClampTotalScale(hwnd, newTotalScale);
+    }
     
     // Support non-integer delta (e.g. precision touchpad)
     // Formula: Scale * (1 + step * delta) 
@@ -3822,6 +3867,36 @@ void ApplyWindowTheme(HWND hwnd) {
         SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
+void ParseFixedZoomLevels() {
+    g_runtime.ParsedFixedZoomLevels.clear();
+    std::wstring str = g_config.FixedZoomLevels;
+    size_t start = 0;
+    while (true) {
+        size_t pos = str.find(L',', start);
+        std::wstring token = (pos == std::wstring::npos) ? str.substr(start) : str.substr(start, pos - start);
+        
+        // Trim whitespace
+        token.erase(std::remove_if(token.begin(), token.end(), iswspace), token.end());
+        
+        if (!token.empty()) {
+            wchar_t* endptr = nullptr;
+            float val = wcstof(token.c_str(), &endptr);
+            if (endptr != token.c_str() && val > 0.0f) {
+                g_runtime.ParsedFixedZoomLevels.push_back(val);
+            }
+        }
+        if (pos == std::wstring::npos) break;
+        start = pos + 1;
+    }
+    
+    // Sort and remove duplicates
+    std::sort(g_runtime.ParsedFixedZoomLevels.begin(), g_runtime.ParsedFixedZoomLevels.end());
+    g_runtime.ParsedFixedZoomLevels.erase(
+        std::unique(g_runtime.ParsedFixedZoomLevels.begin(), g_runtime.ParsedFixedZoomLevels.end()),
+        g_runtime.ParsedFixedZoomLevels.end()
+    );
+}
+
 void SaveConfig() {
     std::wstring iniPath;
     
@@ -3960,6 +4035,10 @@ void SaveConfig() {
     WritePrivateProfileStringW(L"Controls", L"LoupeEnabled", g_config.LoupeEnabled ? L"1" : L"0", iniPath.c_str());
     WritePrivateProfileStringW(L"Controls", L"LoupeSizeRatio", std::to_wstring(g_config.LoupeSizeRatio).c_str(), iniPath.c_str());
     WritePrivateProfileStringW(L"Controls", L"LoupeZoom", std::to_wstring(g_config.LoupeZoom).c_str(), iniPath.c_str());
+    
+    // Fixed Zoom Levels
+    WritePrivateProfileStringW(L"Controls", L"UseFixedZoom", g_config.UseFixedZoom ? L"1" : L"0", iniPath.c_str());
+    WritePrivateProfileStringW(L"Controls", L"FixedZoomLevels", g_config.FixedZoomLevels.c_str(), iniPath.c_str());
 
     // Image
     WritePrivateProfileStringW(L"Image", L"AutoRotate", std::to_wstring(g_config.AutoRotate).c_str(), iniPath.c_str());
@@ -4225,6 +4304,12 @@ void LoadConfig() {
     GetPrivateProfileStringW(L"Controls", L"LoupeZoom", L"1.0", buf, 64, iniPath.c_str());
     g_config.LoupeZoom = std::clamp((float)_wtof(buf), 1.0f, 8.0f);
     
+    // Fixed Zoom Levels
+    g_config.UseFixedZoom = GetPrivateProfileIntW(L"Controls", L"UseFixedZoom", 0, iniPath.c_str()) != 0;
+    wchar_t bufZoomLevels[512];
+    GetPrivateProfileStringW(L"Controls", L"FixedZoomLevels", L"0.05,0.1,0.125,0.166,0.25,0.333,0.5,0.66,1,1.5,2,3,4,5,6,7,8,12,16,32,64,128", bufZoomLevels, 512, iniPath.c_str());
+    g_config.FixedZoomLevels = bufZoomLevels;
+
     // Image
     g_config.AutoRotate = GetPrivateProfileIntW(L"Image", L"AutoRotate", 1, iniPath.c_str()) != 0;
     g_config.ColorManagement = GetPrivateProfileIntW(L"Image", L"ColorManagement", 1, iniPath.c_str()) != 0;
@@ -4303,6 +4388,7 @@ void LoadConfig() {
         
         binding.combo = StringToKeyCombo(std::wstring_view(bufCombo));
     }
+    ParseFixedZoomLevels();
 }
 
 
@@ -8655,20 +8741,24 @@ SKIP_EDGE_NAV:;
         bool isAlt = (GetKeyState(VK_MENU) & 0x8000) != 0;
 
         if (isAlt) {
-            g_config.WheelZoomSpeed += (delta > 0) ? 5.0f : -5.0f;
-            g_config.WheelZoomSpeed = std::max(5.0f, std::min(50.0f, g_config.WheelZoomSpeed));
-            SaveConfig();
-            wchar_t speedBuf[64];
-            swprintf_s(speedBuf, L"%s%.0f%%", AppStrings::OSD_WheelZoomSpeed, g_config.WheelZoomSpeed);
-            g_osd.Show(hwnd, speedBuf, false);
-            return 0;
+            if (!g_config.UseFixedZoom) {
+                g_config.WheelZoomSpeed += (delta > 0) ? 5.0f : -5.0f;
+                g_config.WheelZoomSpeed = std::max(5.0f, std::min(50.0f, g_config.WheelZoomSpeed));
+                SaveConfig();
+                wchar_t speedBuf[64];
+                swprintf_s(speedBuf, L"%s%.0f%%", AppStrings::OSD_WheelZoomSpeed, g_config.WheelZoomSpeed);
+                g_osd.Show(hwnd, speedBuf, false);
+                return 0;
+            }
+            // If UseFixedZoom is true, we fall through to perform regular zoom
         }
 
         // [Fix] Resolve conflict between WheelActionMode and Ctrl modifier.
         // Rule: Ctrl + Wheel ALWAYS means "Locked-Window Zoom".
-        // If WheelActionMode is Navigate (1), then Wheel (without Ctrl) means Navigate.
-        // If WheelActionMode is Zoom (0), then Wheel (without Ctrl) means Smart Zoom.
-        bool shouldNavigate = (g_config.WheelActionMode == 1) && !isCtrl;
+        // Alt + Wheel (when UseFixedZoom is true) ALWAYS means "Regular Zoom".
+        // If WheelActionMode is Navigate (1), then Wheel (without Ctrl/Alt) means Navigate.
+        // If WheelActionMode is Zoom (0), then Wheel (without Ctrl/Alt) means Smart Zoom.
+        bool shouldNavigate = (g_config.WheelActionMode == 1) && !isCtrl && !isAlt;
 
         if (IsCompareModeActive()) {
             if (shouldNavigate) {
@@ -8705,7 +8795,7 @@ SKIP_EDGE_NAV:;
         SetTimer(hwnd, IDT_INTERACTION, 150, nullptr);
         
         // [Shared Logic]
-        float newTotalScale = CalculateTargetZoom(hwnd, delta, false);
+        float newTotalScale = CalculateTargetZoom(hwnd, delta, false, isAlt);
 
         // Use Centralized Helper
         POINT mousePt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };

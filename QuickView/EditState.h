@@ -607,6 +607,9 @@ struct AppConfig {
     bool EnableDebugFeatures = false; // Master switch for Debug HUD & Metrics (Zero Overhead when false)
     bool ShowDirtyRectButton = false; // [v3.5] Toggle visibility of the dirty rect debug button in animation mode
     
+    // --- Fixed Zoom Levels ---
+    bool UseFixedZoom = false;           // Fixed Zoom option
+    std::wstring FixedZoomLevels = L"0.05,0.1,0.125,0.166,0.25,0.333,0.5,0.66,1,1.5,2,3,4,5,6,7,8,12,16,32,64,128";
     // --- Save Options --- (Functional options removed, fully automated/smart)
     std::wstring LastRegisteredVersion;
     std::wstring LastRegisteredPath;
@@ -901,6 +904,7 @@ struct RuntimeConfig {
 
     // [HUD V4] Pipeline Status
     bool LastFrameGpuToneMapped = false;
+    std::vector<float> ParsedFixedZoomLevels = {};
     
     // CMS Helper
     int GetEffectiveCmsMode(bool masterToggle) const {
@@ -929,6 +933,7 @@ extern RuntimeConfig g_runtime;
 bool CheckWritePermission(const std::wstring& dir);
 void SaveConfig(); // Ensure visible
 void LoadConfig(); // Ensure visible
+void ParseFixedZoomLevels(); // Parse comma-separated fixed zoom levels
 bool IsSystemLightTheme();
 bool IsLightThemeActive();
 void ApplyWindowTheme(HWND hwnd);

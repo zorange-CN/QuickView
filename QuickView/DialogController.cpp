@@ -511,7 +511,7 @@ std::optional<LRESULT> DialogController::OnLButtonDown(HWND hwnd, int x, int y) 
 }
 
 
-std::wstring DialogController::ShowInputDialog(HWND hwnd, const std::wstring& title, const std::wstring& message, const std::wstring& initialText) 
+std::wstring DialogController::ShowInputDialog(HWND hwnd, const std::wstring& title, const std::wstring& message, const std::wstring& initialText, const std::wstring& confirmButtonText) 
 {
     m_hwnd = hwnd;
     m_context.Dialog.IsVisible = true;
@@ -519,7 +519,8 @@ std::wstring DialogController::ShowInputDialog(HWND hwnd, const std::wstring& ti
     m_context.Dialog.Message = message;
     m_context.Dialog.QualityText.clear();
     m_context.Dialog.AccentColor = D2D1::ColorF(D2D1::ColorF::Orange); 
-    m_context.Dialog.Buttons = { { DialogResult::Yes, L"Rename", true }, { DialogResult::None, L"Cancel" } };
+    std::wstring okBtnText = confirmButtonText.empty() ? L"Rename" : confirmButtonText;
+    m_context.Dialog.Buttons = { { DialogResult::Yes, okBtnText.c_str(), true }, { DialogResult::None, L"Cancel" } };
     m_context.Dialog.SelectedButtonIndex = 0;
     m_context.Dialog.HasCheckbox = false;
     m_context.Dialog.HasInput = true;

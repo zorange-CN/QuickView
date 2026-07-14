@@ -19,7 +19,7 @@ public:
                             D2D1_COLOR_F accentColor, const std::vector<DialogButton>& buttons,
                             bool hasCheckbox = false, const std::wstring& checkboxText = L"", const std::wstring& qualityText = L"");
 
-    std::wstring ShowInputDialog(HWND hwnd, const std::wstring& title, const std::wstring& message, const std::wstring& initialText);
+    std::wstring ShowInputDialog(HWND hwnd, const std::wstring& title, const std::wstring& message, const std::wstring& initialText, const std::wstring& confirmButtonText = L"");
 
     bool RenderComposite(HWND hwnd);
     void MarkDirty();

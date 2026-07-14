@@ -305,6 +305,11 @@ const wchar_t *OSD_WheelZoomSpeed = nullptr;
 const wchar_t *Help_Action_AdjustZoomSpeed = nullptr;
 const wchar_t *Help_Action_LockWindowZoom = nullptr;
 const wchar_t *Settings_Label_InvertButtons = nullptr;
+const wchar_t *Settings_Label_UseFixedZoom = nullptr;
+const wchar_t *Settings_Tooltip_UseFixedZoom = nullptr;
+const wchar_t *Settings_Label_FixedZoomLevels = nullptr;
+const wchar_t *Dialog_FixedZoomTitle = nullptr;
+const wchar_t *Dialog_FixedZoomMsg = nullptr;
 const wchar_t *Settings_Label_ZoomModeIn = nullptr;
 const wchar_t *Settings_Label_ZoomModeOut = nullptr;
 const wchar_t *Settings_Label_LeftDrag = nullptr;
@@ -795,6 +800,11 @@ struct LanguageTable {
     const wchar_t *Help_Action_AdjustZoomSpeed;
     const wchar_t *Help_Action_LockWindowZoom;
     const wchar_t *Settings_Label_InvertButtons;
+    const wchar_t *Settings_Label_UseFixedZoom;
+    const wchar_t *Settings_Tooltip_UseFixedZoom;
+    const wchar_t *Settings_Label_FixedZoomLevels;
+    const wchar_t *Dialog_FixedZoomTitle;
+    const wchar_t *Dialog_FixedZoomMsg;
     const wchar_t *Settings_Label_ZoomModeIn;
     const wchar_t *Settings_Label_ZoomModeOut;
     const wchar_t *Settings_Label_LeftDrag;
@@ -1282,6 +1292,11 @@ static const LanguageTable Table_EN = {
     L"Temporarily Adjust Zoom Speed", // Help_Action_AdjustZoomSpeed
     L"Temporarily Lock Window Zoom", // Help_Action_LockWindowZoom
     L"Invert Side Buttons", // Settings_Label_InvertButtons
+    L"Use Fixed Zoom Levels", // Settings_Label_UseFixedZoom
+    L"When enabled, Alt + Wheel performs regular zoom instead of changing zoom speed.", // Settings_Tooltip_UseFixedZoom
+    L"  └  Custom Zoom Levels", // Settings_Label_FixedZoomLevels
+    L"Edit Zoom Levels", // Dialog_FixedZoomTitle
+    L"Enter comma-separated zoom ratios (e.g. 0.5, 1, 2):", // Dialog_FixedZoomMsg
     L"Zoom Mode (In)", // Settings_Label_ZoomModeIn
     L"Zoom Mode (Out)", // Settings_Label_ZoomModeOut
     L"Left Drag", // Settings_Label_LeftDrag
@@ -1769,6 +1784,11 @@ static const LanguageTable Table_CN = {
     L"临时调节缩放速度", // Help_Action_AdjustZoomSpeed
     L"临时锁定窗口缩放", // Help_Action_LockWindowZoom
     L"反转侧键", // Settings_Label_InvertButtons
+    L"使用固定的缩放级别", // Settings_Label_UseFixedZoom
+    L"启用时，Alt + 滚轮将执行普通缩放而非修改缩放速率。", // Settings_Tooltip_UseFixedZoom
+    L"  └  自定义缩放级别", // Settings_Label_FixedZoomLevels
+    L"编辑固定缩放级别", // Dialog_FixedZoomTitle
+    L"输入逗号分隔的缩放级别 (例如 0.5, 1, 2):", // Dialog_FixedZoomMsg
     L"放大插值算法", // Settings_Label_ZoomModeIn
     L"缩小插值算法", // Settings_Label_ZoomModeOut
     L"左键拖动", // Settings_Label_LeftDrag
@@ -2256,6 +2276,11 @@ static const LanguageTable Table_TW = {
     L"臨時調節縮放速度", // Help_Action_AdjustZoomSpeed
     L"臨時鎖定視窗縮放", // Help_Action_LockWindowZoom
     L"反轉側鍵", // Settings_Label_InvertButtons
+    L"使用固定的縮放級別", // Settings_Label_UseFixedZoom
+    L"啟用時，Alt + 滾輪將執行普通縮放而非修改縮放速率。", // Settings_Tooltip_UseFixedZoom
+    L"  └  自定義縮放級別", // Settings_Label_FixedZoomLevels
+    L"編輯固定縮放級別", // Dialog_FixedZoomTitle
+    L"輸入逗號分隔的縮放級別 (例如 0.5, 1, 2):", // Dialog_FixedZoomMsg
     L"放大插值演算法", // Settings_Label_ZoomModeIn
     L"縮小插值演算法", // Settings_Label_ZoomModeOut
     L"左鍵拖曳", // Settings_Label_LeftDrag
@@ -2743,6 +2768,11 @@ static const LanguageTable Table_JA = {
     L"一時的にズーム速度を調整", // Help_Action_AdjustZoomSpeed
     L"ウィンドウのズームを一時的にロック", // Help_Action_LockWindowZoom
     L"サイドボタン反転", // Settings_Label_InvertButtons
+    L"固定ズーム倍率を使用する", // Settings_Label_UseFixedZoom
+    L"有効にすると、Alt + ホイールはズーム速度の変更ではなく、通常のズームを実行します。", // Settings_Tooltip_UseFixedZoom
+    L"  └  カスタムズーム倍率", // Settings_Label_FixedZoomLevels
+    L"ズーム倍率の編集", // Dialog_FixedZoomTitle
+    L"カンマ区切りのズーム倍率を入力してください (例: 0.5, 1, 2):", // Dialog_FixedZoomMsg
     L"ズームインモード", // Settings_Label_ZoomModeIn
     L"ズームアウトモード", // Settings_Label_ZoomModeOut
     L"左ドラッグ", // Settings_Label_LeftDrag
@@ -3230,6 +3260,11 @@ static const LanguageTable Table_RU = {
     L"Временно настроить скорость зума", // Help_Action_AdjustZoomSpeed
     L"Временно заблокировать масштаб окна", // Help_Action_LockWindowZoom
     L"Инвертировать действие боковых кнопок", // Settings_Label_InvertButtons
+    L"Использовать фиксированные уровни масштабирования", // Settings_Label_UseFixedZoom
+    L"Когда включено, Alt + колесико выполняет обычное масштабирование вместо изменения скорости.", // Settings_Tooltip_UseFixedZoom
+    L"  └  Пользовательские уровни", // Settings_Label_FixedZoomLevels
+    L"Редактировать масштабы", // Dialog_FixedZoomTitle
+    L"Введите масштабы через запятую (например, 0.5, 1, 2):", // Dialog_FixedZoomMsg
     L"Увеличить", // Settings_Label_ZoomModeIn
     L"Уменьшить", // Settings_Label_ZoomModeOut
     L"Перетаскивание левой кнопкой", // Settings_Label_LeftDrag
@@ -3717,6 +3752,11 @@ static const LanguageTable Table_DE = {
     L"Zoomgeschwindigkeit temporär anpassen", // Help_Action_AdjustZoomSpeed
     L"Fensterzoom vorübergehend sperren", // Help_Action_LockWindowZoom
     L"Seitentasten invertieren", // Settings_Label_InvertButtons
+    L"Feste Zoomstufen verwenden", // Settings_Label_UseFixedZoom
+    L"Wenn aktiviert, führt Alt + Rad einen normalen Zoom aus, anstatt die Zoomgeschwindigkeit zu ändern.", // Settings_Tooltip_UseFixedZoom
+    L"  └  Benutzerdefinierte Zoomstufen", // Settings_Label_FixedZoomLevels
+    L"Zoomstufen bearbeiten", // Dialog_FixedZoomTitle
+    L"Geben Sie kommagetrennte Zoomstufen ein (z. B. 0.5, 1, 2):", // Dialog_FixedZoomMsg
     L"Vergrößerungsmodus", // Settings_Label_ZoomModeIn
     L"Verkleinerungsmodus", // Settings_Label_ZoomModeOut
     L"Links ziehen", // Settings_Label_LeftDrag
@@ -4204,6 +4244,11 @@ static const LanguageTable Table_ES = {
     L"Ajustar velocidad de zoom temporalmente", // Help_Action_AdjustZoomSpeed
     L"Bloquear temporalmente el zoom de la ventana", // Help_Action_LockWindowZoom
     L"Invertir botones laterales", // Settings_Label_InvertButtons
+    L"Usar niveles de zoom fijos", // Settings_Label_UseFixedZoom
+    L"Cuando está activado, Alt + Rueda realiza un zoom normal en lugar de cambiar la velocidad.", // Settings_Tooltip_UseFixedZoom
+    L"  └  Niveles de zoom personalizados", // Settings_Label_FixedZoomLevels
+    L"Editar niveles de zoom", // Dialog_FixedZoomTitle
+    L"Introduzca niveles de zoom separados por comas (p. ej., 0.5, 1, 2):", // Dialog_FixedZoomMsg
     L"Modo de acercar", // Settings_Label_ZoomModeIn
     L"Modo de alejar", // Settings_Label_ZoomModeOut
     L"Arrastrar izquierdo", // Settings_Label_LeftDrag
@@ -4691,6 +4736,11 @@ static const LanguageTable Table_FR = {
     L"Temporarily Adjust Zoom Speed", // Help_Action_AdjustZoomSpeed
     L"Temporarily Lock Window Zoom", // Help_Action_LockWindowZoom
     L"Invert Side Buttons", // Settings_Label_InvertButtons
+    L"Use Fixed Zoom Levels", // Settings_Label_UseFixedZoom
+    L"When enabled, Alt + Wheel performs regular zoom instead of changing zoom speed.", // Settings_Tooltip_UseFixedZoom
+    L"  └  Custom Zoom Levels", // Settings_Label_FixedZoomLevels
+    L"Edit Zoom Levels", // Dialog_FixedZoomTitle
+    L"Enter comma-separated zoom ratios (e.g. 0.5, 1, 2):", // Dialog_FixedZoomMsg
     L"Zoom Mode (In)", // Settings_Label_ZoomModeIn
     L"Zoom Mode (Out)", // Settings_Label_ZoomModeOut
     L"Left Drag", // Settings_Label_LeftDrag
@@ -5178,6 +5228,11 @@ void Apply(const LanguageTable& t) {
   Help_Action_AdjustZoomSpeed = t.Help_Action_AdjustZoomSpeed;
   Help_Action_LockWindowZoom = t.Help_Action_LockWindowZoom;
   Settings_Label_InvertButtons = t.Settings_Label_InvertButtons;
+  Settings_Label_UseFixedZoom = t.Settings_Label_UseFixedZoom;
+  Settings_Tooltip_UseFixedZoom = t.Settings_Tooltip_UseFixedZoom;
+  Settings_Label_FixedZoomLevels = t.Settings_Label_FixedZoomLevels;
+  Dialog_FixedZoomTitle = t.Dialog_FixedZoomTitle;
+  Dialog_FixedZoomMsg = t.Dialog_FixedZoomMsg;
   Settings_Label_ZoomModeIn = t.Settings_Label_ZoomModeIn;
   Settings_Label_ZoomModeOut = t.Settings_Label_ZoomModeOut;
   Settings_Label_LeftDrag = t.Settings_Label_LeftDrag;
