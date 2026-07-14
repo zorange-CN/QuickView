@@ -46,7 +46,11 @@ void ShowContextMenu(HWND hwnd, POINT pt, bool hasImage, bool needsExtensionFix,
     
     extern UndoManager g_undoManager;
     if (g_undoManager.CanUndo()) {
-        items.push_back(MI::Normal(IDM_UNDO, AppStrings::Context_UndoDelete, nullptr, L"Ctrl+Z"));
+        const wchar_t* undoStr = AppStrings::Context_UndoDelete;
+        UndoType lastType = g_undoManager.GetLastActionType();
+        if (lastType == UndoType::Rename) undoStr = AppStrings::Context_UndoRename;
+        else if (lastType == UndoType::Transform) undoStr = AppStrings::Context_UndoTransform;
+        items.push_back(MI::Normal(IDM_UNDO, undoStr, nullptr, L"Ctrl+Z"));
     }
     
     items.push_back(MI::Sep());

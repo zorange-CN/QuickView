@@ -1,13 +1,16 @@
 #pragma once
 #include <string>
 #include <vector>
+#include "LosslessTransform.h"
 
 /// <summary>
 /// Supported actions that can be undone
 /// </summary>
 enum class UndoType : uint8_t {
     None = 0,
-    Delete
+    Delete,
+    Rename,
+    Transform
 };
 
 /// <summary>
@@ -16,6 +19,8 @@ enum class UndoType : uint8_t {
 struct UndoAction {
     UndoType type = UndoType::None;
     std::wstring path;
+    std::wstring oldPath; // For Rename: original path
+    std::vector<TransformType> reverseTransforms; // For Transform: reverse transforms to apply
     bool leftSlot = false; // Used in compare mode to track which slot was deleted
 };
 
@@ -35,6 +40,30 @@ public:
         UndoAction action;
         action.type = UndoType::Delete;
         action.path = path;
+        action.leftSlot = leftSlot;
+        m_undoStack.push_back(action);
+    }
+
+    void PushRename(const std::wstring& oldPath, const std::wstring& newPath, bool leftSlot) {
+        if (m_undoStack.size() >= MAX_UNDO_DEPTH) {
+            m_undoStack.erase(m_undoStack.begin());
+        }
+        UndoAction action;
+        action.type = UndoType::Rename;
+        action.path = newPath;     // Current new path
+        action.oldPath = oldPath;   // Original old path
+        action.leftSlot = leftSlot;
+        m_undoStack.push_back(action);
+    }
+
+    void PushTransform(const std::wstring& path, const std::vector<TransformType>& reverseTransforms, bool leftSlot) {
+        if (m_undoStack.size() >= MAX_UNDO_DEPTH) {
+            m_undoStack.erase(m_undoStack.begin());
+        }
+        UndoAction action;
+        action.type = UndoType::Transform;
+        action.path = path;
+        action.reverseTransforms = reverseTransforms;
         action.leftSlot = leftSlot;
         m_undoStack.push_back(action);
     }
@@ -59,3 +88,4 @@ public:
         return m_undoStack.back().type;
     }
 };
+

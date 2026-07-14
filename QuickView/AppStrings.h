@@ -40,6 +40,10 @@ namespace AppStrings {
     extern const wchar_t* OSD_CompareAfter;
     extern const wchar_t* OSD_UndoDeleteSuccess;
     extern const wchar_t* OSD_UndoDeleteFailed;
+    extern const wchar_t* OSD_UndoRenameSuccess;
+    extern const wchar_t* OSD_UndoRenameFailed;
+    extern const wchar_t* OSD_UndoTransformSuccess;
+    extern const wchar_t* OSD_UndoTransformFailed;
     // Transform Action Names
     extern const wchar_t* Action_RotateCW;
     extern const wchar_t* Action_RotateCCW;
@@ -92,6 +96,8 @@ namespace AppStrings {
     extern const wchar_t* Context_FixExtension;
     extern const wchar_t* Context_Delete;
     extern const wchar_t* Context_UndoDelete;
+    extern const wchar_t* Context_UndoRename;
+    extern const wchar_t* Context_UndoTransform;
     extern const wchar_t* Context_SortBy;
     extern const wchar_t* Context_NavOrder;
     extern const wchar_t* Context_SortAscending;

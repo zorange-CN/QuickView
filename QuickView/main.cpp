@@ -3817,9 +3817,24 @@ bool SaveCurrentImage(bool saveAs) {
     SetCursor(hOldCursor);
     
     if (success) {
+        std::vector<TransformType> pending = GetPaneContext(PaneSlot::Primary).editState.PendingTransforms;
+        
         GetPaneContext(PaneSlot::Primary).editState.Reset();
         GetPaneContext(PaneSlot::Primary).editState.OriginalFilePath = targetPath; // Update logic if SaveAs changed it
         GetPaneContext(PaneSlot::Primary).path = targetPath;
+
+        std::vector<TransformType> reverse;
+        for (auto it = pending.rbegin(); it != pending.rend(); ++it) {
+            TransformType type = *it;
+            if (type == TransformType::Rotate90CW) reverse.push_back(TransformType::Rotate90CCW);
+            else if (type == TransformType::Rotate90CCW) reverse.push_back(TransformType::Rotate90CW);
+            else if (type == TransformType::Rotate180) reverse.push_back(TransformType::Rotate180);
+            else if (type == TransformType::FlipHorizontal) reverse.push_back(TransformType::FlipHorizontal);
+            else if (type == TransformType::FlipVertical) reverse.push_back(TransformType::FlipVertical);
+        }
+        if (!reverse.empty()) {
+            g_undoManager.PushTransform(targetPath, reverse, false);
+        }
         
         // [Fix] Invalidate Cache & Refresh File Info
         // This prevents showing the old (unrotated) image if navigating away and back.
@@ -9594,7 +9609,9 @@ SKIP_EDGE_NAV:;
 
                 if (!newName.empty() && newName != currentName) {
                     std::wstring newPath = currentFolder + newName;
-                    if (MoveFileW(GetPaneContext(PaneSlot::Left).path.c_str(), newPath.c_str())) {
+                    std::wstring oldPath = GetPaneContext(PaneSlot::Left).path;
+                    if (MoveFileW(oldPath.c_str(), newPath.c_str())) {
+                        g_undoManager.PushRename(oldPath, newPath, true);
                         AppContext::GetInstance().CompareCtrl->LoadImageIntoLeftSlot(hwnd, newPath, [hwnd](bool success){
                             if (success) {
                                 g_osd.Show(hwnd, L"Renamed (Left)", false);
@@ -9642,7 +9659,9 @@ SKIP_EDGE_NAV:;
                     // Release resources before rename (Critical)
                     ReleaseImageResources();
                     
-                    if (MoveFileW(GetPaneContext(PaneSlot::Primary).path.c_str(), newPath.c_str())) {
+                    std::wstring oldPath = GetPaneContext(PaneSlot::Primary).path;
+                    if (MoveFileW(oldPath.c_str(), newPath.c_str())) {
+                        g_undoManager.PushRename(oldPath, newPath, false);
                         GetPaneContext(PaneSlot::Primary).path = newPath;
                         GetPaneContext(PaneSlot::Primary).navigator.Initialize(newPath, hwnd); // Update navigator list explicitly
                         
@@ -12716,6 +12735,101 @@ void PerformAnimSeek(HWND hwnd, float targetProgress) {
     g_asyncSeekCV.notify_one();
 }
 
+static bool ApplyTransformsToFile(const std::wstring& filePath, const std::vector<TransformType>& transforms) {
+    if (filePath.empty() || transforms.empty()) return false;
+
+    wchar_t tempPath[MAX_PATH];
+    if (GetTempPathW(MAX_PATH, tempPath) == 0) return false;
+
+    wchar_t tempFile[MAX_PATH];
+    if (GetTempFileNameW(tempPath, L"QVU", 0, tempFile) == 0) return false;
+
+    std::wstring workFile = tempFile;
+
+    if (!CopyFileW(filePath.c_str(), workFile.c_str(), FALSE)) {
+        DeleteFileW(workFile.c_str());
+        return false;
+    }
+
+    bool transformError = false;
+    for (auto type : transforms) {
+        TransformResult res;
+        if (CLosslessTransform::IsJPEG(workFile.c_str())) {
+            res = CLosslessTransform::TransformJPEG(workFile.c_str(), workFile.c_str(), type);
+        } else {
+            res = CLosslessTransform::TransformGeneric(workFile.c_str(), workFile.c_str(), type);
+        }
+        if (!res.Success) {
+            transformError = true;
+            break;
+        }
+    }
+
+    if (transformError) {
+        DeleteFileW(workFile.c_str());
+        return false;
+    }
+
+    ReleaseImageResources();
+
+    bool success = false;
+    for (int i = 0; i < 3; i++) {
+        if (MoveFileExW(workFile.c_str(), filePath.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH | MOVEFILE_COPY_ALLOWED)) {
+            success = true;
+            break;
+        }
+        Sleep(100);
+    }
+
+    if (!success) {
+        if (CopyFileW(workFile.c_str(), filePath.c_str(), FALSE)) {
+            success = true;
+            DeleteFileW(workFile.c_str());
+        }
+    }
+
+    if (!success) {
+        DeleteFileW(workFile.c_str());
+    }
+
+    return success;
+}
+
+static void UndoLastMemoryTransform(HWND hwnd, EditState& state) {
+    if (state.PendingTransforms.empty()) return;
+    
+    TransformType type = state.PendingTransforms.back();
+    state.PendingTransforms.pop_back();
+    
+    if (type == TransformType::Rotate90CW) state.TotalRotation = (state.TotalRotation + 270) % 360;
+    else if (type == TransformType::Rotate90CCW) state.TotalRotation = (state.TotalRotation + 90) % 360;
+    else if (type == TransformType::Rotate180) state.TotalRotation = (state.TotalRotation + 180) % 360;
+    else if (type == TransformType::FlipHorizontal) state.FlippedH = !state.FlippedH;
+    else if (type == TransformType::FlipVertical) state.FlippedV = !state.FlippedV;
+    
+    state.IsDirty = !state.PendingTransforms.empty();
+    
+    if (IsCompareModeActive()) {
+        MarkCompareDirty();
+    }
+    RequestRepaint(PaintLayer::Image);
+    
+    if (!IsCompareModeActive()) {
+        AdjustWindowToImage(hwnd);
+    }
+    
+    std::wstring msg = AppStrings::OSD_Restored;
+    if (state.IsDirty) {
+        msg = L"Undo: ";
+        if (type == TransformType::Rotate90CW) msg += AppStrings::Action_RotateCW;
+        else if (type == TransformType::Rotate90CCW) msg += AppStrings::Action_RotateCCW;
+        else if (type == TransformType::Rotate180) msg += AppStrings::Action_Rotate180;
+        else if (type == TransformType::FlipHorizontal) msg += AppStrings::Action_FlipH;
+        else if (type == TransformType::FlipVertical) msg += AppStrings::Action_FlipV;
+    }
+    g_osd.Show(hwnd, msg, false, false, state.GetQualityColor());
+}
+
 bool HandleHotkeyAction(HWND hwnd, HotkeyAction action) {
     [[maybe_unused]] bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
     [[maybe_unused]] bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
@@ -13139,7 +13253,14 @@ bool HandleHotkeyAction(HWND hwnd, HotkeyAction action) {
         }
         return true;
 
-    case HotkeyAction::UndoDelete:
+    case HotkeyAction::UndoDelete: {
+        bool isLeft = IsCompareModeActive() && (AppContext::GetInstance().Compare.selectedPane == ComparePane::Left);
+        EditState& state = isLeft ? GetPaneContext(PaneSlot::Left).editState : GetPaneContext(PaneSlot::Primary).editState;
+        if (!state.PendingTransforms.empty()) {
+            UndoLastMemoryTransform(hwnd, state);
+            return true;
+        }
+
         if (g_undoManager.CanUndo()) {
             UndoAction undo = g_undoManager.Pop();
             if (undo.type == UndoType::Delete) {
@@ -13169,9 +13290,60 @@ bool HandleHotkeyAction(HWND hwnd, HotkeyAction action) {
                 } else {
                     g_osd.Show(hwnd, AppStrings::OSD_UndoDeleteFailed, false);
                 }
+            } else if (undo.type == UndoType::Rename) {
+                if (MoveFileW(undo.path.c_str(), undo.oldPath.c_str())) {
+                    g_osd.Show(hwnd, AppStrings::OSD_UndoRenameSuccess, false);
+                    if (IsCompareModeActive()) {
+                        if (undo.leftSlot) {
+                            AppContext::GetInstance().CompareCtrl->LoadImageIntoLeftSlot(hwnd, undo.oldPath, [](bool success) {
+                                if (success) {
+                                    AppContext::GetInstance().Compare.activePane = ComparePane::Left;
+                                    AppContext::GetInstance().Compare.contextPane = ComparePane::Left;
+                                    AppContext::GetInstance().Compare.selectedPane = ComparePane::Left;
+                                    MarkCompareDirty();
+                                    RequestRepaint(PaintLayer::Image | PaintLayer::Static | PaintLayer::Dynamic);
+                                }
+                            });
+                        } else {
+                            GetPaneContext(PaneSlot::Primary).navigator.Initialize(undo.oldPath, hwnd);
+                            LoadImageAsync(hwnd, GetPaneContext(PaneSlot::Primary).navigator.GetResolvedPath(undo.oldPath).c_str());
+                            MarkCompareDirty();
+                        }
+                    } else {
+                        GetPaneContext(PaneSlot::Primary).navigator.Initialize(undo.oldPath, hwnd);
+                        LoadImageAsync(hwnd, GetPaneContext(PaneSlot::Primary).navigator.GetResolvedPath(undo.oldPath).c_str());
+                    }
+                } else {
+                    g_osd.Show(hwnd, AppStrings::OSD_UndoRenameFailed, false);
+                }
+            } else if (undo.type == UndoType::Transform) {
+                if (ApplyTransformsToFile(undo.path, undo.reverseTransforms)) {
+                    g_osd.Show(hwnd, AppStrings::OSD_UndoTransformSuccess, false);
+                    if (g_imageEngine) {
+                        g_imageEngine->InvalidateCache(undo.path);
+                    }
+                    if (IsCompareModeActive()) {
+                        if (undo.leftSlot) {
+                            AppContext::GetInstance().CompareCtrl->LoadImageIntoLeftSlot(hwnd, undo.path, [](bool success) {
+                                if (success) {
+                                    MarkCompareDirty();
+                                    RequestRepaint(PaintLayer::Image | PaintLayer::Static | PaintLayer::Dynamic);
+                                }
+                            });
+                        } else {
+                            LoadImageAsync(hwnd, undo.path.c_str());
+                            MarkCompareDirty();
+                        }
+                    } else {
+                        LoadImageAsync(hwnd, undo.path.c_str());
+                    }
+                } else {
+                    g_osd.Show(hwnd, AppStrings::OSD_UndoTransformFailed, false);
+                }
             }
         }
         return true;
+    }
 
     default:
         break;

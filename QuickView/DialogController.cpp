@@ -371,10 +371,8 @@ DialogResult DialogController::ShowDialog(HWND hwnd, const std::wstring& title, 
     m_context.Dialog.IsChecked = false;
     
     // Reset Input Mode for standard dialog
-    if (!m_context.Dialog.HasInput) {
-        m_context.Dialog.HasInput = false;
-        m_context.Dialog.hEdit = nullptr;
-    }
+    m_context.Dialog.HasInput = false;
+    m_context.Dialog.hEdit = nullptr;
     m_context.Dialog.FinalResult = DialogResult::None;
     
     EnsureWindowSizeForDialog(hwnd);

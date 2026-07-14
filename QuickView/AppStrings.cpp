@@ -42,6 +42,12 @@ const wchar_t *Checkbox_AlwaysSaveEdgeAdapted = nullptr;
 const wchar_t *Checkbox_AlwaysSaveLossy = nullptr;
 const wchar_t *Checkbox_NeverConfirmDelete = nullptr;
 const wchar_t *Context_UndoDelete = nullptr;
+const wchar_t *Context_UndoRename = nullptr;
+const wchar_t *Context_UndoTransform = nullptr;
+const wchar_t *OSD_UndoRenameSuccess = nullptr;
+const wchar_t *OSD_UndoRenameFailed = nullptr;
+const wchar_t *OSD_UndoTransformSuccess = nullptr;
+const wchar_t *OSD_UndoTransformFailed = nullptr;
 const wchar_t *OSD_HEICCodecMissing = nullptr;
 const wchar_t *Dialog_HEICTitle = nullptr;
 const wchar_t *Dialog_HEICContent = nullptr;
@@ -528,6 +534,10 @@ struct LanguageTable {
     const wchar_t *OSD_CompareAfter;
     const wchar_t *OSD_UndoDeleteSuccess;
     const wchar_t *OSD_UndoDeleteFailed;
+    const wchar_t *OSD_UndoRenameSuccess;
+    const wchar_t *OSD_UndoRenameFailed;
+    const wchar_t *OSD_UndoTransformSuccess;
+    const wchar_t *OSD_UndoTransformFailed;
     const wchar_t *OSD_GamutDetected;
     const wchar_t *OSD_GamutIncompatible;
     const wchar_t *OSD_GamutFailed;
@@ -611,6 +621,8 @@ struct LanguageTable {
     const wchar_t *Context_FixExtension;
     const wchar_t *Context_Delete;
     const wchar_t *Context_UndoDelete;
+    const wchar_t *Context_UndoRename;
+    const wchar_t *Context_UndoTransform;
     const wchar_t *Context_SortBy;
     const wchar_t *Context_NavOrder;
     const wchar_t *Context_SortAscending;
@@ -1024,6 +1036,10 @@ static const LanguageTable Table_EN = {
     L"After (Proofed)", // OSD_CompareAfter
     L"Undo delete succeeded", // OSD_UndoDeleteSuccess
     L"Undo delete failed", // OSD_UndoDeleteFailed
+    L"Undo rename succeeded", // OSD_UndoRenameSuccess
+    L"Undo rename failed", // OSD_UndoRenameFailed
+    L"Undo rotate/flip succeeded", // OSD_UndoTransformSuccess
+    L"Undo rotate/flip failed", // OSD_UndoTransformFailed
     L"Detected out-of-gamut colors", // OSD_GamutDetected
     L"Gamut: Incompatible profile or parsing failed", // OSD_GamutIncompatible
     L"Gamut: Analysis failed", // OSD_GamutFailed
@@ -1107,6 +1123,8 @@ static const LanguageTable Table_EN = {
     L"Fix Extension", // Context_FixExtension
     L"Delete\tDel", // Context_Delete
     L"Undo Delete\tCtrl+Z", // Context_UndoDelete
+    L"Undo Rename\tCtrl+Z", // Context_UndoRename
+    L"Undo Rotate/Flip\tCtrl+Z", // Context_UndoTransform
     L"Sort By", // Context_SortBy
     L"Navigation Order", // Context_NavOrder
     L"Ascending", // Context_SortAscending
@@ -1520,6 +1538,10 @@ static const LanguageTable Table_CN = {
     L"打样后 (Proofed)", // OSD_CompareAfter
     L"已撤销删除", // OSD_UndoDeleteSuccess
     L"撤销删除失败", // OSD_UndoDeleteFailed
+    L"已撤销重命名", // OSD_UndoRenameSuccess
+    L"撤销重命名失败", // OSD_UndoRenameFailed
+    L"已撤销旋转/翻转", // OSD_UndoTransformSuccess
+    L"撤销旋转/翻转失败", // OSD_UndoTransformFailed
     L"检测到色彩溢出", // OSD_GamutDetected
     L"色彩空间不匹配 / 配置文件解析失败", // OSD_GamutIncompatible
     L"色彩溢出分析失败", // OSD_GamutFailed
@@ -1603,6 +1625,8 @@ static const LanguageTable Table_CN = {
     L"修复扩展名", // Context_FixExtension
     L"删除\tDel", // Context_Delete
     L"撤销删除\tCtrl+Z", // Context_UndoDelete
+    L"撤销重命名\tCtrl+Z", // Context_UndoRename
+    L"撤销旋转/翻转\tCtrl+Z", // Context_UndoTransform
     L"排序方式", // Context_SortBy
     L"导航顺序", // Context_NavOrder
     L"升序", // Context_SortAscending
@@ -2016,6 +2040,10 @@ static const LanguageTable Table_TW = {
     L"打樣後 (Proofed)", // OSD_CompareAfter
     L"已撤銷刪除", // OSD_UndoDeleteSuccess
     L"撤銷刪除失敗", // OSD_UndoDeleteFailed
+    L"已撤銷重命名", // OSD_UndoRenameSuccess
+    L"撤銷重命名失敗", // OSD_UndoRenameFailed
+    L"已撤銷旋轉/翻轉", // OSD_UndoTransformSuccess
+    L"撤銷旋轉/翻轉失敗", // OSD_UndoTransformFailed
     L"檢測到色彩溢出", // OSD_GamutDetected
     L"色彩空間不匹配 / 設定檔解析失敗", // OSD_GamutIncompatible
     L"色彩溢出分析失敗", // OSD_GamutFailed
@@ -2099,6 +2127,8 @@ static const LanguageTable Table_TW = {
     L"修復副檔名", // Context_FixExtension
     L"刪除\tDel", // Context_Delete
     L"撤銷刪除\tCtrl+Z", // Context_UndoDelete
+    L"撤銷重命名\tCtrl+Z", // Context_UndoRename
+    L"撤銷旋轉/翻轉\tCtrl+Z", // Context_UndoTransform
     L"排序方式", // Context_SortBy
     L"導覽順序", // Context_NavOrder
     L"升冪", // Context_SortAscending
@@ -2512,6 +2542,10 @@ static const LanguageTable Table_JA = {
     L"校正後 (プロファイル適用)", // OSD_CompareAfter
     L"削除が取り消されました", // OSD_UndoDeleteSuccess
     L"削除の取り消しに失敗しました", // OSD_UndoDeleteFailed
+    L"名前の変更を取り消しました", // OSD_UndoRenameSuccess
+    L"名前の変更の取り消しに失敗しました", // OSD_UndoRenameFailed
+    L"回転・反転を取り消しました", // OSD_UndoTransformSuccess
+    L"回転・反転の取り消しに失敗しました", // OSD_UndoTransformFailed
     L"色域外の色を検出しました", // OSD_GamutDetected
     L"色域: 互換性のないプロファイル", // OSD_GamutIncompatible
     L"色域: 解析に失敗しました", // OSD_GamutFailed
@@ -2595,6 +2629,8 @@ static const LanguageTable Table_JA = {
     L"拡張子を修正", // Context_FixExtension
     L"削除\tDel", // Context_Delete
     L"削除を取り消す\tCtrl+Z", // Context_UndoDelete
+    L"名前の変更を取り消す\tCtrl+Z", // Context_UndoRename
+    L"回転・反転を取り消す\tCtrl+Z", // Context_UndoTransform
     L"並べ替え", // Context_SortBy
     L"ナビゲーション順序", // Context_NavOrder
     L"昇順", // Context_SortAscending
@@ -3008,6 +3044,10 @@ static const LanguageTable Table_RU = {
     L"После (Проба)", // OSD_CompareAfter
     L"Удаление отменено", // OSD_UndoDeleteSuccess
     L"Ошибка отмены удаления", // OSD_UndoDeleteFailed
+    L"Переименование отменено", // OSD_UndoRenameSuccess
+    L"Ошибка отмены переименования", // OSD_UndoRenameFailed
+    L"Поворот/отражение отменено", // OSD_UndoTransformSuccess
+    L"Ошибка отмены поворота/отражения", // OSD_UndoTransformFailed
     L"Обнаружены цвета вне цветового охвата", // OSD_GamutDetected
     L"Охват: Несовместимый профиль или ошибка разбора", // OSD_GamutIncompatible
     L"Охват: Ошибка анализа", // OSD_GamutFailed
@@ -3091,6 +3131,8 @@ static const LanguageTable Table_RU = {
     L"Исправить расширение", // Context_FixExtension
     L"Удалить\tDel", // Context_Delete
     L"Отменить удаление\tCtrl+Z", // Context_UndoDelete
+    L"Отменить переименование\tCtrl+Z", // Context_UndoRename
+    L"Отменить поворот/отражение\tCtrl+Z", // Context_UndoTransform
     L"Сортировка", // Context_SortBy
     L"Навигация", // Context_NavOrder
     L"По возрастанию", // Context_SortAscending
@@ -3504,6 +3546,10 @@ static const LanguageTable Table_DE = {
     L"Nachher (Proof)", // OSD_CompareAfter
     L"Löschen rückgängig gemacht", // OSD_UndoDeleteSuccess
     L"Rückgängig machen fehlgeschlagen", // OSD_UndoDeleteFailed
+    L"Umbenennen rückgängig gemacht", // OSD_UndoRenameSuccess
+    L"Rückgängig machen fehlgeschlagen", // OSD_UndoRenameFailed
+    L"Drehung/Spiegelung rückgängig gemacht", // OSD_UndoTransformSuccess
+    L"Rückgängig machen fehlgeschlagen", // OSD_UndoTransformFailed
     L"Farbraum-Überschreitung erkannt", // OSD_GamutDetected
     L"Farbraum: Inkompatibles Profil", // OSD_GamutIncompatible
     L"Farbraum: Analyse fehlgeschlagen", // OSD_GamutFailed
@@ -3587,6 +3633,8 @@ static const LanguageTable Table_DE = {
     L"Erweiterung reparieren", // Context_FixExtension
     L"Löschen\tEntf", // Context_Delete
     L"Löschen rückgängig machen\tCtrl+Z", // Context_UndoDelete
+    L"Umbenennen rückgängig machen\tCtrl+Z", // Context_UndoRename
+    L"Drehung/Spiegelung rückgängig machen\tCtrl+Z", // Context_UndoTransform
     L"Sortieren nach", // Context_SortBy
     L"Navigationsreihenfolge", // Context_NavOrder
     L"Aufsteigend", // Context_SortAscending
@@ -4000,6 +4048,10 @@ static const LanguageTable Table_ES = {
     L"Después (Prueba)", // OSD_CompareAfter
     L"Eliminación deshecha", // OSD_UndoDeleteSuccess
     L"Error al deshacer eliminación", // OSD_UndoDeleteFailed
+    L"Nombre cambiado deshecho", // OSD_UndoRenameSuccess
+    L"Error al deshacer cambio de nombre", // OSD_UndoRenameFailed
+    L"Giro/volteo deshecho", // OSD_UndoTransformSuccess
+    L"Error al deshacer giro/volteo", // OSD_UndoTransformFailed
     L"Colores fuera de gama detectados", // OSD_GamutDetected
     L"Gama: Perfil incompatible", // OSD_GamutIncompatible
     L"Gama: Error en el análisis", // OSD_GamutFailed
@@ -4083,6 +4135,8 @@ static const LanguageTable Table_ES = {
     L"Corregir extensión", // Context_FixExtension
     L"Eliminar\tSupr", // Context_Delete
     L"Deshacer eliminación\tCtrl+Z", // Context_UndoDelete
+    L"Deshacer cambio de nombre\tCtrl+Z", // Context_UndoRename
+    L"Deshacer rotar/voltear\tCtrl+Z", // Context_UndoTransform
     L"Ordenar por", // Context_SortBy
     L"Orden de navegación", // Context_NavOrder
     L"Ascendente", // Context_SortAscending
@@ -4496,6 +4550,10 @@ static const LanguageTable Table_FR = {
     L"Après (Preuve)", // OSD_CompareAfter
     L"Suppression annulée", // OSD_UndoDeleteSuccess
     L"Échec de l'annulation", // OSD_UndoDeleteFailed
+    L"Renommer annulé", // OSD_UndoRenameSuccess
+    L"Échec de l'annulation du renommage", // OSD_UndoRenameFailed
+    L"Rotation/retournement annulé", // OSD_UndoTransformSuccess
+    L"Échec de l'annulation de la rotation/retournement", // OSD_UndoTransformFailed
     L"Couleurs hors gamme détectées", // OSD_GamutDetected
     L"Gamme : Profil incompatible", // OSD_GamutIncompatible
     L"Gamme : Échec de l'analyse", // OSD_GamutFailed
@@ -4579,6 +4637,8 @@ static const LanguageTable Table_FR = {
     L"Fix Extension", // Context_FixExtension
     L"Delete\tDel", // Context_Delete
     L"Annuler la suppression\tCtrl+Z", // Context_UndoDelete
+    L"Annuler le renommage\tCtrl+Z", // Context_UndoRename
+    L"Annuler la rotation/retournement\tCtrl+Z", // Context_UndoTransform
     L"Sort By", // Context_SortBy
     L"Navigation Order", // Context_NavOrder
     L"Ascending", // Context_SortAscending
@@ -4992,6 +5052,10 @@ void Apply(const LanguageTable& t) {
   OSD_CompareAfter = t.OSD_CompareAfter;
   OSD_UndoDeleteSuccess = t.OSD_UndoDeleteSuccess;
   OSD_UndoDeleteFailed = t.OSD_UndoDeleteFailed;
+  OSD_UndoRenameSuccess = t.OSD_UndoRenameSuccess;
+  OSD_UndoRenameFailed = t.OSD_UndoRenameFailed;
+  OSD_UndoTransformSuccess = t.OSD_UndoTransformSuccess;
+  OSD_UndoTransformFailed = t.OSD_UndoTransformFailed;
   OSD_GamutDetected = t.OSD_GamutDetected;
   OSD_GamutIncompatible = t.OSD_GamutIncompatible;
   OSD_GamutFailed = t.OSD_GamutFailed;
@@ -5075,6 +5139,8 @@ void Apply(const LanguageTable& t) {
   Context_FixExtension = t.Context_FixExtension;
   Context_Delete = t.Context_Delete;
   Context_UndoDelete = t.Context_UndoDelete;
+  Context_UndoRename = t.Context_UndoRename;
+  Context_UndoTransform = t.Context_UndoTransform;
   Context_SortBy = t.Context_SortBy;
   Context_NavOrder = t.Context_NavOrder;
   Context_SortAscending = t.Context_SortAscending;
