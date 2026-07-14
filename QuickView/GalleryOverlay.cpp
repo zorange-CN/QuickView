@@ -266,7 +266,7 @@ void GalleryOverlay::Update(float deltaTime, HWND hwnd) {
             }
         }
         
-        if (!m_mouseInGallery && !m_isPinned && !g_imagePath.empty()) {
+        if (!m_mouseInGallery && !m_isPinned && !g_imagePath.empty() && m_mode != GalleryMode::FullGrid && m_targetGridProgress < 0.5f) {
             m_dismissalTimer += deltaTime;
             if (m_dismissalTimer >= 0.3f) {
                 Close(true);
@@ -660,6 +660,8 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size, ID
         drawItem(m_hoverIndex);
     }
     
+    pDC->PopAxisAlignedClip(); // Pop thumbsClip
+    
     // 4. Hover Tooltip Rendering
     if (m_hoverIndex >= 0 && m_hoverIndex < (int)count) {
         D2D1_RECT_F cellRect = GetItemRect(m_hoverIndex, size.width);
@@ -711,10 +713,49 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size, ID
                 filenameStr = g_uiRenderer->MakeMiddleEllipsis(tooltipW - 20.0f * g_uiScale, filenameStr, m_textFormat.Get());
             }
 
-            // [UX Fix] Prevent tooltip clipping by window boundaries (auto-avoidance offset)
-            float tooltipX = cellRect.left + 8.0f * g_uiScale;
-            float tooltipY = cellRect.top + 8.0f * g_uiScale;
-            float rightSafetyMargin = 12.0f * g_uiScale; // Margin for window scrollbar/frame
+            // Layout calculation based on Grid/Filmstrip mode
+            bool isFilmstrip = (m_gridProgress < 0.5f);
+            float tooltipX = 0.0f;
+            float tooltipY = 0.0f;
+            bool placeLeft = false;
+            bool placeAbove = false;
+            float arrowSizeVal = 5.0f * g_uiScale;
+
+            if (isFilmstrip) {
+                // Filmstrip mode: place on the left or right of the thumbnail
+                float cellMidX = cellRect.left + (cellRect.right - cellRect.left) * 0.5f;
+                placeLeft = (cellMidX > size.width * 0.5f);
+                
+                if (placeLeft) {
+                    tooltipX = cellRect.left - tooltipW - arrowSizeVal - 3.0f * g_uiScale;
+                } else {
+                    tooltipX = cellRect.right + arrowSizeVal + 3.0f * g_uiScale;
+                }
+                
+                // Center vertically
+                tooltipY = cellRect.top + (cellRect.bottom - cellRect.top - tooltipH) * 0.5f;
+                
+                // Clamp vertically
+                float topSafety = 12.0f * g_uiScale;
+                float bottomSafety = galleryH - 12.0f * g_uiScale;
+                if (tooltipY < topSafety) tooltipY = topSafety;
+                if (tooltipY + tooltipH > bottomSafety) tooltipY = bottomSafety - tooltipH;
+            } else {
+                // Grid mode: place below or above
+                tooltipX = cellRect.left + (cellRect.right - cellRect.left - tooltipW) * 0.5f;
+                tooltipY = cellRect.bottom + arrowSizeVal + 3.0f * g_uiScale;
+                
+                if (tooltipY + tooltipH > galleryH - 12.0f * g_uiScale) {
+                    tooltipY = cellRect.top - tooltipH - arrowSizeVal - 3.0f * g_uiScale;
+                    placeAbove = true;
+                    if (tooltipY < 12.0f * g_uiScale) {
+                        tooltipY = 12.0f * g_uiScale;
+                    }
+                }
+            }
+
+            // Keep horizontally within bounds
+            float rightSafetyMargin = 12.0f * g_uiScale;
             if (tooltipX + tooltipW > size.width - rightSafetyMargin) {
                 tooltipX = size.width - rightSafetyMargin - tooltipW;
             }
@@ -723,6 +764,40 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size, ID
             }
 
             D2D1_RECT_F tooltipRect = D2D1::RectF(tooltipX, tooltipY, tooltipX + tooltipW, tooltipY + tooltipH);
+
+            // Compute arrow triangle vertices (Width: 12px, Height: 6px for elegant 2:1 ratio)
+            D2D1_POINT_2F tipPoint = {};
+            D2D1_POINT_2F base1 = {};
+            D2D1_POINT_2F base2 = {};
+            float overlap = 1.0f; // 1px overlap to cover the rounded rectangle's border
+
+            if (isFilmstrip) {
+                float arrowCenterY = cellRect.top + (cellRect.bottom - cellRect.top) * 0.5f;
+                arrowCenterY = std::clamp(arrowCenterY, tooltipY + 10.0f * g_uiScale, tooltipY + tooltipH - 10.0f * g_uiScale);
+                
+                if (placeLeft) {
+                    tipPoint = D2D1::Point2F(cellRect.left - 2.0f * g_uiScale, arrowCenterY);
+                    base1 = D2D1::Point2F(tooltipX + tooltipW - overlap, arrowCenterY - 6.0f * g_uiScale);
+                    base2 = D2D1::Point2F(tooltipX + tooltipW - overlap, arrowCenterY + 6.0f * g_uiScale);
+                } else {
+                    tipPoint = D2D1::Point2F(cellRect.right + 2.0f * g_uiScale, arrowCenterY);
+                    base1 = D2D1::Point2F(tooltipX + overlap, arrowCenterY - 6.0f * g_uiScale);
+                    base2 = D2D1::Point2F(tooltipX + overlap, arrowCenterY + 6.0f * g_uiScale);
+                }
+            } else {
+                float arrowCenterX = cellRect.left + (cellRect.right - cellRect.left) * 0.5f;
+                arrowCenterX = std::clamp(arrowCenterX, tooltipX + 10.0f * g_uiScale, tooltipX + tooltipW - 10.0f * g_uiScale);
+                
+                if (placeAbove) {
+                    tipPoint = D2D1::Point2F(arrowCenterX, cellRect.top - 2.0f * g_uiScale);
+                    base1 = D2D1::Point2F(arrowCenterX - 6.0f * g_uiScale, tooltipY + tooltipH - overlap);
+                    base2 = D2D1::Point2F(arrowCenterX + 6.0f * g_uiScale, tooltipY + tooltipH - overlap);
+                } else {
+                    tipPoint = D2D1::Point2F(arrowCenterX, cellRect.bottom + 2.0f * g_uiScale);
+                    base1 = D2D1::Point2F(arrowCenterX - 6.0f * g_uiScale, tooltipY + overlap);
+                    base2 = D2D1::Point2F(arrowCenterX + 6.0f * g_uiScale, tooltipY + overlap);
+                }
+            }
 
             // [UX Design] Readability ceiling: we want 100% full opacity at 100% panels concentration,
             // while retaining 60% minimum opacity at 0% panels concentration to protect text contrast.
@@ -736,13 +811,36 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size, ID
                 
             m_brushOverlay->SetColor(tipBgClr);
             m_brushOverlay->SetOpacity(1.0f);
-            pDC->FillRoundedRectangle(D2D1::RoundedRect(tooltipRect, 6.0f * g_uiScale, 6.0f * g_uiScale), m_brushOverlay.Get());
             
-            // Draw subtle 1.0px border
+            // 1. Fill body
+            pDC->FillRoundedRectangle(D2D1::RoundedRect(tooltipRect, 6.0f * g_uiScale, 6.0f * g_uiScale), m_brushOverlay.Get());
+
+            // 2. Draw body border
             D2D1_COLOR_F tipBorderClr = isLight ? D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.08f) : D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.15f);
             m_brushBg->SetColor(tipBorderClr);
             m_brushBg->SetOpacity(m_transitionProgress);
             pDC->DrawRoundedRectangle(D2D1::RoundedRect(tooltipRect, 6.0f * g_uiScale, 6.0f * g_uiScale), m_brushBg.Get(), 1.0f);
+
+            // 3. Fill triangle pointer ON TOP of body border to erase the base border line segment
+            ComPtr<ID2D1PathGeometry> pathGeometry;
+            ComPtr<ID2D1Factory> factory;
+            pDC->GetFactory(&factory);
+            if (SUCCEEDED(factory->CreatePathGeometry(&pathGeometry))) {
+                ComPtr<ID2D1GeometrySink> sink;
+                if (SUCCEEDED(pathGeometry->Open(&sink))) {
+                    sink->BeginFigure(tipPoint, D2D1_FIGURE_BEGIN_FILLED);
+                    sink->AddLine(base1);
+                    sink->AddLine(base2);
+                    sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+                    sink->Close();
+                    
+                    pDC->FillGeometry(pathGeometry.Get(), m_brushOverlay.Get());
+                }
+            }
+            
+            // 4. Draw triangle pointer borders (only the two outer diagonal edges)
+            pDC->DrawLine(tipPoint, base1, m_brushBg.Get(), 1.0f);
+            pDC->DrawLine(tipPoint, base2, m_brushBg.Get(), 1.0f);
             
             // Draw title (filename)
             D2D1_COLOR_F tipTxtClr = isLight ? D2D1::ColorF(0.12f, 0.12f, 0.15f) : D2D1::ColorF(D2D1::ColorF::White);
@@ -764,10 +862,8 @@ void GalleryOverlay::Render(ID2D1DeviceContext* pDC, const D2D1_SIZE_F& size, ID
         }
     }
     
-    pDC->PopAxisAlignedClip(); // Pop thumbsClip
-    
     // 5. Left/Right Navigation Arrows Rendering (Refined Mini-Glass Circle Buttons)
-    if (m_gridProgress < 0.2f) {
+    if (m_gridProgress < 0.2f && g_config.NavIndicator == 0) {
         float arrowSize = 7.5f * g_uiScale;
         float btnRadius = 13.0f * g_uiScale;
         float strokeW = 1.5f * g_uiScale;
@@ -1016,15 +1112,16 @@ bool GalleryOverlay::OnLButtonDown(int x, int y) {
     // Check filmstrip left/right arrows
     if (m_gridProgress < 0.2f) {
         float arrowCy = (PADDING + FILM_CELL_SIZE / 2.0f) * g_uiScale;
-        float arrowR = 22.0f * g_uiScale;
+        float arrowR = (g_config.NavIndicator == 0) ? 22.0f * g_uiScale : 60.0f * g_uiScale;
+        float arrowW = (g_config.NavIndicator == 0) ? 36.0f * g_uiScale : 48.0f * g_uiScale;
         
-        if (fx < 36.0f * g_uiScale && fabsf(fy - arrowCy) < arrowR) {
+        if (fx < arrowW && fabsf(fy - arrowCy) < arrowR) {
             if (m_targetScrollLeft < 0.0f) m_targetScrollLeft = m_scrollLeft;
             m_targetScrollLeft = std::max(0.0f, m_targetScrollLeft - 300.0f);
             RequestRepaint(QuickView::PaintLayer::Gallery);
             return true;
         }
-        if (fx > m_lastSize.width - 36.0f * g_uiScale && fabsf(fy - arrowCy) < arrowR) {
+        if (fx > m_lastSize.width - arrowW && fabsf(fy - arrowCy) < arrowR) {
             if (m_targetScrollLeft < 0.0f) m_targetScrollLeft = m_scrollLeft;
             m_targetScrollLeft = std::min(m_maxScrollLeft, m_targetScrollLeft + 300.0f);
             RequestRepaint(QuickView::PaintLayer::Gallery);
@@ -1069,9 +1166,10 @@ bool GalleryOverlay::OnMouseMove(int x, int y) {
     // Update arrow hover states (filmstrip mode)
     if (m_gridProgress < 0.2f) {
         float arrowCy = (PADDING + FILM_CELL_SIZE / 2.0f) * g_uiScale;
-        float arrowR = 22.0f * g_uiScale;
-        bool leftHover = (fx < 36.0f * g_uiScale && fabsf(fy - arrowCy) < arrowR);
-        bool rightHover = (fx > m_lastSize.width - 36.0f * g_uiScale && fabsf(fy - arrowCy) < arrowR);
+        float arrowR = (g_config.NavIndicator == 0) ? 22.0f * g_uiScale : 60.0f * g_uiScale;
+        float arrowW = (g_config.NavIndicator == 0) ? 36.0f * g_uiScale : 48.0f * g_uiScale;
+        bool leftHover = (fx < arrowW && fabsf(fy - arrowCy) < arrowR);
+        bool rightHover = (fx > m_lastSize.width - arrowW && fabsf(fy - arrowCy) < arrowR);
         if (leftHover != m_arrowLeftHover || rightHover != m_arrowRightHover) {
             m_arrowLeftHover = leftHover;
             m_arrowRightHover = rightHover;
