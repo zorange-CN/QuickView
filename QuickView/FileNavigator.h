@@ -135,6 +135,12 @@ public:
     // [Directory Watcher] Apply pending scan result from background thread (main thread only)
     void ApplyPendingScanResult();
 
+    // [RAW+JPEG Pairing] Re-list the watched directory synchronously and apply
+    // the result (main thread only) -- used when the pairing setting toggles,
+    // so the open folder folds/unfolds without waiting for a watcher event.
+    // No-op for archives and when no folder is open.
+    void RescanDirectory();
+
     // Shared sort comparator for Entry vectors (used by Initialize and PerformDirectoryScan)
     struct SortEntry {
         std::wstring p;

@@ -552,6 +552,19 @@ void FileNavigator::ApplyPendingScanResult() {
     StartPairVerification();
 }
 
+void FileNavigator::RescanDirectory() {
+    if (m_watchedDir.empty()) return; // archive or no folder open
+    // Join any in-flight verification pass first: it could otherwise post a
+    // result computed before this one right after it.
+    StopPairVerification();
+    DirectoryScanResult result = PerformDirectoryScan();
+    {
+        std::lock_guard<std::mutex> lock(m_scanResultMutex);
+        m_pendingScanResult = std::move(result);
+    }
+    ApplyPendingScanResult();
+}
+
 int64_t FileNavigator::ParseExifDateTime(const std::string& exifDateTime) {
     int y = 0, mo = 0, d = 0, h = 0, mi = 0, se = 0;
     if (sscanf_s(exifDateTime.c_str(), "%d:%d:%d %d:%d:%d", &y, &mo, &d, &h, &mi, &se) != 6) return 0;

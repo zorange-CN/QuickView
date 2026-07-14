@@ -12634,6 +12634,48 @@ static void ReturnToPairFaceAfterCompareExit(HWND hwnd) {
     LoadImageAsync(hwnd, g_pairViewRenderedPath.c_str());
 }
 
+// [RAW+JPEG Pairing] The Settings toggle flipped: re-apply pairing to the open
+// folder right away and refresh the pair indicators that are not recomputed
+// per frame (window title, toolbar RAW button). Called from SettingsOverlay.
+void ApplyPairRawJpegSetting(HWND hwnd) {
+    if (!g_config.PairRawJpeg) {
+        // With pairing off no pair-view exists; drop stale tracking so a later
+        // navigation onto a former pair member cannot re-assert ForceRawDecode.
+        g_pairViewRawPath.clear();
+        g_pairViewRenderedPath.clear();
+    }
+
+    auto& pane = GetPaneContext(PaneSlot::Primary);
+    pane.navigator.RescanDirectory();
+
+    const std::wstring& cur = pane.path;
+    if (!cur.empty()) {
+        const bool navHasPairedRaw = pane.navigator.HasPairedRaw(FileNavigator::PathToImageID(cur));
+        const bool isPairedView = navHasPairedRaw
+            || (!g_pairViewRawPath.empty() && cur == g_pairViewRawPath);
+        g_toolbar.SetRawState(QuickView::IsRawPath(cur) || navHasPairedRaw,
+                              g_runtime.ForceRawDecode, isPairedView);
+        if (IsCompareModeActive()) {
+            RefreshCompareRawUI(hwnd);
+        } else {
+            // The window title carries the "(+CR3)" suffix; rebuild it the way
+            // the load pipeline writes it.
+            std::wstring titleName = cur.substr(cur.find_last_of(L"\\/") + 1);
+            if (const auto* pairedRaw = pane.navigator.GetPairedRaw(FileNavigator::PathToImageID(cur))) {
+                titleName += L" (" + FileNavigator::PairedRawLabel(*pairedRaw) + L")";
+            }
+            wchar_t titleBuf[2048];
+            swprintf_s(titleBuf, L"%s - %s", titleName.c_str(), g_szWindowTitle);
+            SetWindowTextW(hwnd, titleBuf);
+        }
+    }
+
+    RequestRepaint(PaintLayer::Static | PaintLayer::Dynamic);
+    if (g_gallery.IsVisible()) {
+        RequestRepaint(PaintLayer::Gallery);
+    }
+}
+
 static void ComparePairSideBySide(HWND hwnd, const std::wstring& renderedPath, const std::wstring& rawPath) {
     const bool viewingRaw = (GetPaneContext(PaneSlot::Primary).path == rawPath);
 
