@@ -31,6 +31,9 @@ static UINT GetSvgSurfaceSizeLimit();
 #include "PaneContext.h"
 #include "AppStrings.h"
 #include "ContextMenu.h"
+#include "UndoManager.h"
+#include <shlobj.h>
+#pragma comment(lib, "shlwapi.lib")
 #include "SupportedExtensions.h"
 #include <cwctype>
 #include <commctrl.h> 
@@ -326,10 +329,142 @@ std::array<HotkeyBinding, static_cast<size_t>(HotkeyAction::Count)> g_hotkeys = 
     HotkeyBinding{ HotkeyAction::OverlayAlphaDown, KeyCombo{ VK_DOWN, 4 }, KeyCombo{ VK_DOWN, 4 } }, // Alt + Down
     HotkeyBinding{ HotkeyAction::OverlayTogglePassthrough, KeyCombo{ VK_ESCAPE, 2 }, KeyCombo{ VK_ESCAPE, 2 } }, // Shift + Esc
     HotkeyBinding{ HotkeyAction::Help, KeyCombo{ VK_F1, 0 }, KeyCombo{ VK_F1, 0 } },
-    HotkeyBinding{ HotkeyAction::Exit, KeyCombo{ VK_ESCAPE, 0 }, KeyCombo{ VK_ESCAPE, 0 } }
+    HotkeyBinding{ HotkeyAction::Exit, KeyCombo{ VK_ESCAPE, 0 }, KeyCombo{ VK_ESCAPE, 0 } },
+    HotkeyBinding{ HotkeyAction::UndoDelete, KeyCombo{ 'Z', 1 }, KeyCombo{ 'Z', 1 } }
 };
 RuntimeConfig g_runtime;
+UndoManager g_undoManager;
 SlideshowState g_slideshowState;
+
+static bool RestoreDeletedFile(HWND hwnd, const std::wstring& targetPath) {
+    if (targetPath.empty()) return false;
+
+    HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+    bool coInit = SUCCEEDED(hr) || hr == RPC_E_CHANGED_MODE;
+
+    PIDLIST_ABSOLUTE pidlRecycleBin = nullptr;
+    hr = SHGetFolderLocation(hwnd, CSIDL_BITBUCKET, NULL, 0, &pidlRecycleBin);
+    if (FAILED(hr)) {
+        if (coInit && hr != RPC_E_CHANGED_MODE) CoUninitialize();
+        return false;
+    }
+
+    IShellFolder* pRecycleBin = nullptr;
+    hr = SHBindToObject(NULL, pidlRecycleBin, NULL, IID_IShellFolder, (void**)&pRecycleBin);
+    if (FAILED(hr)) {
+        ILFree(pidlRecycleBin);
+        if (coInit && hr != RPC_E_CHANGED_MODE) CoUninitialize();
+        return false;
+    }
+
+    IShellFolder2* pRecycleBin2 = nullptr;
+    hr = pRecycleBin->QueryInterface(IID_IShellFolder2, (void**)&pRecycleBin2);
+    if (FAILED(hr)) {
+        pRecycleBin->Release();
+        ILFree(pidlRecycleBin);
+        if (coInit && hr != RPC_E_CHANGED_MODE) CoUninitialize();
+        return false;
+    }
+
+    IEnumIDList* pEnum = nullptr;
+    hr = pRecycleBin2->EnumObjects(hwnd, SHCONTF_FOLDERS | SHCONTF_NONFOLDERS, &pEnum);
+    if (FAILED(hr)) {
+        pRecycleBin2->Release();
+        pRecycleBin->Release();
+        ILFree(pidlRecycleBin);
+        if (coInit && hr != RPC_E_CHANGED_MODE) CoUninitialize();
+        return false;
+    }
+
+    PITEMID_CHILD pidlItem = nullptr;
+    ULONG fetched = 0;
+
+    static const PROPERTYKEY PKEY_RecycleBin_OriginalFolder = {
+        { 0x9B174B33, 0x40FF, 0x11D2, { 0xA2, 0x7E, 0x00, 0xC0, 0x4F, 0xC3, 0x08, 0x71 } },
+        2
+    };
+    static const PROPERTYKEY PKEY_RecycleBin_DateDeleted = {
+        { 0x9B174B33, 0x40FF, 0x11D2, { 0xA2, 0x7E, 0x00, 0xC0, 0x4F, 0xC3, 0x08, 0x71 } },
+        3
+    };
+
+    PITEMID_CHILD bestPidl = nullptr;
+    FILETIME bestDate = { 0, 0 };
+
+    while (pEnum->Next(1, &pidlItem, &fetched) == S_OK && fetched > 0) {
+        VARIANT varFolder;
+        VariantInit(&varFolder);
+
+        hr = pRecycleBin2->GetDetailsEx(pidlItem, &PKEY_RecycleBin_OriginalFolder, &varFolder);
+        if (SUCCEEDED(hr) && varFolder.vt == VT_BSTR) {
+            std::wstring origFolder = varFolder.bstrVal;
+            VariantClear(&varFolder);
+
+            STRRET strDisplayName;
+            hr = pRecycleBin2->GetDisplayNameOf(pidlItem, SHGDN_INFOLDER, &strDisplayName);
+            wchar_t fileName[MAX_PATH] = { 0 };
+            if (SUCCEEDED(hr)) {
+                StrRetToBufW(&strDisplayName, pidlItem, fileName, MAX_PATH);
+            }
+
+            std::wstring fullOrig = origFolder;
+            if (!fullOrig.empty() && fullOrig.back() != L'\\') {
+                fullOrig += L'\\';
+            }
+            fullOrig += fileName;
+
+            if (_wcsicmp(fullOrig.c_str(), targetPath.c_str()) == 0) {
+                VARIANT varDate;
+                VariantInit(&varDate);
+                hr = pRecycleBin2->GetDetailsEx(pidlItem, &PKEY_RecycleBin_DateDeleted, &varDate);
+                FILETIME itemDate = { 0, 0 };
+                if (SUCCEEDED(hr) && varDate.vt == VT_DATE) {
+                    SYSTEMTIME sysTime;
+                    if (VariantTimeToSystemTime(varDate.date, &sysTime)) {
+                        SystemTimeToFileTime(&sysTime, &itemDate);
+                    }
+                }
+                VariantClear(&varDate);
+
+                if (bestPidl == nullptr || CompareFileTime(&itemDate, &bestDate) > 0) {
+                    if (bestPidl) ILFree(bestPidl);
+                    bestPidl = (PITEMID_CHILD)ILClone(pidlItem);
+                    bestDate = itemDate;
+                }
+            }
+        } else {
+            VariantClear(&varFolder);
+        }
+        ILFree(pidlItem);
+    }
+
+    pEnum->Release();
+
+    bool success = false;
+    if (bestPidl != nullptr) {
+        IContextMenu* pcm = nullptr;
+        hr = pRecycleBin2->GetUIObjectOf(hwnd, 1, (LPCITEMIDLIST*)&bestPidl, IID_IContextMenu, NULL, (void**)&pcm);
+        if (SUCCEEDED(hr)) {
+            CMINVOKECOMMANDINFO info = {};
+            info.cbSize = sizeof(info);
+            info.lpVerb = "undelete";
+            info.nShow = SW_SHOWNORMAL;
+            hr = pcm->InvokeCommand(&info);
+            if (SUCCEEDED(hr)) {
+                success = true;
+            }
+            pcm->Release();
+        }
+        ILFree(bestPidl);
+    }
+
+    pRecycleBin2->Release();
+    pRecycleBin->Release();
+    ILFree(pidlRecycleBin);
+
+    if (coInit && hr != RPC_E_CHANGED_MODE) CoUninitialize();
+    return success;
+}
 bool HandleHotkeyAction(HWND hwnd, HotkeyAction action);
 bool g_preserveViewStateOnNextLoad = false;
 
@@ -9220,6 +9355,10 @@ SKIP_EDGE_NAV:;
             }
             break;
         }
+        case IDM_UNDO: {
+            HandleHotkeyAction(hwnd, HotkeyAction::UndoDelete);
+            break;
+        }
         case IDM_OPEN: {
             if (!CheckUnsavedChanges(hwnd)) break;
             OPENFILENAMEW ofn = {};
@@ -9546,9 +9685,13 @@ SKIP_EDGE_NAV:;
                         SetDialogCenter((vp.left + vp.right) * 0.5f, (vp.top + vp.bottom) * 0.5f);
                     }
                     DialogResult dlgResult = AppContext::GetInstance().DialogCtrl->ShowDialog(hwnd, filename.c_str(), dlgMessage.c_str(),
-                                                                  D2D1::ColorF(0.85f, 0.25f, 0.25f), dlgButtons, false, L"", L"");
+                                                                  D2D1::ColorF(0.85f, 0.25f, 0.25f), dlgButtons, true, AppStrings::Checkbox_NeverConfirmDelete, L"");
                     ClearDialogCenter();
                     confirmed = (dlgResult == DialogResult::Yes);
+                    if (confirmed && AppContext::GetInstance().Dialog.IsChecked) {
+                        g_config.ConfirmDelete = false;
+                        SaveConfig();
+                    }
                 }
 
                 if (confirmed) {
@@ -9560,6 +9703,7 @@ SKIP_EDGE_NAV:;
                     op.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT;
                     if (SHFileOperationW(&op) == 0) {
                         g_osd.Show(hwnd, AppStrings::OSD_MovedToRecycleBin, false);
+                        g_undoManager.PushDelete(recycleTarget, true);
 
                         std::wstring nextPath = leftNavigator.PeekNext();
                         if (nextPath == recycleTarget) nextPath = leftNavigator.PeekPrevious();
@@ -9619,9 +9763,13 @@ SKIP_EDGE_NAV:;
                     }
 
                     DialogResult dlgResult = AppContext::GetInstance().DialogCtrl->ShowDialog(hwnd, filename.c_str(), dlgMessage.c_str(),
-                                                                 D2D1::ColorF(0.85f, 0.25f, 0.25f), dlgButtons, false, L"", L"");
+                                                                 D2D1::ColorF(0.85f, 0.25f, 0.25f), dlgButtons, true, AppStrings::Checkbox_NeverConfirmDelete, L"");
                     ClearDialogCenter();
                     confirmed = (dlgResult == DialogResult::Yes);
+                    if (confirmed && AppContext::GetInstance().Dialog.IsChecked) {
+                        g_config.ConfirmDelete = false;
+                        SaveConfig();
+                    }
                 }
 
                 
@@ -9643,6 +9791,7 @@ SKIP_EDGE_NAV:;
                     
                     if (SHFileOperationW(&op) == 0) {
                         g_osd.Show(hwnd, AppStrings::OSD_MovedToRecycleBin, false);
+                        g_undoManager.PushDelete(recycleTarget, false);
                         
                         // [Fix] Verify and delete the temp file if it exists
                         if (!tempToDelete.empty() && FileExists(tempToDelete.c_str())) {
@@ -12987,6 +13136,40 @@ bool HandleHotkeyAction(HWND hwnd, HotkeyAction action) {
             AppContext::GetInstance().Loupe.active = true;
             AppContext::GetInstance().Loupe.cursorClient = cp;
             RequestRepaint(PaintLayer::Dynamic);
+        }
+        return true;
+
+    case HotkeyAction::UndoDelete:
+        if (g_undoManager.CanUndo()) {
+            UndoAction undo = g_undoManager.Pop();
+            if (undo.type == UndoType::Delete) {
+                if (RestoreDeletedFile(hwnd, undo.path)) {
+                    g_osd.Show(hwnd, AppStrings::OSD_UndoDeleteSuccess, false);
+                    
+                    if (IsCompareModeActive()) {
+                        if (undo.leftSlot) {
+                            AppContext::GetInstance().CompareCtrl->LoadImageIntoLeftSlot(hwnd, undo.path, [](bool success) {
+                                if (success) {
+                                    AppContext::GetInstance().Compare.activePane = ComparePane::Left;
+                                    AppContext::GetInstance().Compare.contextPane = ComparePane::Left;
+                                    AppContext::GetInstance().Compare.selectedPane = ComparePane::Left;
+                                    MarkCompareDirty();
+                                    RequestRepaint(PaintLayer::Image | PaintLayer::Static | PaintLayer::Dynamic);
+                                }
+                            });
+                        } else {
+                            GetPaneContext(PaneSlot::Primary).navigator.Initialize(undo.path, hwnd);
+                            LoadImageAsync(hwnd, GetPaneContext(PaneSlot::Primary).navigator.GetResolvedPath(undo.path).c_str());
+                            MarkCompareDirty();
+                        }
+                    } else {
+                        GetPaneContext(PaneSlot::Primary).navigator.Initialize(undo.path, hwnd);
+                        LoadImageAsync(hwnd, GetPaneContext(PaneSlot::Primary).navigator.GetResolvedPath(undo.path).c_str());
+                    }
+                } else {
+                    g_osd.Show(hwnd, AppStrings::OSD_UndoDeleteFailed, false);
+                }
+            }
         }
         return true;
 

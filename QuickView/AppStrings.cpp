@@ -21,6 +21,8 @@ const wchar_t *OSD_SpanOn = nullptr;
 const wchar_t *OSD_SpanOff = nullptr;
 const wchar_t *OSD_CompareBefore = nullptr;
 const wchar_t *OSD_CompareAfter = nullptr;
+const wchar_t *OSD_UndoDeleteSuccess = nullptr;
+const wchar_t *OSD_UndoDeleteFailed = nullptr;
 const wchar_t *OSD_GamutDetected = nullptr;
 const wchar_t *OSD_GamutIncompatible = nullptr;
 const wchar_t *OSD_GamutFailed = nullptr;
@@ -38,6 +40,8 @@ const wchar_t *Dialog_ButtonContinue = nullptr;
 const wchar_t *Checkbox_AlwaysSaveLossless = nullptr;
 const wchar_t *Checkbox_AlwaysSaveEdgeAdapted = nullptr;
 const wchar_t *Checkbox_AlwaysSaveLossy = nullptr;
+const wchar_t *Checkbox_NeverConfirmDelete = nullptr;
+const wchar_t *Context_UndoDelete = nullptr;
 const wchar_t *OSD_HEICCodecMissing = nullptr;
 const wchar_t *Dialog_HEICTitle = nullptr;
 const wchar_t *Dialog_HEICContent = nullptr;
@@ -522,6 +526,8 @@ struct LanguageTable {
     const wchar_t *OSD_SpanOff;
     const wchar_t *OSD_CompareBefore;
     const wchar_t *OSD_CompareAfter;
+    const wchar_t *OSD_UndoDeleteSuccess;
+    const wchar_t *OSD_UndoDeleteFailed;
     const wchar_t *OSD_GamutDetected;
     const wchar_t *OSD_GamutIncompatible;
     const wchar_t *OSD_GamutFailed;
@@ -539,6 +545,7 @@ struct LanguageTable {
     const wchar_t *Checkbox_AlwaysSaveLossless;
     const wchar_t *Checkbox_AlwaysSaveEdgeAdapted;
     const wchar_t *Checkbox_AlwaysSaveLossy;
+    const wchar_t *Checkbox_NeverConfirmDelete;
     const wchar_t *OSD_HEICCodecMissing;
     const wchar_t *Dialog_HEICTitle;
     const wchar_t *Dialog_HEICContent;
@@ -603,6 +610,7 @@ struct LanguageTable {
     const wchar_t *Context_Rename;
     const wchar_t *Context_FixExtension;
     const wchar_t *Context_Delete;
+    const wchar_t *Context_UndoDelete;
     const wchar_t *Context_SortBy;
     const wchar_t *Context_NavOrder;
     const wchar_t *Context_SortAscending;
@@ -1014,6 +1022,8 @@ static const LanguageTable Table_EN = {
     L"Video Wall: OFF", // OSD_SpanOff
     L"Before (Original)", // OSD_CompareBefore
     L"After (Proofed)", // OSD_CompareAfter
+    L"Undo delete succeeded", // OSD_UndoDeleteSuccess
+    L"Undo delete failed", // OSD_UndoDeleteFailed
     L"Detected out-of-gamut colors", // OSD_GamutDetected
     L"Gamut: Incompatible profile or parsing failed", // OSD_GamutIncompatible
     L"Gamut: Analysis failed", // OSD_GamutFailed
@@ -1031,6 +1041,7 @@ static const LanguageTable Table_EN = {
     L"Always save lossless transforms", // Checkbox_AlwaysSaveLossless
     L"Always save edge-adapted", // Checkbox_AlwaysSaveEdgeAdapted
     L"Always save re-encoded", // Checkbox_AlwaysSaveLossy
+    L"Directly to Recycle Bin, do not confirm again", // Checkbox_NeverConfirmDelete
     L"Cannot decode HEIC - Install HEVC Video Extension", // OSD_HEICCodecMissing
     L"Cannot decode HEIC", // Dialog_HEICTitle
     L"Your system is missing the HEVC Video Extension.\nQuickView uses " L"system hardware acceleration for best performance.", // Dialog_HEICContent
@@ -1095,6 +1106,7 @@ static const LanguageTable Table_EN = {
     L"Rename\tF2", // Context_Rename
     L"Fix Extension", // Context_FixExtension
     L"Delete\tDel", // Context_Delete
+    L"Undo Delete\tCtrl+Z", // Context_UndoDelete
     L"Sort By", // Context_SortBy
     L"Navigation Order", // Context_NavOrder
     L"Ascending", // Context_SortAscending
@@ -1506,6 +1518,8 @@ static const LanguageTable Table_CN = {
     L"跨屏模式: 关闭", // OSD_SpanOff
     L"打样前 (Original)", // OSD_CompareBefore
     L"打样后 (Proofed)", // OSD_CompareAfter
+    L"已撤销删除", // OSD_UndoDeleteSuccess
+    L"撤销删除失败", // OSD_UndoDeleteFailed
     L"检测到色彩溢出", // OSD_GamutDetected
     L"色彩空间不匹配 / 配置文件解析失败", // OSD_GamutIncompatible
     L"色彩溢出分析失败", // OSD_GamutFailed
@@ -1523,6 +1537,7 @@ static const LanguageTable Table_CN = {
     L"总是保存无损变换", // Checkbox_AlwaysSaveLossless
     L"总是保存边缘优化结果", // Checkbox_AlwaysSaveEdgeAdapted
     L"总是保存重编码结果", // Checkbox_AlwaysSaveLossy
+    L"直接放入回收站，不再确认", // Checkbox_NeverConfirmDelete
     L"无法解码 HEIC - 请安装 HEVC 视频扩展", // OSD_HEICCodecMissing
     L"无法解码 HEIC", // Dialog_HEICTitle
     L"系统缺少 HEVC 视频扩展。\nQuickView 需要系统硬件加速以获得最佳性能。", // Dialog_HEICContent
@@ -1587,6 +1602,7 @@ static const LanguageTable Table_CN = {
     L"重命名\tF2", // Context_Rename
     L"修复扩展名", // Context_FixExtension
     L"删除\tDel", // Context_Delete
+    L"撤销删除\tCtrl+Z", // Context_UndoDelete
     L"排序方式", // Context_SortBy
     L"导航顺序", // Context_NavOrder
     L"升序", // Context_SortAscending
@@ -1998,6 +2014,8 @@ static const LanguageTable Table_TW = {
     L"跨屏模式: 關閉", // OSD_SpanOff
     L"打樣前 (Original)", // OSD_CompareBefore
     L"打樣後 (Proofed)", // OSD_CompareAfter
+    L"已撤銷刪除", // OSD_UndoDeleteSuccess
+    L"撤銷刪除失敗", // OSD_UndoDeleteFailed
     L"檢測到色彩溢出", // OSD_GamutDetected
     L"色彩空間不匹配 / 設定檔解析失敗", // OSD_GamutIncompatible
     L"色彩溢出分析失敗", // OSD_GamutFailed
@@ -2015,6 +2033,7 @@ static const LanguageTable Table_TW = {
     L"總是儲存無損變換", // Checkbox_AlwaysSaveLossless
     L"總是儲存邊緣優化結果", // Checkbox_AlwaysSaveEdgeAdapted
     L"總是儲存重新編碼結果", // Checkbox_AlwaysSaveLossy
+    L"直接放入回收站，不再確認", // Checkbox_NeverConfirmDelete
     L"無法解碼 HEIC - 請安裝 HEVC 視訊延伸模組", // OSD_HEICCodecMissing
     L"無法解碼 HEIC", // Dialog_HEICTitle
     L"系統缺少 HEVC 視訊延伸模組。\\nQuickView " L"需要系統硬體加速以獲得最佳效能。", // Dialog_HEICContent
@@ -2079,6 +2098,7 @@ static const LanguageTable Table_TW = {
     L"重新命名\tF2", // Context_Rename
     L"修復副檔名", // Context_FixExtension
     L"刪除\tDel", // Context_Delete
+    L"撤銷刪除\tCtrl+Z", // Context_UndoDelete
     L"排序方式", // Context_SortBy
     L"導覽順序", // Context_NavOrder
     L"升冪", // Context_SortAscending
@@ -2490,6 +2510,8 @@ static const LanguageTable Table_JA = {
     L"Video Wall: OFF", // OSD_SpanOff
     L"校正前 (元画像)", // OSD_CompareBefore
     L"校正後 (プロファイル適用)", // OSD_CompareAfter
+    L"削除が取り消されました", // OSD_UndoDeleteSuccess
+    L"削除の取り消しに失敗しました", // OSD_UndoDeleteFailed
     L"色域外の色を検出しました", // OSD_GamutDetected
     L"色域: 互換性のないプロファイル", // OSD_GamutIncompatible
     L"色域: 解析に失敗しました", // OSD_GamutFailed
@@ -2507,6 +2529,7 @@ static const LanguageTable Table_JA = {
     L"ロスレス変換を常に保存", // Checkbox_AlwaysSaveLossless
     L"エッジ最適化を常に保存", // Checkbox_AlwaysSaveEdgeAdapted
     L"再エンコードを常に保存", // Checkbox_AlwaysSaveLossy
+    L"確認なしで直接ごみ箱に移動", // Checkbox_NeverConfirmDelete
     L"HEICをデコードできません - HEVC拡張機能をインストールしてください", // OSD_HEICCodecMissing
     L"HEICをデコードできません", // Dialog_HEICTitle
     L"システムにHEVC拡張機能がありません。\\nQuickViewは最高のパフォーマンス" L"のためにハードウェアアクセラレーションを使用します。", // Dialog_HEICContent
@@ -2571,6 +2594,7 @@ static const LanguageTable Table_JA = {
     L"名前の変更\tF2", // Context_Rename
     L"拡張子を修正", // Context_FixExtension
     L"削除\tDel", // Context_Delete
+    L"削除を取り消す\tCtrl+Z", // Context_UndoDelete
     L"並べ替え", // Context_SortBy
     L"ナビゲーション順序", // Context_NavOrder
     L"昇順", // Context_SortAscending
@@ -2982,6 +3006,8 @@ static const LanguageTable Table_RU = {
     L"Видеостена: ВЫКЛ", // OSD_SpanOff
     L"До (Оригинал)", // OSD_CompareBefore
     L"После (Проба)", // OSD_CompareAfter
+    L"Удаление отменено", // OSD_UndoDeleteSuccess
+    L"Ошибка отмены удаления", // OSD_UndoDeleteFailed
     L"Обнаружены цвета вне цветового охвата", // OSD_GamutDetected
     L"Охват: Несовместимый профиль или ошибка разбора", // OSD_GamutIncompatible
     L"Охват: Ошибка анализа", // OSD_GamutFailed
@@ -2999,6 +3025,7 @@ static const LanguageTable Table_RU = {
     L"Всегда сохранять без потерь", // Checkbox_AlwaysSaveLossless
     L"Всегда сохранять с оптимизацией краёв", // Checkbox_AlwaysSaveEdgeAdapted
     L"Всегда сохранять перекодированное", // Checkbox_AlwaysSaveLossy
+    L"Отправлять в корзину без подтверждения", // Checkbox_NeverConfirmDelete
     L"Невозможно декодировать HEIC, установите расширение HEVC", // OSD_HEICCodecMissing
     L"Невозможно декодировать HEIC", // Dialog_HEICTitle
     L"В системе отсутствует расширение HEVC.\\nQuickView использует " L"аппаратное ускорение для лучшей производительности.", // Dialog_HEICContent
@@ -3063,6 +3090,7 @@ static const LanguageTable Table_RU = {
     L"Переименовать\tF2", // Context_Rename
     L"Исправить расширение", // Context_FixExtension
     L"Удалить\tDel", // Context_Delete
+    L"Отменить удаление\tCtrl+Z", // Context_UndoDelete
     L"Сортировка", // Context_SortBy
     L"Навигация", // Context_NavOrder
     L"По возрастанию", // Context_SortAscending
@@ -3474,6 +3502,8 @@ static const LanguageTable Table_DE = {
     L"Video Wall: OFF", // OSD_SpanOff
     L"Vorher (Original)", // OSD_CompareBefore
     L"Nachher (Proof)", // OSD_CompareAfter
+    L"Löschen rückgängig gemacht", // OSD_UndoDeleteSuccess
+    L"Rückgängig machen fehlgeschlagen", // OSD_UndoDeleteFailed
     L"Farbraum-Überschreitung erkannt", // OSD_GamutDetected
     L"Farbraum: Inkompatibles Profil", // OSD_GamutIncompatible
     L"Farbraum: Analyse fehlgeschlagen", // OSD_GamutFailed
@@ -3491,6 +3521,7 @@ static const LanguageTable Table_DE = {
     L"Immer verlustfrei speichern", // Checkbox_AlwaysSaveLossless
     L"Immer kantenoptimiert speichern", // Checkbox_AlwaysSaveEdgeAdapted
     L"Immer neu kodiert speichern", // Checkbox_AlwaysSaveLossy
+    L"Ohne Bestätigung in den Papierkorb verschieben", // Checkbox_NeverConfirmDelete
     L"HEIC kann nicht dekodiert werden - HEVC-Erweiterung installieren", // OSD_HEICCodecMissing
     L"HEIC kann nicht dekodiert werden", // Dialog_HEICTitle
     L"Ihr System hat keine HEVC-Erweiterung.\\nQuickView nutzt " L"Hardware-Beschleunigung für beste Leistung.", // Dialog_HEICContent
@@ -3555,6 +3586,7 @@ static const LanguageTable Table_DE = {
     L"Umbenennen\tF2", // Context_Rename
     L"Erweiterung reparieren", // Context_FixExtension
     L"Löschen\tEntf", // Context_Delete
+    L"Löschen rückgängig machen\tCtrl+Z", // Context_UndoDelete
     L"Sortieren nach", // Context_SortBy
     L"Navigationsreihenfolge", // Context_NavOrder
     L"Aufsteigend", // Context_SortAscending
@@ -3966,6 +3998,8 @@ static const LanguageTable Table_ES = {
     L"Video Wall: OFF", // OSD_SpanOff
     L"Antes (Original)", // OSD_CompareBefore
     L"Después (Prueba)", // OSD_CompareAfter
+    L"Eliminación deshecha", // OSD_UndoDeleteSuccess
+    L"Error al deshacer eliminación", // OSD_UndoDeleteFailed
     L"Colores fuera de gama detectados", // OSD_GamutDetected
     L"Gama: Perfil incompatible", // OSD_GamutIncompatible
     L"Gama: Error en el análisis", // OSD_GamutFailed
@@ -3983,6 +4017,7 @@ static const LanguageTable Table_ES = {
     L"Siempre guardar sin pérdida", // Checkbox_AlwaysSaveLossless
     L"Siempre guardar con bordes optimizados", // Checkbox_AlwaysSaveEdgeAdapted
     L"Siempre guardar recodificado", // Checkbox_AlwaysSaveLossy
+    L"Enviar directamente a la papelera sin confirmar", // Checkbox_NeverConfirmDelete
     L"No se puede decodificar HEIC - Instale la extensión HEVC", // OSD_HEICCodecMissing
     L"No se puede decodificar HEIC", // Dialog_HEICTitle
     L"Su sistema no tiene la extensión HEVC.\\nQuickView usa aceleración de " L"hardware para mejor rendimiento.", // Dialog_HEICContent
@@ -4047,6 +4082,7 @@ static const LanguageTable Table_ES = {
     L"Renombrar\tF2", // Context_Rename
     L"Corregir extensión", // Context_FixExtension
     L"Eliminar\tSupr", // Context_Delete
+    L"Deshacer eliminación\tCtrl+Z", // Context_UndoDelete
     L"Ordenar por", // Context_SortBy
     L"Orden de navegación", // Context_NavOrder
     L"Ascendente", // Context_SortAscending
@@ -4458,6 +4494,8 @@ static const LanguageTable Table_FR = {
     L"Video Wall: OFF", // OSD_SpanOff
     L"Avant (Original)", // OSD_CompareBefore
     L"Après (Preuve)", // OSD_CompareAfter
+    L"Suppression annulée", // OSD_UndoDeleteSuccess
+    L"Échec de l'annulation", // OSD_UndoDeleteFailed
     L"Couleurs hors gamme détectées", // OSD_GamutDetected
     L"Gamme : Profil incompatible", // OSD_GamutIncompatible
     L"Gamme : Échec de l'analyse", // OSD_GamutFailed
@@ -4475,6 +4513,7 @@ static const LanguageTable Table_FR = {
     L"Always save lossless transforms", // Checkbox_AlwaysSaveLossless
     L"Always save edge-adapted", // Checkbox_AlwaysSaveEdgeAdapted
     L"Always save re-encoded", // Checkbox_AlwaysSaveLossy
+    L"Envoyer directement à la corbeille sans confirmer", // Checkbox_NeverConfirmDelete
     L"Cannot decode HEIC - Install HEVC Video Extension", // OSD_HEICCodecMissing
     L"Cannot decode HEIC", // Dialog_HEICTitle
     L"Your system is missing the HEVC Video Extension.\nQuickView uses " L"system hardware acceleration for best performance.", // Dialog_HEICContent
@@ -4539,6 +4578,7 @@ static const LanguageTable Table_FR = {
     L"Rename\tF2", // Context_Rename
     L"Fix Extension", // Context_FixExtension
     L"Delete\tDel", // Context_Delete
+    L"Annuler la suppression\tCtrl+Z", // Context_UndoDelete
     L"Sort By", // Context_SortBy
     L"Navigation Order", // Context_NavOrder
     L"Ascending", // Context_SortAscending
@@ -4950,6 +4990,8 @@ void Apply(const LanguageTable& t) {
   OSD_SpanOff = t.OSD_SpanOff;
   OSD_CompareBefore = t.OSD_CompareBefore;
   OSD_CompareAfter = t.OSD_CompareAfter;
+  OSD_UndoDeleteSuccess = t.OSD_UndoDeleteSuccess;
+  OSD_UndoDeleteFailed = t.OSD_UndoDeleteFailed;
   OSD_GamutDetected = t.OSD_GamutDetected;
   OSD_GamutIncompatible = t.OSD_GamutIncompatible;
   OSD_GamutFailed = t.OSD_GamutFailed;
@@ -4967,6 +5009,7 @@ void Apply(const LanguageTable& t) {
   Checkbox_AlwaysSaveLossless = t.Checkbox_AlwaysSaveLossless;
   Checkbox_AlwaysSaveEdgeAdapted = t.Checkbox_AlwaysSaveEdgeAdapted;
   Checkbox_AlwaysSaveLossy = t.Checkbox_AlwaysSaveLossy;
+  Checkbox_NeverConfirmDelete = t.Checkbox_NeverConfirmDelete;
   OSD_HEICCodecMissing = t.OSD_HEICCodecMissing;
   Dialog_HEICTitle = t.Dialog_HEICTitle;
   Dialog_HEICContent = t.Dialog_HEICContent;
@@ -5031,6 +5074,7 @@ void Apply(const LanguageTable& t) {
   Context_Rename = t.Context_Rename;
   Context_FixExtension = t.Context_FixExtension;
   Context_Delete = t.Context_Delete;
+  Context_UndoDelete = t.Context_UndoDelete;
   Context_SortBy = t.Context_SortBy;
   Context_NavOrder = t.Context_NavOrder;
   Context_SortAscending = t.Context_SortAscending;

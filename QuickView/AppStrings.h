@@ -38,8 +38,8 @@ namespace AppStrings {
     extern const wchar_t* OSD_SpanOff;
     extern const wchar_t* OSD_CompareBefore;
     extern const wchar_t* OSD_CompareAfter;
-
-    
+    extern const wchar_t* OSD_UndoDeleteSuccess;
+    extern const wchar_t* OSD_UndoDeleteFailed;
     // Transform Action Names
     extern const wchar_t* Action_RotateCW;
     extern const wchar_t* Action_RotateCCW;
@@ -91,6 +91,7 @@ namespace AppStrings {
     extern const wchar_t* Context_Rename;
     extern const wchar_t* Context_FixExtension;
     extern const wchar_t* Context_Delete;
+    extern const wchar_t* Context_UndoDelete;
     extern const wchar_t* Context_SortBy;
     extern const wchar_t* Context_NavOrder;
     extern const wchar_t* Context_SortAscending;
@@ -211,6 +212,7 @@ namespace AppStrings {
     extern const wchar_t* Checkbox_AlwaysSaveLossless;
     extern const wchar_t* Checkbox_AlwaysSaveEdgeAdapted;
     extern const wchar_t* Checkbox_AlwaysSaveLossy;
+    extern const wchar_t* Checkbox_NeverConfirmDelete;
     
     // HEIC Codec Missing
     extern const wchar_t* OSD_HEICCodecMissing;

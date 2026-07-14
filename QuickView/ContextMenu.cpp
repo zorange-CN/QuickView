@@ -3,6 +3,7 @@
 #include "GeekContextMenu.h"
 #include "AppStrings.h"
 #include "EditState.h"
+#include "UndoManager.h"
 
 extern AppConfig g_config;
 extern RuntimeConfig g_runtime;
@@ -42,6 +43,12 @@ void ShowContextMenu(HWND hwnd, POINT pt, bool hasImage, bool needsExtensionFix,
     items.push_back(MI::Normal(IDM_OPEN_FOLDER, AppStrings::Context_OpenFolder, GeekIcons::Folder));
     items.push_back(MI::Normal(IDM_COPY_PATH, AppStrings::Context_CopyPath, GeekIcons::Link, L"Ctrl+Shift+C"));
     items.push_back(MI::Normal(IDM_PRINT, AppStrings::Context_Print, GeekIcons::Print, L"Ctrl+P"));
+    
+    extern UndoManager g_undoManager;
+    if (g_undoManager.CanUndo()) {
+        items.push_back(MI::Normal(IDM_UNDO, AppStrings::Context_UndoDelete, nullptr, L"Ctrl+Z"));
+    }
+    
     items.push_back(MI::Sep());
 
     // --- Transform Submenu ---

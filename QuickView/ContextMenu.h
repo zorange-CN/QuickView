@@ -59,6 +59,7 @@ enum ContextMenuCommand : UINT {
     IDM_RENAME,
     IDM_FIX_EXTENSION,
     IDM_DELETE,
+    IDM_UNDO = 1099,
 
     // [App Settings] Group
     IDM_SETTINGS,
