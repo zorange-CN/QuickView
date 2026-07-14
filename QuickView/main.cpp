@@ -344,6 +344,10 @@ static std::wstring g_pairViewRenderedPath;
 static bool g_pairCompareSession = false;
 static void ReturnToPairFaceAfterCompareExit(HWND hwnd);
 static void ArmPairRawFullDecode(const std::wstring& renderedPath, const std::wstring& rawPath);
+// [RAW+JPEG Pairing] Delete handling for a folded pair (three-way choice) and
+// the shared refresh of the not-per-frame pair indicators (title + toolbar).
+static void HandlePairedDelete(HWND hwnd, const std::wstring& renderedPath, const std::wstring& rawPath);
+static void RefreshCurrentPairIndicators(HWND hwnd);
 
 bool HandleHotkeyAction(HWND hwnd, HotkeyAction action);
 bool g_preserveViewStateOnNextLoad = false;
@@ -2484,7 +2488,19 @@ DialogLayout CalculateDialogLayout(D2D1_SIZE_F size) {
     DialogLayout layout;
     const float s = g_uiScale;
     float dlgW = 350.0f * s;
-    
+
+    // Widen the box when the button row is wider than the default width (e.g.
+    // the RAW+JPEG pair-delete dialog's four buttons). Dialogs with up to three
+    // 95px buttons stay at 350px, so existing dialogs are unaffected.
+    {
+        const float btnW0 = 95.0f * s, btnGap0 = 12.0f * s;
+        const size_t nb = AppContext::GetInstance().Dialog.Buttons.size();
+        if (nb > 0) {
+            const float row = nb * btnW0 + (nb - 1) * btnGap0 + 40.0f * s; // 20px margin each side
+            if (row > dlgW) dlgW = row;
+        }
+    }
+
     // Calculate required height based on content
     // Title line: ~30px, Message lines: estimate based on length, Buttons: 50px, Padding: 40px
     float titleHeight = 30.0f * s;
@@ -9499,6 +9515,34 @@ SKIP_EDGE_NAV:;
                 break;
             }
 
+            // [RAW+JPEG Pairing] Deleting a folded pair is a three-way choice
+            // (whole pair / RAW only / rendered only) -- it must never silently
+            // recycle both, per the #201 discussion. Shown for a folded pair in
+            // single view whether the rendered face or the RAW face (via D) is
+            // on screen; the choice IS the confirmation, so it appears even when
+            // Confirm-on-Delete is off (the target is otherwise ambiguous).
+            // An in-progress edit (IsDirty -- OriginalFilePath is set on every
+            // clean load, so it is not the edit-mode signal) falls through to
+            // the edit-aware path below.
+            if (!IsCompareModeActive() &&
+                !GetPaneContext(PaneSlot::Primary).editState.IsDirty) {
+                auto& nav = GetPaneContext(PaneSlot::Primary).navigator;
+                const std::wstring cur = GetPaneContext(PaneSlot::Primary).path;
+                std::wstring renderedPath, rawPath;
+                if (const auto* pr = nav.GetPairedRaw(FileNavigator::PathToImageID(cur))) {
+                    renderedPath = cur;                       // viewing the rendered face
+                    rawPath = pr->path;
+                } else if (!g_pairViewRawPath.empty() && cur == g_pairViewRawPath &&
+                           !g_pairViewRenderedPath.empty()) {
+                    rawPath = cur;                            // viewing the RAW face
+                    renderedPath = g_pairViewRenderedPath;
+                }
+                if (!renderedPath.empty() && !rawPath.empty()) {
+                    HandlePairedDelete(hwnd, renderedPath, rawPath);
+                    break;
+                }
+            }
+
             // [v9.9 Fix] Handle Deletion during Edit/Transform
             // Determine actual target to recycle and temp file to map
             std::wstring recycleTarget = GetPaneContext(PaneSlot::Primary).path;
@@ -12634,21 +12678,14 @@ static void ReturnToPairFaceAfterCompareExit(HWND hwnd) {
     LoadImageAsync(hwnd, g_pairViewRenderedPath.c_str());
 }
 
-// [RAW+JPEG Pairing] The Settings toggle flipped: re-apply pairing to the open
-// folder right away and refresh the pair indicators that are not recomputed
-// per frame (window title, toolbar RAW button). Called from SettingsOverlay.
-void ApplyPairRawJpegSetting(HWND hwnd) {
-    if (!g_config.PairRawJpeg) {
-        // With pairing off no pair-view exists; drop stale tracking so a later
-        // navigation onto a former pair member cannot re-assert ForceRawDecode.
-        g_pairViewRawPath.clear();
-        g_pairViewRenderedPath.clear();
-    }
-
+// [RAW+JPEG Pairing] Refresh the pair indicators that are NOT recomputed each
+// frame -- the window-title "(+CR3)" suffix and the toolbar RAW button -- for
+// the current primary image. (The gallery badge, info panel and EXIF row are
+// per-frame and only need a repaint.) Compare mode routes through the existing
+// RefreshCompareRawUI instead.
+static void RefreshCurrentPairIndicators(HWND hwnd) {
     auto& pane = GetPaneContext(PaneSlot::Primary);
-    pane.navigator.RescanDirectory();
-
-    const std::wstring& cur = pane.path;
+    const std::wstring cur = pane.path;
     if (!cur.empty()) {
         const bool navHasPairedRaw = pane.navigator.HasPairedRaw(FileNavigator::PathToImageID(cur));
         const bool isPairedView = navHasPairedRaw
@@ -12658,8 +12695,7 @@ void ApplyPairRawJpegSetting(HWND hwnd) {
         if (IsCompareModeActive()) {
             RefreshCompareRawUI(hwnd);
         } else {
-            // The window title carries the "(+CR3)" suffix; rebuild it the way
-            // the load pipeline writes it.
+            // Rebuild the title the way the load pipeline writes it.
             std::wstring titleName = cur.substr(cur.find_last_of(L"\\/") + 1);
             if (const auto* pairedRaw = pane.navigator.GetPairedRaw(FileNavigator::PathToImageID(cur))) {
                 titleName += L" (" + FileNavigator::PairedRawLabel(*pairedRaw) + L")";
@@ -12669,11 +12705,130 @@ void ApplyPairRawJpegSetting(HWND hwnd) {
             SetWindowTextW(hwnd, titleBuf);
         }
     }
-
     RequestRepaint(PaintLayer::Static | PaintLayer::Dynamic);
     if (g_gallery.IsVisible()) {
         RequestRepaint(PaintLayer::Gallery);
     }
+}
+
+// [RAW+JPEG Pairing] The Settings toggle flipped: re-apply pairing to the open
+// folder right away and refresh the indicators. Called from SettingsOverlay.
+void ApplyPairRawJpegSetting(HWND hwnd) {
+    if (!g_config.PairRawJpeg) {
+        // With pairing off no pair-view exists; drop stale tracking so a later
+        // navigation onto a former pair member cannot re-assert ForceRawDecode.
+        g_pairViewRawPath.clear();
+        g_pairViewRenderedPath.clear();
+    }
+    GetPaneContext(PaneSlot::Primary).navigator.RescanDirectory();
+    RefreshCurrentPairIndicators(hwnd);
+}
+
+// [RAW+JPEG Pairing] Recycle one or more files in a single Shell operation
+// (double-null-terminated path list). Returns true on success.
+static bool RecycleFiles(const std::vector<std::wstring>& paths) {
+    if (paths.empty()) return false;
+    std::wstring buf;
+    for (const auto& p : paths) { buf.append(p); buf.push_back(L'\0'); }
+    buf.push_back(L'\0'); // final double-null terminator
+    SHFILEOPSTRUCTW op = {};
+    op.wFunc = FO_DELETE;
+    op.pFrom = buf.c_str();
+    op.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT;
+    return SHFileOperationW(&op) == 0;
+}
+
+// [RAW+JPEG Pairing] Ask which file(s) of a folded pair to recycle and carry it
+// out. renderedPath is the visible (JPEG/HEIF) half, rawPath the hidden RAW.
+static void HandlePairedDelete(HWND hwnd, const std::wstring& renderedPath, const std::wstring& rawPath) {
+    auto& pane = GetPaneContext(PaneSlot::Primary);
+    auto& nav = pane.navigator;
+
+    auto baseName = [](const std::wstring& p) {
+        size_t slash = p.find_last_of(L"\\/");
+        return slash == std::wstring::npos ? p : p.substr(slash + 1);
+    };
+    auto extLabel = [](const std::wstring& p) {
+        std::wstring l;
+        std::wstring_view e = QuickView::ExtensionOf(p);
+        if (!e.empty()) e.remove_prefix(1); // drop the dot
+        for (wchar_t c : e) l += (wchar_t)std::towupper(c);
+        return l;
+    };
+    const std::wstring rLabel = extLabel(renderedPath); // e.g. JPG
+    const std::wstring wLabel = extLabel(rawPath);      // e.g. CR3
+
+    // Three explicit choices + Cancel -- never silently bind delete to both.
+    // Labels stay short so they fit the button width; English-only to match the
+    // surrounding delete dialog (its strings are not localized either).
+    const std::wstring btnPair = rLabel + L" + " + wLabel; // both
+    const std::wstring btnRaw  = wLabel + L" only";        // RAW only
+    const std::wstring btnJpg  = rLabel + L" only";        // rendered only
+    std::vector<DialogButton> btns;
+    btns.emplace_back(DialogResult::Yes, btnPair.c_str());
+    btns.emplace_back(DialogResult::Custom2, btnRaw.c_str());
+    btns.emplace_back(DialogResult::Custom1, btnJpg.c_str());
+    btns.emplace_back(DialogResult::Cancel, L"Cancel");
+
+    const DialogResult res = AppContext::GetInstance().DialogCtrl->ShowDialog(
+        hwnd, baseName(renderedPath), L"Delete which files?",
+        D2D1::ColorF(0.85f, 0.25f, 0.25f), btns, false, L"", L"");
+
+    if (res != DialogResult::Yes && res != DialogResult::Custom1 && res != DialogResult::Custom2) {
+        return; // Cancel / Esc
+    }
+    const bool delRendered = (res == DialogResult::Yes || res == DialogResult::Custom1);
+    const bool delRaw      = (res == DialogResult::Yes || res == DialogResult::Custom2);
+
+    // --- RAW only: the rendered file stays; the pair just un-folds ---
+    if (delRaw && !delRendered) {
+        const bool onRawFace = (pane.path != renderedPath); // showing the RAW via D
+        if (onRawFace) ReleaseImageResources();             // unlock the shown RAW first
+        if (!RecycleFiles({ rawPath })) return;
+        g_osd.Show(hwnd, AppStrings::OSD_MovedToRecycleBin, false);
+        g_pairViewRawPath.clear();
+        g_pairViewRenderedPath.clear();
+        nav.RescanDirectory();
+        if (onRawFace) {
+            const int idx = nav.FindIndex(renderedPath);
+            if (idx >= 0) nav.SetIndex(idx);
+            LoadImageAsync(hwnd, renderedPath.c_str()); // StartNavigation resets ForceRawDecode
+        } else {
+            RefreshCurrentPairIndicators(hwnd); // clear the "(+CR3)" title/toolbar in place
+        }
+        return;
+    }
+
+    // --- Rendered only, or the whole pair: the visible entry goes away ---
+    std::wstring nextPath = nav.PeekNext();
+    if (nextPath == renderedPath || nextPath == rawPath) nextPath = nav.PeekPrevious();
+    // Only this pair was in the folder (nav-loop wraps Peek back to it): fall
+    // through to the empty-folder path rather than reloading a deleted file.
+    if (nextPath == renderedPath || nextPath == rawPath) nextPath.clear();
+
+    std::vector<std::wstring> victims;
+    if (delRaw) victims.push_back(rawPath);
+    if (delRendered) victims.push_back(renderedPath);
+
+    ReleaseImageResources();
+    if (!RecycleFiles(victims)) return;
+    g_osd.Show(hwnd, AppStrings::OSD_MovedToRecycleBin, false);
+    g_pairViewRawPath.clear();
+    g_pairViewRenderedPath.clear();
+    pane.editState.Reset();
+    pane.view.Reset();
+    pane.resource.Reset();
+
+    // Rendered only: the RAW survives and now stands alone -- land on it.
+    if (delRendered && !delRaw) nextPath = rawPath;
+
+    if (!nextPath.empty()) {
+        nav.Initialize(nextPath, hwnd);
+        LoadImageAsync(hwnd, nav.GetResolvedPath(nextPath).c_str());
+    } else {
+        nav.Initialize(L"", hwnd); // folder emptied
+    }
+    RequestRepaint(PaintLayer::All);
 }
 
 static void ComparePairSideBySide(HWND hwnd, const std::wstring& renderedPath, const std::wstring& rawPath) {
