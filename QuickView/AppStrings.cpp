@@ -298,6 +298,10 @@ const wchar_t *Settings_Label_LockToolbar = nullptr;
 const wchar_t *Settings_Label_WindowMinSize = nullptr;
 const wchar_t *Settings_Label_WindowMaxSizePercent = nullptr;
 const wchar_t *Settings_Label_ShowBorderIndicator = nullptr;
+const wchar_t *Settings_Label_ShowNavigator = nullptr;
+const wchar_t *Settings_Option_NavigatorAuto = nullptr;
+const wchar_t *Settings_Option_NavigatorOn = nullptr;
+const wchar_t *Settings_Option_NavigatorOff = nullptr;
 const wchar_t *Settings_Label_KeepWindowSizeOnNav = nullptr;
 const wchar_t *Settings_Label_RememberLastWindowSizeAndPosition = nullptr;
 const wchar_t *Settings_Label_UpscaleSmallImagesWhenLocked = nullptr;
@@ -811,6 +815,10 @@ struct LanguageTable {
     const wchar_t *Settings_Label_WindowMinSize;
     const wchar_t *Settings_Label_WindowMaxSizePercent;
     const wchar_t *Settings_Label_ShowBorderIndicator;
+    const wchar_t *Settings_Label_ShowNavigator;
+    const wchar_t *Settings_Option_NavigatorAuto;
+    const wchar_t *Settings_Option_NavigatorOn;
+    const wchar_t *Settings_Option_NavigatorOff;
     const wchar_t *Settings_Label_KeepWindowSizeOnNav;
     const wchar_t *Settings_Label_RememberLastWindowSizeAndPosition;
     const wchar_t *Settings_Label_UpscaleSmallImagesWhenLocked;
@@ -1321,6 +1329,10 @@ static const LanguageTable Table_EN = {
     L"Minimum Window Width", // Settings_Label_WindowMinSize
     L"Maximum Start Size (%)", // Settings_Label_WindowMaxSizePercent
     L"Show Edge Indicators", // Settings_Label_ShowBorderIndicator
+    L"Show Minimap", // Settings_Label_ShowNavigator
+    L"Auto", // Settings_Option_NavigatorAuto
+    L"On", // Settings_Option_NavigatorOn
+    L"Off", // Settings_Option_NavigatorOff
     L"Keep window size on navigation", // Settings_Label_KeepWindowSizeOnNav
     L"Remember last window size and position", // Settings_Label_RememberLastWindowSizeAndPosition
     L"Adapt small images", // Settings_Label_UpscaleSmallImagesWhenLocked
@@ -1831,6 +1843,10 @@ static const LanguageTable Table_CN = {
     L"默认最小窗口宽度", // Settings_Label_WindowMinSize
     L"默认最大启动尺寸 (%)", // Settings_Label_WindowMaxSizePercent
     L"显示边界指示器", // Settings_Label_ShowBorderIndicator
+    L"显示缩略导航图", // Settings_Label_ShowNavigator
+    L"自动", // Settings_Option_NavigatorAuto
+    L"开启", // Settings_Option_NavigatorOn
+    L"关闭", // Settings_Option_NavigatorOff
     L"导航时保持窗口尺寸不变", // Settings_Label_KeepWindowSizeOnNav
     L"记住最后窗口位置和尺寸", // Settings_Label_RememberLastWindowSizeAndPosition
     L"小于窗口尺寸图片适应窗口", // Settings_Label_UpscaleSmallImagesWhenLocked
@@ -2341,6 +2357,10 @@ static const LanguageTable Table_TW = {
     L"預設最小視窗寬度", // Settings_Label_WindowMinSize
     L"預設最大啟動尺寸 (%)", // Settings_Label_WindowMaxSizePercent
     L"顯示邊界指示器", // Settings_Label_ShowBorderIndicator
+    L"顯示縮略導航圖", // Settings_Label_ShowNavigator
+    L"自動", // Settings_Option_NavigatorAuto
+    L"開啟", // Settings_Option_NavigatorOn
+    L"關閉", // Settings_Option_NavigatorOff
     L"導航時保持視窗尺寸不變", // Settings_Label_KeepWindowSizeOnNav
     L"記住最後視窗位置和尺寸", // Settings_Label_RememberLastWindowSizeAndPosition
     L"小於視窗尺寸圖片適應視窗", // Settings_Label_UpscaleSmallImagesWhenLocked
@@ -2851,6 +2871,10 @@ static const LanguageTable Table_JA = {
     L"最小ウィンドウ幅", // Settings_Label_WindowMinSize
     L"最大起動サイズ (%)", // Settings_Label_WindowMaxSizePercent
     L"エッジインジケーターを表示", // Settings_Label_ShowBorderIndicator
+    L"ミニマップを表示", // Settings_Label_ShowNavigator
+    L"自動", // Settings_Option_NavigatorAuto
+    L"オン", // Settings_Option_NavigatorOn
+    L"オフ", // Settings_Option_NavigatorOff
     L"ナビゲーション時にウィンドウサイズを保持", // Settings_Label_KeepWindowSizeOnNav
     L"最後のウィンドウの位置とサイズを記憶", // Settings_Label_RememberLastWindowSizeAndPosition
     L"小さな画像をウィンドウに合わせる", // Settings_Label_UpscaleSmallImagesWhenLocked
@@ -3361,6 +3385,10 @@ static const LanguageTable Table_RU = {
     L"Мин. ширина окна", // Settings_Label_WindowMinSize
     L"Макс. начальный размер (%)", // Settings_Label_WindowMaxSizePercent
     L"Показывать индикаторы границ", // Settings_Label_ShowBorderIndicator
+    L"Показывать мини-карту", // Settings_Label_ShowNavigator
+    L"Авто", // Settings_Option_NavigatorAuto
+    L"Вкл", // Settings_Option_NavigatorOn
+    L"Выкл", // Settings_Option_NavigatorOff
     L"Не менять размер окна при навигации", // Settings_Label_KeepWindowSizeOnNav
     L"Запоминать последние размер и положение окна", // Settings_Label_RememberLastWindowSizeAndPosition
     L"Адаптировать мелкие изображения", // Settings_Label_UpscaleSmallImagesWhenLocked
@@ -3871,6 +3899,10 @@ static const LanguageTable Table_DE = {
     L"Minimale Fensterbreite", // Settings_Label_WindowMinSize
     L"Maximale Startgröße (%)", // Settings_Label_WindowMaxSizePercent
     L"Randindikatoren anzeigen", // Settings_Label_ShowBorderIndicator
+    L"Minimap anzeigen", // Settings_Label_ShowNavigator
+    L"Auto", // Settings_Option_NavigatorAuto
+    L"An", // Settings_Option_NavigatorOn
+    L"Aus", // Settings_Option_NavigatorOff
     L"Fenstergröße bei Navigation beibehalten", // Settings_Label_KeepWindowSizeOnNav
     L"Letzte Fensterposition und -größe merken", // Settings_Label_RememberLastWindowSizeAndPosition
     L"Kleine Bilder anpassen", // Settings_Label_UpscaleSmallImagesWhenLocked
@@ -4381,6 +4413,10 @@ static const LanguageTable Table_ES = {
     L"Anchura mínima de ventana", // Settings_Label_WindowMinSize
     L"Tamaño máximo de inicio (%)", // Settings_Label_WindowMaxSizePercent
     L"Mostrar indicadores de borde", // Settings_Label_ShowBorderIndicator
+    L"Mostrar minimapa", // Settings_Label_ShowNavigator
+    L"Auto", // Settings_Option_NavigatorAuto
+    L"Activar", // Settings_Option_NavigatorOn
+    L"Desactivar", // Settings_Option_NavigatorOff
     L"Mantener el tamaño de la ventana al navegar", // Settings_Label_KeepWindowSizeOnNav
     L"Recordar el último tamaño y posición de la ventana", // Settings_Label_RememberLastWindowSizeAndPosition
     L"Adaptar imágenes pequeñas", // Settings_Label_UpscaleSmallImagesWhenLocked
@@ -4891,6 +4927,10 @@ static const LanguageTable Table_FR = {
     L"Minimum Window Width", // Settings_Label_WindowMinSize
     L"Maximum Start Size (%)", // Settings_Label_WindowMaxSizePercent
     L"Show Edge Indicators", // Settings_Label_ShowBorderIndicator
+    L"Show Minimap", // Settings_Label_ShowNavigator
+    L"Auto", // Settings_Option_NavigatorAuto
+    L"On", // Settings_Option_NavigatorOn
+    L"Off", // Settings_Option_NavigatorOff
     L"Keep window size on navigation", // Settings_Label_KeepWindowSizeOnNav
     L"Remember last window size and position", // Settings_Label_RememberLastWindowSizeAndPosition
     L"Adapt small images", // Settings_Label_UpscaleSmallImagesWhenLocked
@@ -5401,6 +5441,10 @@ void Apply(const LanguageTable& t) {
   Settings_Label_WindowMinSize = t.Settings_Label_WindowMinSize;
   Settings_Label_WindowMaxSizePercent = t.Settings_Label_WindowMaxSizePercent;
   Settings_Label_ShowBorderIndicator = t.Settings_Label_ShowBorderIndicator;
+  Settings_Label_ShowNavigator = t.Settings_Label_ShowNavigator;
+  Settings_Option_NavigatorAuto = t.Settings_Option_NavigatorAuto;
+  Settings_Option_NavigatorOn = t.Settings_Option_NavigatorOn;
+  Settings_Option_NavigatorOff = t.Settings_Option_NavigatorOff;
   Settings_Label_KeepWindowSizeOnNav = t.Settings_Label_KeepWindowSizeOnNav;
   Settings_Label_RememberLastWindowSizeAndPosition = t.Settings_Label_RememberLastWindowSizeAndPosition;
   Settings_Label_UpscaleSmallImagesWhenLocked = t.Settings_Label_UpscaleSmallImagesWhenLocked;

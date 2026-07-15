@@ -1425,7 +1425,6 @@ bool GetCompareInfoSnapshot(CImageLoader::ImageMetadata& left, CImageLoader::Ima
 }
 
 extern HWND g_mainHwnd;
-static D2D1_SIZE_F GetOrientedSize(const ImageResource& res, int exifOrientation);
 
 bool GetAdaptiveUiPaneSnapshot(int paneIndex, AdaptiveUiPaneSnapshot& outSnapshot) {
     outSnapshot = {};
@@ -1506,8 +1505,6 @@ static void SetRightCompareView(const CompareView& view) {
 static CompareView g_rightDragZoomStartLeftView{};
 static CompareView g_rightDragZoomStartRightView{};
 static bool g_hasRightDragZoomStartViews = false;
-
-static D2D1_SIZE_F GetOrientedSize(const ImageResource& res, int exifOrientation);
 
 static float ComputeZoomStep(float wheelDelta) {
     float factor = 1.0f + (g_config.WheelZoomSpeed / 100.0f);
@@ -1591,15 +1588,6 @@ static D2D1_RECT_F GetCompareInteractionViewport(HWND hwnd, ComparePane pane) {
         return D2D1::RectF(0.0f, 0.0f, splitX, h);
     }
     return D2D1::RectF(splitX, 0.0f, w, h);
-}
-
-static D2D1_SIZE_F GetOrientedSize(const ImageResource& res, int exifOrientation) {
-    D2D1_SIZE_F size = res.GetSize();
-    const bool swapped = (exifOrientation >= 5 && exifOrientation <= 8);
-    if (swapped) {
-        return D2D1::SizeF(size.height, size.width);
-    }
-    return size;
 }
 
 
@@ -4169,6 +4157,9 @@ void SaveConfig() {
     WritePrivateProfileStringW(L"View", L"AutoHideWindowControls", g_config.AutoHideWindowControls ? L"1" : L"0", iniPath.c_str());
     WritePrivateProfileStringW(L"View", L"LockBottomToolbar", g_config.LockBottomToolbar ? L"1" : L"0", iniPath.c_str());
     WritePrivateProfileStringW(L"View", L"ShowBorderIndicator", g_config.ShowBorderIndicator ? L"1" : L"0", iniPath.c_str());
+    WritePrivateProfileStringW(L"View", L"ShowNavigator", std::to_wstring(g_config.ShowNavigator).c_str(), iniPath.c_str());
+    WritePrivateProfileStringW(L"View", L"NavigatorOffsetX", std::to_wstring(g_config.NavigatorOffsetX).c_str(), iniPath.c_str());
+    WritePrivateProfileStringW(L"View", L"NavigatorOffsetY", std::to_wstring(g_config.NavigatorOffsetY).c_str(), iniPath.c_str());
 
     // Window Size Limits
     WritePrivateProfileStringW(L"View", L"WindowMinSize", std::to_wstring(g_config.WindowMinSize).c_str(), iniPath.c_str());
@@ -4425,6 +4416,12 @@ void LoadConfig() {
     g_config.AutoHideWindowControls = GetPrivateProfileIntW(L"View", L"AutoHideWindowControls", 1, iniPath.c_str()) != 0;
     g_config.LockBottomToolbar = GetPrivateProfileIntW(L"View", L"LockBottomToolbar", 0, iniPath.c_str()) != 0;
     g_config.ShowBorderIndicator = GetPrivateProfileIntW(L"View", L"ShowBorderIndicator", 1, iniPath.c_str()) != 0;
+    g_config.ShowNavigator = GetPrivateProfileIntW(L"View", L"ShowNavigator", 0, iniPath.c_str());
+    wchar_t bufNavX[32], bufNavY[32];
+    GetPrivateProfileStringW(L"View", L"NavigatorOffsetX", L"0.0", bufNavX, 32, iniPath.c_str());
+    g_config.NavigatorOffsetX = (float)_wtof(bufNavX);
+    GetPrivateProfileStringW(L"View", L"NavigatorOffsetY", L"0.0", bufNavY, 32, iniPath.c_str());
+    g_config.NavigatorOffsetY = (float)_wtof(bufNavY);
 
     // Window Size Limits
     wchar_t bufMin[32], bufMax[32];
@@ -4728,6 +4725,40 @@ VisualState GetVisualState() {
     }
     
     return vs;
+}
+
+void ClampPanForSlot(PaneSlot slot, float vpW, float vpH) {
+    auto& pane = GetPaneContext(slot);
+    if (!pane.resource) return;
+    // For Left pane in compare mode, also check valid flag
+    if (slot == PaneSlot::Left && !pane.valid) return;
+
+    int exifOrientation = GetEffectiveExifOrientation(pane.view.ExifOrientation, pane.editState);
+    D2D1_SIZE_F orientedSize = GetOrientedSize(pane.resource, exifOrientation);
+    if (orientedSize.width <= 0.0f || orientedSize.height <= 0.0f) return;
+
+    float fitScale = std::min(vpW / orientedSize.width, vpH / orientedSize.height);
+    if (orientedSize.width < 200.0f && orientedSize.height < 200.0f && fitScale > 1.0f) {
+        fitScale = 1.0f;
+    }
+    float totalZoom = fitScale * (std::max)(0.02f, pane.view.Zoom);
+    float scaledW = orientedSize.width * totalZoom;
+    float scaledH = orientedSize.height * totalZoom;
+
+    float maxPanX = (std::max)(0.0f, (scaledW - vpW) * 0.5f);
+    float maxPanY = (std::max)(0.0f, (scaledH - vpH) * 0.5f);
+
+    if (maxPanX <= 0.5f) {
+        pane.view.PanX = 0.0f;
+    } else {
+        pane.view.PanX = std::clamp(pane.view.PanX, -maxPanX, maxPanX);
+    }
+
+    if (maxPanY <= 0.5f) {
+        pane.view.PanY = 0.0f;
+    } else {
+        pane.view.PanY = std::clamp(pane.view.PanY, -maxPanY, maxPanY);
+    }
 }
 
 static void ClampPanForViewport(const VisualState& vs, float winW, float winH, float targetZoom) {
@@ -6307,10 +6338,136 @@ static bool TryTriggerCustomMouseHotkey(HWND hwnd, uint16_t vk, bool execute) {
     return false;
 }
 
+struct MinimapHitResult {
+    int minimapIdx = -1; // -1 = none, 0 = Primary/Right, 1 = Left
+    bool isClose = false;
+    bool isInner = false;
+    bool isEdge = false;
+};
+
+static MinimapHitResult HitTestMinimaps(POINT pt) {
+    if (g_config.ShowNavigator == 2) return {};
+    const float s = g_uiScale;
+    const float edgeBuffer = 8.0f * s;
+    
+    for (int idx : {1, 0}) {
+        auto& minimap = AppContext::GetInstance().Minimaps[idx];
+        if (minimap.closedByUser) continue;
+        if (minimap.layoutRect.right - minimap.layoutRect.left <= 0.0f) continue;
+        
+        // 1. Close button
+        if (pt.x >= minimap.closeBtnRect.left && pt.x <= minimap.closeBtnRect.right &&
+            pt.y >= minimap.closeBtnRect.top && pt.y <= minimap.closeBtnRect.bottom) {
+            MinimapHitResult res;
+            res.minimapIdx = idx;
+            res.isClose = true;
+            return res;
+        }
+        
+        // 2. Inner content area
+        if (pt.x >= minimap.innerRect.left && pt.x <= minimap.innerRect.right &&
+            pt.y >= minimap.innerRect.top && pt.y <= minimap.innerRect.bottom) {
+            MinimapHitResult res;
+            res.minimapIdx = idx;
+            res.isInner = true;
+            return res;
+        }
+        
+        // 3. Edge (8px outer area)
+        D2D1_RECT_F outerRect = D2D1::RectF(
+            minimap.layoutRect.left - edgeBuffer,
+            minimap.layoutRect.top - edgeBuffer,
+            minimap.layoutRect.right + edgeBuffer,
+            minimap.layoutRect.bottom + edgeBuffer
+        );
+        if (pt.x >= outerRect.left && pt.x <= outerRect.right &&
+            pt.y >= outerRect.top && pt.y <= outerRect.bottom) {
+            MinimapHitResult res;
+            res.minimapIdx = idx;
+            res.isEdge = true;
+            return res;
+        }
+    }
+    
+    return {};
+}
+
+extern void ClampPanForSlot(PaneSlot slot, float vpW, float vpH);
+
+static void UpdatePanFromMinimapClick(int idx, POINT pt, HWND hwnd) {
+    auto& minimap = AppContext::GetInstance().Minimaps[idx];
+    PaneSlot slot = (idx == 1) ? PaneSlot::Left : PaneSlot::Primary;
+    auto& pane = GetPaneContext(slot);
+    if (!pane.resource) return;
+    if (slot == PaneSlot::Left && !pane.valid) return;
+    
+    RECT rcClient; GetClientRect(hwnd, &rcClient);
+    float winW = (float)(rcClient.right - rcClient.left);
+    float winH = (float)(rcClient.bottom - rcClient.top);
+    
+    bool isCompare = IsCompareModeActive();
+    int numPanes = 1;
+    if (isCompare && g_toolbar.IsComicMode()) numPanes = 2;
+    else if (isCompare && AppContext::GetInstance().Compare.mode == ViewMode::CompareSideBySide) numPanes = 2;
+    
+    float vpW = winW;
+    float vpH = winH;
+    if (numPanes == 2) {
+        vpW = winW * 0.5f;
+    }
+    
+    int exifOrientation = GetEffectiveExifOrientation(pane.view.ExifOrientation, pane.editState);
+    D2D1_SIZE_F orientedSize = GetOrientedSize(pane.resource, exifOrientation);
+    if (orientedSize.width <= 0.0f || orientedSize.height <= 0.0f) return;
+    
+    float fitScale = std::min(vpW / orientedSize.width, vpH / orientedSize.height);
+    if (orientedSize.width < 200.0f && orientedSize.height < 200.0f && fitScale > 1.0f) {
+        fitScale = 1.0f;
+    }
+    const float clampedZoom = (std::max)(0.02f, pane.view.Zoom);
+    const float totalScale = fitScale * clampedZoom;
+    
+    float minimapFitScale = (minimap.innerRect.right - minimap.innerRect.left) / orientedSize.width;
+    
+    float relX = (float)pt.x - minimap.innerRect.left;
+    float relY = (float)pt.y - minimap.innerRect.top;
+    
+    float imgX = relX / minimapFitScale;
+    float imgY = relY / minimapFitScale;
+    
+    float newPanX = (orientedSize.width * 0.5f - imgX) * totalScale;
+    float newPanY = (orientedSize.height * 0.5f - imgY) * totalScale;
+    
+    if (isCompare && AppContext::GetInstance().Compare.syncPan) {
+        // Apply same delta to the other pane
+        float deltaX = newPanX - pane.view.PanX;
+        float deltaY = newPanY - pane.view.PanY;
+        PaneSlot otherSlot = (slot == PaneSlot::Left) ? PaneSlot::Primary : PaneSlot::Left;
+        GetPaneContext(otherSlot).view.PanX += deltaX;
+        GetPaneContext(otherSlot).view.PanY += deltaY;
+    }
+    
+    pane.view.PanX = newPanX;
+    pane.view.PanY = newPanY;
+    
+    ClampPanForSlot(slot, vpW, vpH);
+    
+    if (isCompare) {
+        MarkCompareDirty();
+        RequestRepaint(PaintLayer::Image | PaintLayer::Static | PaintLayer::Dynamic);
+    } else {
+        RequestRepaint(PaintLayer::Image | PaintLayer::Dynamic);
+    }
+}
+
 static bool IsMouseOverUI(HWND hwnd, int x, int y) {
     RECT rcClient; GetClientRect(hwnd, &rcClient);
     float winW = (float)(rcClient.right - rcClient.left);
     float winH = (float)(rcClient.bottom - rcClient.top);
+
+    POINT pt = { x, y };
+    auto miniHit = HitTestMinimaps(pt);
+    if (miniHit.minimapIdx != -1) return true;
 
     if (g_gallery.IsVisible() && g_gallery.HitTestArea(x, y, winW, winH)) return true;
     if (g_settingsOverlay.IsVisible() || g_helpOverlay.IsVisible() || AppContext::GetInstance().Dialog.IsVisible) return true;
@@ -7230,6 +7387,80 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
      case WM_MOUSEMOVE: {
           g_currentCursor = LoadCursor(nullptr, IDC_ARROW);
           POINT pt = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
+
+          bool isMinimapInteracting = false;
+          for (int idx : {0, 1}) {
+              auto& minimap = AppContext::GetInstance().Minimaps[idx];
+              if (minimap.isDraggingWindow) {
+                  int dx = pt.x - minimap.dragAnchor.x;
+                  int dy = pt.y - minimap.dragAnchor.y;
+                  float s = g_uiScale;
+                  g_config.NavigatorOffsetX = minimap.dragStartOffsetX + dx / s;
+                  g_config.NavigatorOffsetY = minimap.dragStartOffsetY + dy / s;
+                  RequestRepaint(PaintLayer::Static | PaintLayer::Dynamic);
+                  isMinimapInteracting = true;
+                  g_currentCursor = LoadCursor(nullptr, IDC_SIZEALL);
+              } else if (minimap.isDraggingView) {
+                  UpdatePanFromMinimapClick(idx, pt, hwnd);
+                  isMinimapInteracting = true;
+                  g_currentCursor = LoadCursor(nullptr, IDC_HAND);
+              }
+          }
+
+          if (isMinimapInteracting) {
+              SetCursor(g_currentCursor);
+              return 0;
+          }
+
+          auto miniHit = HitTestMinimaps(pt);
+          if (miniHit.minimapIdx != -1) {
+              auto& minimap = AppContext::GetInstance().Minimaps[miniHit.minimapIdx];
+              bool repaintStatic = false;
+              
+              for (int idx : {0, 1}) {
+                  auto& m = AppContext::GetInstance().Minimaps[idx];
+                  if (idx != miniHit.minimapIdx) {
+                      if (m.isCloseHovered) { m.isCloseHovered = false; repaintStatic = true; }
+                      if (m.isEdgeHovered) { m.isEdgeHovered = false; }
+                  }
+              }
+              
+              if (miniHit.isClose) {
+                  if (!minimap.isCloseHovered) {
+                      minimap.isCloseHovered = true;
+                      repaintStatic = true;
+                  }
+                  g_currentCursor = LoadCursor(nullptr, IDC_HAND);
+              } else {
+                  if (minimap.isCloseHovered) {
+                      minimap.isCloseHovered = false;
+                      repaintStatic = true;
+                  }
+                  if (miniHit.isEdge) {
+                      minimap.isEdgeHovered = true;
+                      g_currentCursor = LoadCursor(nullptr, IDC_SIZEALL);
+                  } else if (miniHit.isInner) {
+                      g_currentCursor = LoadCursor(nullptr, IDC_HAND);
+                  }
+              }
+              
+              if (repaintStatic) {
+                  RequestRepaint(PaintLayer::Static);
+              }
+              SetCursor(g_currentCursor);
+              return 0;
+          } else {
+              bool repaintStatic = false;
+              for (int idx : {0, 1}) {
+                  auto& m = AppContext::GetInstance().Minimaps[idx];
+                  if (m.isCloseHovered) { m.isCloseHovered = false; repaintStatic = true; }
+                  if (m.isEdgeHovered) { m.isEdgeHovered = false; }
+              }
+              if (repaintStatic) {
+                  RequestRepaint(PaintLayer::Static);
+              }
+          }
+
           RECT rcClient; GetClientRect(hwnd, &rcClient);
           float winW = (float)(rcClient.right - rcClient.left);
           float winH = (float)(rcClient.bottom - rcClient.top);
@@ -8122,6 +8353,28 @@ SKIP_EDGE_NAV:;
 
     case WM_LBUTTONDOWN: {
         POINT pt = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
+
+        auto miniHit = HitTestMinimaps(pt);
+        if (miniHit.minimapIdx != -1) {
+            auto& minimap = AppContext::GetInstance().Minimaps[miniHit.minimapIdx];
+            if (miniHit.isClose) {
+                minimap.closedByUser = true;
+                RequestRepaint(PaintLayer::Static | PaintLayer::Dynamic);
+                return 0;
+            } else if (miniHit.isEdge) {
+                minimap.isDraggingWindow = true;
+                minimap.dragAnchor = pt;
+                minimap.dragStartOffsetX = g_config.NavigatorOffsetX;
+                minimap.dragStartOffsetY = g_config.NavigatorOffsetY;
+                SetCapture(hwnd);
+                return 0;
+            } else if (miniHit.isInner) {
+                minimap.isDraggingView = true;
+                UpdatePanFromMinimapClick(miniHit.minimapIdx, pt, hwnd);
+                SetCapture(hwnd);
+                return 0;
+            }
+        }
         
         // 0. Window control buttons - HIGHEST PRIORITY (using cached hover state)
         if (g_winCtrlHoverState != -1) {
@@ -8451,6 +8704,25 @@ SKIP_EDGE_NAV:;
     }
     case WM_LBUTTONUP: {
         POINT pt = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
+
+        bool wasMinimapDragging = false;
+        for (int idx : {0, 1}) {
+            auto& minimap = AppContext::GetInstance().Minimaps[idx];
+            if (minimap.isDraggingWindow || minimap.isDraggingView) {
+                if (minimap.isDraggingWindow) {
+                    SaveConfig();
+                }
+                minimap.isDraggingWindow = false;
+                minimap.isDraggingView = false;
+                wasMinimapDragging = true;
+            }
+        }
+        if (wasMinimapDragging) {
+            if (GetCapture() == hwnd) {
+                ReleaseCapture();
+            }
+            return 0;
+        }
 
         if (g_winCtrlPressedState != -1) {
             const int pressed = g_winCtrlPressedState;
@@ -11590,6 +11862,8 @@ void StartNavigation(HWND hwnd, std::wstring path, [[maybe_unused]] bool showOSD
     // [Fix] Only reset Runtime State if loading a NEW file.
     // If reloading the same file (e.g. RAW Toggle), preserve g_runtime.ForceRawDecode.
     if (GetPaneContext(PaneSlot::Primary).path != path) {
+        AppContext::GetInstance().Minimaps[0].ResetLayout();
+        AppContext::GetInstance().Minimaps[1].ResetLayout();
         g_runtime.ForceRawDecode = g_config.ForceRawDecode;
         
         // [Fix] Reverted to preserve manual LockWindowSize during navigation.

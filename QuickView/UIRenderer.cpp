@@ -772,6 +772,10 @@ void UIRenderer::RenderStaticLayer(ID2D1DeviceContext* dc, HWND hwnd) {
         DrawBorderIndicators(dc);
     }
 
+    if (g_config.ShowNavigator != 2 && !isAnyOverlayActive) {
+        DrawNavigator(dc);
+    }
+
     // Settings Overlay
     if (g_settingsOverlay.IsVisible()) {
         g_settingsOverlay.SetGeekGlassData(m_bgCommandList.Get(), m_compEngine ? m_compEngine->GetScreenTransform() : D2D1::Matrix3x2F::Identity());
@@ -5309,4 +5313,233 @@ void UIRenderer::DrawWelcomeButton(ID2D1DeviceContext *dc, const D2D1_RECT_F &r,
                    contentBrush.Get());
     }
   }
+}
+
+void UIRenderer::DrawNavigator(ID2D1DeviceContext* dc) {
+    if (m_width <= 0 || m_height <= 0) return;
+    const float s = m_uiScale;
+    
+    int numPanes = 1;
+    bool isCompare = IsCompareModeActive();
+    if (isCompare && g_toolbar.IsComicMode()) {
+        numPanes = 2;
+    } else if (isCompare) {
+        if (AppContext::GetInstance().Compare.mode == ViewMode::CompareSideBySide) {
+            numPanes = 2;
+        } else {
+            // CompareWipe mode: no minimap
+            return;
+        }
+    }
+    
+    for (int i = 0; i < numPanes; ++i) {
+        PaneSlot slot = (i == 0 && numPanes == 2) ? PaneSlot::Left : PaneSlot::Primary;
+        int minimapIdx = (slot == PaneSlot::Left) ? 1 : 0;
+        
+        auto& minimap = AppContext::GetInstance().Minimaps[minimapIdx];
+        if (minimap.closedByUser) continue;
+        
+        auto& pane = GetPaneContext(slot);
+        if (!pane.resource) continue;
+        if (slot == PaneSlot::Left && !pane.valid) continue;
+        
+        D2D1_RECT_F vpRect;
+        if (numPanes == 2) {
+            float splitX = 0.5f * (float)m_width;
+            if (slot == PaneSlot::Left) {
+                vpRect = D2D1::RectF(0.0f, 0.0f, splitX, (float)m_height);
+            } else {
+                vpRect = D2D1::RectF(splitX, 0.0f, (float)m_width, (float)m_height);
+            }
+        } else {
+            vpRect = D2D1::RectF(0.0f, 0.0f, (float)m_width, (float)m_height);
+        }
+        
+        const float vpW = vpRect.right - vpRect.left;
+        const float vpH = vpRect.bottom - vpRect.top;
+        if (vpW <= 1.0f || vpH <= 1.0f) continue;
+        
+        int exifOrientation = GetEffectiveExifOrientation(pane.view.ExifOrientation, pane.editState);
+        const D2D1_SIZE_F orientedSize = GetOrientedSize(pane.resource, exifOrientation);
+        if (orientedSize.width <= 0.0f || orientedSize.height <= 0.0f) continue;
+        
+        float fitScale = std::min(vpW / orientedSize.width, vpH / orientedSize.height);
+        if (orientedSize.width < 200.0f && orientedSize.height < 200.0f && fitScale > 1.0f) {
+            fitScale = 1.0f;
+        }
+        const float clampedZoom = (std::max)(0.02f, pane.view.Zoom);
+        const float totalScale = fitScale * clampedZoom;
+        const float scaledW = orientedSize.width * totalScale;
+        const float scaledH = orientedSize.height * totalScale;
+        
+        bool shouldShow = false;
+        if (g_config.ShowNavigator == 0) {
+            if (scaledW > vpW * 1.5f || scaledH > vpH * 1.5f) {
+                shouldShow = true;
+            }
+        } else if (g_config.ShowNavigator == 1) {
+            if (scaledW > vpW + 1.0f || scaledH > vpH + 1.0f) {
+                shouldShow = true;
+            }
+        }
+        
+        if (!shouldShow) continue;
+        
+        float maxDim = 150.0f * s;
+        float minimapW = maxDim;
+        float minimapH = maxDim;
+        float aspectRatio = orientedSize.width / orientedSize.height;
+        if (aspectRatio > 1.0f) {
+            minimapH = maxDim / aspectRatio;
+        } else {
+            minimapW = maxDim * aspectRatio;
+        }
+        minimapW = (std::max)(minimapW, 40.0f * s);
+        minimapH = (std::max)(minimapH, 40.0f * s);
+        
+        float defaultX = vpRect.right - minimapW - 12.0f * s;
+        float defaultY = vpRect.top + 12.0f * s;
+        if (vpRect.right >= (float)m_width - 1.0f && m_showControls) {
+            defaultY = vpRect.top + 44.0f * s;
+        }
+        
+        float minimapX = defaultX + g_config.NavigatorOffsetX * s;
+        float minimapY = defaultY + g_config.NavigatorOffsetY * s;
+        
+        minimap.layoutRect = D2D1::RectF(minimapX, minimapY, minimapX + minimapW, minimapY + minimapH);
+        
+        float closeBtnSize = 16.0f * s;
+        minimap.closeBtnRect = D2D1::RectF(minimap.layoutRect.right - closeBtnSize, minimap.layoutRect.top, minimap.layoutRect.right, minimap.layoutRect.top + closeBtnSize);
+        minimap.innerRect = minimap.layoutRect;
+        
+        ComPtr<ID2D1Factory> factory;
+        dc->GetFactory(&factory);
+        if (!factory) continue;
+        
+        float radius = 6.0f * s;
+        D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(minimap.layoutRect, radius, radius);
+        ComPtr<ID2D1RoundedRectangleGeometry> roundedGeo;
+        factory->CreateRoundedRectangleGeometry(roundedRect, &roundedGeo);
+
+        ComPtr<ID2D1SolidColorBrush> bgBrush;
+        dc->CreateSolidColorBrush(D2D1::ColorF(0.05f, 0.05f, 0.05f, 0.75f), &bgBrush);
+        ComPtr<ID2D1SolidColorBrush> borderBrush;
+        dc->CreateSolidColorBrush(D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.25f), &borderBrush);
+        
+        dc->FillRoundedRectangle(roundedRect, bgBrush.Get());
+        
+        D2D1_MATRIX_3X2_F oldTransform{};
+        dc->GetTransform(&oldTransform);
+        
+        ComPtr<ID2D1Layer> clipLayer;
+        dc->CreateLayer(&clipLayer);
+        D2D1_LAYER_PARAMETERS layerParams = D2D1::LayerParameters(
+            D2D1::InfiniteRect(),
+            roundedGeo.Get(),
+            D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+            D2D1::IdentityMatrix(),
+            1.0f,
+            nullptr,
+            D2D1_LAYER_OPTIONS_NONE
+        );
+        dc->PushLayer(layerParams, clipLayer.Get());
+        
+        float minimapFitScale = minimapW / orientedSize.width;
+        float minimapCenterX = (minimap.innerRect.left + minimap.innerRect.right) * 0.5f;
+        float minimapCenterY = (minimap.innerRect.top + minimap.innerRect.bottom) * 0.5f;
+        
+        if (pane.resource.isSvg && pane.resource.svgDoc) {
+            ComPtr<ID2D1DeviceContext5> ctx5;
+            if (SUCCEEDED(dc->QueryInterface(IID_PPV_ARGS(&ctx5)))) {
+                const float drawW = pane.resource.GetSize().width * minimapFitScale;
+                const float drawH = pane.resource.GetSize().height * minimapFitScale;
+                const float x = minimapCenterX - drawW * 0.5f;
+                const float y = minimapCenterY - drawH * 0.5f;
+                D2D1::Matrix3x2F m = D2D1::Matrix3x2F::Scale(minimapFitScale, minimapFitScale) *
+                                     D2D1::Matrix3x2F::Translation(x, y);
+                ctx5->SetTransform(m * oldTransform);
+                ctx5->DrawSvgDocument(pane.resource.svgDoc.Get());
+                ctx5->SetTransform(oldTransform);
+            }
+        } else if (pane.resource.bitmap) {
+            const float imgW = pane.resource.GetSize().width;
+            const float imgH = pane.resource.GetSize().height;
+            const bool rotated = (exifOrientation >= 2 && exifOrientation <= 8);
+            
+            D2D1_INTERPOLATION_MODE interpMode = D2D1_INTERPOLATION_MODE_LINEAR;
+            
+            if (!rotated) {
+                const float drawW = imgW * minimapFitScale;
+                const float drawH = imgH * minimapFitScale;
+                const float x = minimapCenterX - drawW * 0.5f;
+                const float y = minimapCenterY - drawH * 0.5f;
+                D2D1_RECT_F dest = D2D1::RectF(x, y, x + drawW, y + drawH);
+                dc->DrawBitmap(pane.resource.bitmap.Get(), &dest, 1.0f, interpMode);
+            } else {
+                D2D1::Matrix3x2F m = D2D1::Matrix3x2F::Translation(-imgW * 0.5f, -imgH * 0.5f);
+                switch (exifOrientation) {
+                    case 2: m = m * D2D1::Matrix3x2F::Scale(-1.0f, 1.0f); break;
+                    case 3: m = m * D2D1::Matrix3x2F::Rotation(180.0f); break;
+                    case 4: m = m * D2D1::Matrix3x2F::Scale(1.0f, -1.0f); break;
+                    case 5: m = m * D2D1::Matrix3x2F::Scale(-1.0f, 1.0f) * D2D1::Matrix3x2F::Rotation(270.0f); break;
+                    case 6: m = m * D2D1::Matrix3x2F::Rotation(90.0f); break;
+                    case 7: m = m * D2D1::Matrix3x2F::Scale(-1.0f, 1.0f) * D2D1::Matrix3x2F::Rotation(90.0f); break;
+                    case 8: m = m * D2D1::Matrix3x2F::Rotation(270.0f); break;
+                    default: break;
+                }
+                m = m * D2D1::Matrix3x2F::Scale(minimapFitScale, minimapFitScale);
+                m = m * D2D1::Matrix3x2F::Translation(minimapCenterX, minimapCenterY);
+                dc->SetTransform(m * oldTransform);
+                D2D1_RECT_F src = D2D1::RectF(0.0f, 0.0f, imgW, imgH);
+                dc->DrawBitmap(pane.resource.bitmap.Get(), &src, 1.0f, interpMode);
+                dc->SetTransform(oldTransform);
+            }
+        }
+        
+        float vpLeft = orientedSize.width * 0.5f - pane.view.PanX / totalScale;
+        float vpTop = orientedSize.height * 0.5f - pane.view.PanY / totalScale;
+        float vpWInImg = vpW / totalScale;
+        float vpHInImg = vpH / totalScale;
+        
+        D2D1_RECT_F viewRect = D2D1::RectF(
+            minimap.innerRect.left + (vpLeft - vpWInImg * 0.5f) * minimapFitScale,
+            minimap.innerRect.top + (vpTop - vpHInImg * 0.5f) * minimapFitScale,
+            minimap.innerRect.left + (vpLeft + vpWInImg * 0.5f) * minimapFitScale,
+            minimap.innerRect.top + (vpTop + vpHInImg * 0.5f) * minimapFitScale
+        );
+        
+        ComPtr<ID2D1SolidColorBrush> viewRectBgBrush;
+        dc->CreateSolidColorBrush(D2D1::ColorF(0.0f, 0.47f, 0.83f, 0.15f), &viewRectBgBrush);
+        ComPtr<ID2D1SolidColorBrush> viewRectBorderBrush;
+        dc->CreateSolidColorBrush(D2D1::ColorF(0.0f, 0.47f, 0.83f, 0.85f), &viewRectBorderBrush);
+        
+        dc->FillRectangle(viewRect, viewRectBgBrush.Get());
+        dc->DrawRectangle(viewRect, viewRectBorderBrush.Get(), 1.5f * s);
+        
+        ComPtr<ID2D1SolidColorBrush> closeBrush;
+        if (minimap.isCloseHovered) {
+            dc->CreateSolidColorBrush(D2D1::ColorF(0.9f, 0.1f, 0.1f, 0.8f), &closeBrush);
+            dc->FillRectangle(minimap.closeBtnRect, closeBrush.Get());
+        }
+        
+        ComPtr<ID2D1SolidColorBrush> xBrush;
+        dc->CreateSolidColorBrush(D2D1::ColorF(1.0f, 1.0f, 1.0f, minimap.isCloseHovered ? 1.0f : 0.6f), &xBrush);
+        float padding = 4.0f * s;
+        D2D1_RECT_F r = minimap.closeBtnRect;
+        dc->DrawLine(
+            D2D1::Point2F(r.left + padding, r.top + padding),
+            D2D1::Point2F(r.right - padding, r.bottom - padding),
+            xBrush.Get(), 1.5f * s
+        );
+        dc->DrawLine(
+            D2D1::Point2F(r.right - padding, r.top + padding),
+            D2D1::Point2F(r.left + padding, r.bottom - padding),
+            xBrush.Get(), 1.5f * s
+        );
+        
+        dc->PopLayer();
+        dc->SetTransform(oldTransform);
+        
+        dc->DrawRoundedRectangle(roundedRect, borderBrush.Get(), 1.0f * s);
+    }
 }

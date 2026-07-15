@@ -307,6 +307,10 @@ namespace AppStrings {
     extern const wchar_t* Settings_Label_WindowMinSize;
     extern const wchar_t* Settings_Label_WindowMaxSizePercent;
     extern const wchar_t* Settings_Label_ShowBorderIndicator;
+    extern const wchar_t* Settings_Label_ShowNavigator;
+    extern const wchar_t* Settings_Option_NavigatorAuto;
+    extern const wchar_t* Settings_Option_NavigatorOn;
+    extern const wchar_t* Settings_Option_NavigatorOff;
 
     extern const wchar_t* Settings_Label_KeepWindowSizeOnNav;
     extern const wchar_t* Settings_Label_RememberLastWindowSizeAndPosition;

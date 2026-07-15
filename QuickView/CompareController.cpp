@@ -38,6 +38,7 @@ extern bool RenderImageToDComp(HWND hwnd, ImageResource& res, bool isFirst);
 
 
 #include "ImageEngine.h"
+#include "AppContext.h"
 extern std::unique_ptr<ImageEngine> g_imageEngine;
 #include "CompositionEngine.h"
 extern CompositionEngine* g_compEngine;
@@ -267,6 +268,7 @@ FireAndForget CompareController::LoadImageIntoLeftSlot([[maybe_unused]] HWND hwn
     // Increment generation ID on Left slot to invalidate stale loads
     auto& leftPane = GetPaneContext(PaneSlot::Left);
     leftPane.Reset(); // This increments generationId
+    AppContext::GetInstance().Minimaps[1].ResetLayout();
     
     g_imageEngine->NavigateTo(localPath, fileSize, 0, PaneSlot::Left, leftPane.generationId);
     co_return;

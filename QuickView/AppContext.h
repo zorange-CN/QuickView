@@ -138,6 +138,30 @@ struct LoupeState {
     bool sizeChanged = false;      // wheel resized the loupe this session -> persist on release
 };
 
+struct MinimapState {
+    bool closedByUser = false;
+    bool isDraggingWindow = false;
+    bool isDraggingView = false;
+    bool isEdgeHovered = false;
+    bool isCloseHovered = false;
+    POINT dragAnchor = { 0, 0 };
+    float dragStartOffsetX = 0.0f;
+    float dragStartOffsetY = 0.0f;
+    float dragStartPanX = 0.0f;
+    float dragStartPanY = 0.0f;
+    D2D1_RECT_F layoutRect = { 0.0f, 0.0f, 0.0f, 0.0f };
+    D2D1_RECT_F closeBtnRect = { 0.0f, 0.0f, 0.0f, 0.0f };
+    D2D1_RECT_F innerRect = { 0.0f, 0.0f, 0.0f, 0.0f };
+
+    void ResetLayout() {
+        closedByUser = false;
+        isDraggingWindow = false;
+        isDraggingView = false;
+        isEdgeHovered = false;
+        isCloseHovered = false;
+    }
+};
+
 // --- Global App Context ---
 // Using a Singleton for stage 1 refactoring, easy to migrate to DI later.
 #include <memory>
@@ -154,6 +178,7 @@ public:
     SmoothWindowZoomState SmoothWindowZoom;
     CompareState Compare;
     LoupeState Loupe;
+    MinimapState Minimaps[2];
 
     std::unique_ptr<CompareController> CompareCtrl;
     std::unique_ptr<DialogController> DialogCtrl;

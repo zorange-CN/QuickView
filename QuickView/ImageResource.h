@@ -105,3 +105,12 @@ inline DXGI_FORMAT GetImageResourceSurfaceFormat(const ImageResource& resource) 
     return DXGI_FORMAT_B8G8R8A8_UNORM;
 }
 
+inline D2D1_SIZE_F GetOrientedSize(const ImageResource& res, int exifOrientation) {
+    D2D1_SIZE_F size = res.GetSize();
+    const bool swapped = (exifOrientation >= 5 && exifOrientation <= 8);
+    if (swapped) {
+        return D2D1::SizeF(size.height, size.width);
+    }
+    return size;
+}
+

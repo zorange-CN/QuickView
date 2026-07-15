@@ -546,6 +546,9 @@ struct AppConfig {
     bool UpscaleSmallImagesWhenLocked = false;
 
     bool ShowBorderIndicator = true;
+    int ShowNavigator = 0; // 0=Auto, 1=On, 2=Off
+    float NavigatorOffsetX = 0.0f;
+    float NavigatorOffsetY = 0.0f;
 
     // --- Info Panel Position ---
     float InfoPanelX = 16.0f;
