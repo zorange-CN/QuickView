@@ -50,7 +50,7 @@ public:
     };
 
     FileNavigator() = default;
-    ~FileNavigator() { StopPairVerification(); StopDirectoryWatcher(); }
+    ~FileNavigator() { StopPairVerification(true); StopDirectoryWatcher(); }
     FileNavigator(const FileNavigator&) = delete;
     FileNavigator& operator=(const FileNavigator&) = delete;
 
@@ -197,7 +197,7 @@ private:
     // pairs. Confirmed mismatches go into m_verifyUnpaired and a rescan is
     // handed to the main thread through the directory-watcher channel.
     void StartPairVerification();
-    void StopPairVerification();
+    void StopPairVerification(bool forceSync = false);
 
     // Data Members
     std::vector<std::wstring> m_files;

@@ -747,3 +747,37 @@ TEST(FileNavigatorTest, SortArchivesByNameAscendingOverride) {
     g_runtime.SortDescending = oldSortDescending;
 }
 
+#include "UndoManager.h"
+
+TEST(UndoManagerTest, PushDeletePairAndPop) {
+    UndoManager manager;
+    EXPECT_FALSE(manager.CanUndo());
+
+    manager.PushDeletePair(L"C:\\p\\IMG_001.JPG", L"C:\\p\\IMG_001.CR3", false);
+    EXPECT_TRUE(manager.CanUndo());
+    EXPECT_EQ(manager.GetLastActionType(), UndoType::Delete);
+
+    UndoAction action = manager.Pop();
+    EXPECT_EQ(action.type, UndoType::Delete);
+    EXPECT_EQ(action.path, L"C:\\p\\IMG_001.JPG");
+    EXPECT_EQ(action.oldPath, L"C:\\p\\IMG_001.CR3");
+    EXPECT_FALSE(action.leftSlot);
+    EXPECT_FALSE(manager.CanUndo());
+}
+
+TEST(UndoManagerTest, PushRenamePairAndPop) {
+    UndoManager manager;
+    EXPECT_FALSE(manager.CanUndo());
+
+    manager.PushRename(L"C:\\p\\IMG_001.JPG|C:\\p\\IMG_001.CR3", L"C:\\p\\A.JPG|C:\\p\\A.CR3", false);
+    EXPECT_TRUE(manager.CanUndo());
+    EXPECT_EQ(manager.GetLastActionType(), UndoType::Rename);
+
+    UndoAction action = manager.Pop();
+    EXPECT_EQ(action.type, UndoType::Rename);
+    EXPECT_EQ(action.oldPath, L"C:\\p\\IMG_001.JPG|C:\\p\\IMG_001.CR3");
+    EXPECT_EQ(action.path, L"C:\\p\\A.JPG|C:\\p\\A.CR3");
+    EXPECT_FALSE(action.leftSlot);
+    EXPECT_FALSE(manager.CanUndo());
+}
+

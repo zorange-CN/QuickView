@@ -665,9 +665,15 @@ void FileNavigator::StartPairVerification() {
     });
 }
 
-void FileNavigator::StopPairVerification() {
+void FileNavigator::StopPairVerification(bool forceSync) {
     ++m_verifyGeneration; // cancel the running pass, if any
-    if (m_verifyThread.joinable()) m_verifyThread.join();
+    if (m_verifyThread.joinable()) {
+        if (forceSync) {
+            m_verifyThread.join();
+        } else {
+            m_verifyThread.detach();
+        }
+    }
 }
 
 void FileNavigator::ApplyRawJpegPairing(std::vector<SortEntry>& entries,

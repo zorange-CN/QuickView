@@ -20,6 +20,7 @@ public:
                             bool hasCheckbox = false, const std::wstring& checkboxText = L"", const std::wstring& qualityText = L"");
 
     std::wstring ShowInputDialog(HWND hwnd, const std::wstring& title, const std::wstring& message, const std::wstring& initialText, const std::wstring& confirmButtonText = L"");
+    std::wstring ShowInputDialog(HWND hwnd, const std::wstring& title, const std::wstring& message, const std::wstring& initialText, const std::vector<DialogButton>& buttons, DialogResult& outResult);
 
     bool RenderComposite(HWND hwnd);
     void MarkDirty();

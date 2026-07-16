@@ -492,6 +492,7 @@ static void ArmPairRawFullDecode(const std::wstring& renderedPath, const std::ws
 // [RAW+JPEG Pairing] Delete handling for a folded pair (three-way choice) and
 // the shared refresh of the not-per-frame pair indicators (title + toolbar).
 static void HandlePairedDelete(HWND hwnd, const std::wstring& renderedPath, const std::wstring& rawPath);
+static void HandlePairedRename(HWND hwnd, const std::wstring& renderedPath, const std::wstring& rawPath);
 static void RefreshCurrentPairIndicators(HWND hwnd);
 
 bool HandleHotkeyAction(HWND hwnd, HotkeyAction action);
@@ -2622,22 +2623,26 @@ void ReleaseImageResources() {
     g_renderExifOrientation = 1;
     Sleep(50);
 }
-
 DialogLayout CalculateDialogLayout(D2D1_SIZE_F size) {
     DialogLayout layout;
     const float s = g_uiScale;
     float dlgW = 350.0f * s;
+    const size_t nb = AppContext::GetInstance().Dialog.Buttons.size();
 
-    // Widen the box when the button row is wider than the default width (e.g.
-    // the RAW+JPEG pair-delete dialog's four buttons). Dialogs with up to three
-    // 95px buttons stay at 350px, so existing dialogs are unaffected.
-    {
-        const float btnW0 = 95.0f * s, btnGap0 = 12.0f * s;
-        const size_t nb = AppContext::GetInstance().Dialog.Buttons.size();
-        if (nb > 0) {
-            const float row = nb * btnW0 + (nb - 1) * btnGap0 + 40.0f * s; // 20px margin each side
-            if (row > dlgW) dlgW = row;
-        }
+    // Dynamically adjust button size and gap based on button count to keep the modal compact.
+    float btnW = 95.0f * s;
+    float btnGap = 12.0f * s;
+    float marginX = 20.0f * s;
+
+    if (nb >= 4) {
+        btnW = 82.0f * s;
+        btnGap = 8.0f * s;
+        marginX = 15.0f * s;
+    }
+
+    if (nb > 0) {
+        float rowWidth = nb * btnW + (nb - 1) * btnGap + marginX * 2.0f;
+        if (rowWidth > dlgW) dlgW = rowWidth;
     }
 
     // Calculate required height based on content
@@ -2704,16 +2709,14 @@ DialogLayout CalculateDialogLayout(D2D1_SIZE_F size) {
     layout.Checkbox = D2D1::RectF(left + 25.0f * s, checkY, left + 45.0f * s, checkY + 20.0f * s);
     
     // Buttons area
-    float btnW = 95.0f * s;
     float btnH = 30.0f * s;
-    float btnGap = 12.0f * s;
-    float totalBtnWidth = (AppContext::GetInstance().Dialog.Buttons.size() * btnW) + ((AppContext::GetInstance().Dialog.Buttons.size() - 1) * btnGap);
-    float startX = left + dlgW - 20.0f * s - totalBtnWidth;
-    if (startX < left + 20.0f * s) startX = left + 20.0f * s; // Safety clamp
+    float totalBtnWidth = (nb * btnW) + ((nb - 1) * btnGap);
+    float startX = left + dlgW - marginX - totalBtnWidth;
+    if (startX < left + marginX) startX = left + marginX; // Safety clamp
     
     float btnY = top + dlgH - 45.0f * s;
     
-    for (size_t i = 0; i < AppContext::GetInstance().Dialog.Buttons.size(); ++i) {
+    for (size_t i = 0; i < nb; ++i) {
         layout.Buttons.push_back(D2D1::RectF(startX + i * (btnW + btnGap), btnY, startX + i * (btnW + btnGap) + btnW, btnY + btnH));
     }
     return layout;
@@ -10127,6 +10130,25 @@ SKIP_EDGE_NAV:;
             }
 
             if (!GetPaneContext(PaneSlot::Primary).path.empty()) {
+                // [RAW+JPEG Pairing] Route folded pairs to HandlePairedRename
+                if (!IsCompareModeActive()) {
+                    auto& nav = GetPaneContext(PaneSlot::Primary).navigator;
+                    const std::wstring cur = GetPaneContext(PaneSlot::Primary).path;
+                    std::wstring renderedPath, rawPath;
+                    if (const auto* pr = nav.GetPairedRaw(FileNavigator::PathToImageID(cur))) {
+                        renderedPath = cur;                       // viewing the rendered face
+                        rawPath = pr->path;
+                    } else if (!g_pairViewRawPath.empty() && cur == g_pairViewRawPath &&
+                               !g_pairViewRenderedPath.empty()) {
+                        rawPath = cur;                            // viewing the RAW face
+                        renderedPath = g_pairViewRenderedPath;
+                    }
+                    if (!renderedPath.empty() && !rawPath.empty()) {
+                        HandlePairedRename(hwnd, renderedPath, rawPath);
+                        break;
+                    }
+                }
+
                 std::wstring currentFolder = L"";
                 std::wstring currentName = L"";
                 size_t lastSlash = GetPaneContext(PaneSlot::Primary).path.find_last_of(L"\\/");
@@ -12119,6 +12141,8 @@ void StartNavigation(HWND hwnd, std::wstring path, [[maybe_unused]] bool showOSD
     if (pairViewSwitch) {
         g_runtime.ForceRawDecode = (path == g_pairViewRawPath);
         if (g_imageEngine) g_imageEngine->UpdateConfig(g_runtime);
+        GetPaneContext(PaneSlot::Primary).metadata.Width = 0;
+        GetPaneContext(PaneSlot::Primary).metadata.Height = 0;
     } else if (!g_pairViewRawPath.empty() &&
         GetPaneContext(PaneSlot::Primary).path != path) {
         g_pairViewRawPath.clear();
@@ -13605,10 +13629,14 @@ static void HandlePairedDelete(HWND hwnd, const std::wstring& renderedPath, cons
 
     const DialogResult res = AppContext::GetInstance().DialogCtrl->ShowDialog(
         hwnd, baseName(renderedPath), L"Delete which files?",
-        D2D1::ColorF(0.85f, 0.25f, 0.25f), btns, false, L"", L"");
+        D2D1::ColorF(0.85f, 0.25f, 0.25f), btns, true, AppStrings::Checkbox_NeverConfirmDelete, L"");
 
     if (res != DialogResult::Yes && res != DialogResult::Custom1 && res != DialogResult::Custom2) {
         return; // Cancel / Esc
+    }
+    if (AppContext::GetInstance().Dialog.IsChecked) {
+        g_config.ConfirmDelete = false;
+        SaveConfig();
     }
     const bool delRendered = (res == DialogResult::Yes || res == DialogResult::Custom1);
     const bool delRaw      = (res == DialogResult::Yes || res == DialogResult::Custom2);
@@ -13619,6 +13647,7 @@ static void HandlePairedDelete(HWND hwnd, const std::wstring& renderedPath, cons
         if (onRawFace) ReleaseImageResources();             // unlock the shown RAW first
         if (!RecycleFiles({ rawPath })) return;
         g_osd.Show(hwnd, AppStrings::OSD_MovedToRecycleBin, false);
+        g_undoManager.PushDelete(rawPath, false);
         g_pairViewRawPath.clear();
         g_pairViewRenderedPath.clear();
         nav.RescanDirectory();
@@ -13646,6 +13675,13 @@ static void HandlePairedDelete(HWND hwnd, const std::wstring& renderedPath, cons
     ReleaseImageResources();
     if (!RecycleFiles(victims)) return;
     g_osd.Show(hwnd, AppStrings::OSD_MovedToRecycleBin, false);
+
+    if (delRaw && delRendered) {
+        g_undoManager.PushDeletePair(renderedPath, rawPath, false);
+    } else if (delRendered) {
+        g_undoManager.PushDelete(renderedPath, false);
+    }
+
     g_pairViewRawPath.clear();
     g_pairViewRenderedPath.clear();
     pane.editState.Reset();
@@ -13660,6 +13696,133 @@ static void HandlePairedDelete(HWND hwnd, const std::wstring& renderedPath, cons
         LoadImageAsync(hwnd, nav.GetResolvedPath(nextPath).c_str());
     } else {
         nav.Initialize(L"", hwnd); // folder emptied
+    }
+    RequestRepaint(PaintLayer::All);
+}
+
+// [RAW+JPEG Pairing] Ask which file(s) of a folded pair to rename, perform it,
+// and handle atomicity rollbacks and undo manager integration.
+static void HandlePairedRename(HWND hwnd, const std::wstring& renderedPath, const std::wstring& rawPath) {
+    auto& pane = GetPaneContext(PaneSlot::Primary);
+    auto& nav = pane.navigator;
+
+    std::wstring currentFolder = L"";
+    std::wstring currentName = L"";
+    size_t lastSlash = renderedPath.find_last_of(L"\\/");
+    if (lastSlash != std::wstring::npos) {
+        currentFolder = renderedPath.substr(0, lastSlash + 1);
+        currentName = renderedPath.substr(lastSlash + 1);
+    } else {
+        currentName = renderedPath;
+    }
+
+    // Get the base filename without extension as initial text
+    std::wstring initialStem = currentName;
+    size_t dotPos = initialStem.find_last_of(L'.');
+    if (dotPos != std::wstring::npos) {
+        initialStem = initialStem.substr(0, dotPos);
+    }
+
+    // Get original extensions (maintaining original case)
+    std::wstring rExt = L"";
+    size_t rDot = renderedPath.find_last_of(L'.');
+    if (rDot != std::wstring::npos) rExt = renderedPath.substr(rDot);
+
+    std::wstring wExt = L"";
+    size_t wDot = rawPath.find_last_of(L'.');
+    if (wDot != std::wstring::npos) wExt = rawPath.substr(wDot);
+
+    auto extLabel = [](const std::wstring& p) {
+        std::wstring l;
+        std::wstring_view e = QuickView::ExtensionOf(p);
+        if (!e.empty()) e.remove_prefix(1); // drop the dot
+        for (wchar_t c : e) l += (wchar_t)std::towupper(c);
+        return l;
+    };
+    const std::wstring rLabel = extLabel(renderedPath); // e.g. JPG
+    const std::wstring wLabel = extLabel(rawPath);      // e.g. CR3
+
+    // Ask which files to rename in a single integrated input dialog
+    const std::wstring btnPair = rLabel + L" + " + wLabel; // both
+    const std::wstring btnRaw  = wLabel + L" only";        // RAW only
+    const std::wstring btnJpg  = rLabel + L" only";        // JPG only
+    std::vector<DialogButton> btns;
+    btns.emplace_back(DialogResult::Yes, btnPair.c_str());
+    btns.emplace_back(DialogResult::Custom2, btnRaw.c_str());
+    btns.emplace_back(DialogResult::Custom1, btnJpg.c_str());
+    btns.emplace_back(DialogResult::Cancel, L"Cancel");
+
+    AppContext::GetInstance().CompareCtrl->CenterDialogOnPaneIfNeeded(hwnd, ComparePane::Right);
+    DialogResult choice = DialogResult::None;
+    std::wstring newStem = AppContext::GetInstance().DialogCtrl->ShowInputDialog(
+        hwnd, AppStrings::Context_Rename, L"Enter new filename:", initialStem, btns, choice);
+    ClearDialogCenter();
+
+    if (choice != DialogResult::Yes && choice != DialogResult::Custom1 && choice != DialogResult::Custom2) {
+        return; // Cancel / Esc
+    }
+
+    if (newStem.empty() || (newStem == initialStem && choice == DialogResult::Yes)) {
+        return; // Cancel or no change
+    }
+
+    const bool renameRendered = (choice == DialogResult::Yes || choice == DialogResult::Custom1);
+    const bool renameRaw      = (choice == DialogResult::Yes || choice == DialogResult::Custom2);
+
+    std::wstring newRenderedPath = renameRendered ? (currentFolder + newStem + rExt) : renderedPath;
+    std::wstring newRawPath = renameRaw ? (currentFolder + newStem + wExt) : rawPath;
+
+    // Release resources first (file lock protection)
+    ReleaseImageResources();
+
+    bool ok = false;
+    if (renameRendered && renameRaw) {
+        // Rename both
+        if (MoveFileW(renderedPath.c_str(), newRenderedPath.c_str())) {
+            if (MoveFileW(rawPath.c_str(), newRawPath.c_str())) {
+                g_undoManager.PushRename(renderedPath + L"|" + rawPath, newRenderedPath + L"|" + newRawPath, false);
+                ok = true;
+            } else {
+                // Rollback rendered if raw fails
+                MoveFileW(newRenderedPath.c_str(), renderedPath.c_str());
+            }
+        }
+    } else if (renameRendered) {
+        if (MoveFileW(renderedPath.c_str(), newRenderedPath.c_str())) {
+            g_undoManager.PushRename(renderedPath, newRenderedPath, false);
+            ok = true;
+        }
+    } else if (renameRaw) {
+        if (MoveFileW(rawPath.c_str(), newRawPath.c_str())) {
+            g_undoManager.PushRename(rawPath, newRawPath, false);
+            ok = true;
+        }
+    }
+
+    if (ok) {
+        g_osd.Show(hwnd, L"Renamed", false);
+        
+        // Relocate primary path view state
+        const std::wstring activeViewPath = (pane.path == rawPath) ? newRawPath : newRenderedPath;
+        
+        // Handle global pair tracking state updates
+        if (!g_pairViewRawPath.empty()) {
+            g_pairViewRawPath = newRawPath;
+            g_pairViewRenderedPath = newRenderedPath;
+        }
+
+        pane.path = activeViewPath;
+        nav.Initialize(activeViewPath, hwnd); // Re-initialize lists & auto-paired again!
+        
+        g_preservedViewState = pane.view;
+        g_preserveViewStateOnNextLoad = true;
+        LoadImageAsync(hwnd, nav.GetResolvedPath(activeViewPath).c_str());
+    } else {
+        // Restore view on failure
+        g_preservedViewState = pane.view;
+        g_preserveViewStateOnNextLoad = true;
+        LoadImageAsync(hwnd, nav.GetResolvedPath(pane.path).c_str());
+        g_osd.Show(hwnd, L"Rename Failed", true);
     }
     RequestRepaint(PaintLayer::All);
 }
@@ -14216,7 +14379,11 @@ bool HandleHotkeyAction(HWND hwnd, HotkeyAction action) {
         if (g_undoManager.CanUndo()) {
             UndoAction undo = g_undoManager.Pop();
             if (undo.type == UndoType::Delete) {
-                if (RestoreDeletedFile(hwnd, undo.path)) {
+                bool ok = RestoreDeletedFile(hwnd, undo.path);
+                if (!undo.oldPath.empty()) {
+                    ok = RestoreDeletedFile(hwnd, undo.oldPath) && ok;
+                }
+                if (ok) {
                     g_osd.Show(hwnd, AppStrings::OSD_UndoDeleteSuccess, false);
                     
                     if (IsCompareModeActive()) {
@@ -14243,11 +14410,30 @@ bool HandleHotkeyAction(HWND hwnd, HotkeyAction action) {
                     g_osd.Show(hwnd, AppStrings::OSD_UndoDeleteFailed, false);
                 }
             } else if (undo.type == UndoType::Rename) {
-                if (MoveFileW(undo.path.c_str(), undo.oldPath.c_str())) {
+                size_t pipePos = undo.path.find(L'|');
+                bool ok = false;
+                std::wstring targetLoadPath;
+                if (pipePos != std::wstring::npos) {
+                    std::wstring path1 = undo.path.substr(0, pipePos);
+                    std::wstring path2 = undo.path.substr(pipePos + 1);
+                    size_t oldPipePos = undo.oldPath.find(L'|');
+                    if (oldPipePos != std::wstring::npos) {
+                        std::wstring oldPath1 = undo.oldPath.substr(0, oldPipePos);
+                        std::wstring oldPath2 = undo.oldPath.substr(oldPipePos + 1);
+                        ok = MoveFileW(path1.c_str(), oldPath1.c_str()) &&
+                             MoveFileW(path2.c_str(), oldPath2.c_str());
+                        targetLoadPath = oldPath1; // load JPG after undo
+                    }
+                } else {
+                    ok = MoveFileW(undo.path.c_str(), undo.oldPath.c_str());
+                    targetLoadPath = undo.oldPath;
+                }
+
+                if (ok) {
                     g_osd.Show(hwnd, AppStrings::OSD_UndoRenameSuccess, false);
                     if (IsCompareModeActive()) {
                         if (undo.leftSlot) {
-                            AppContext::GetInstance().CompareCtrl->LoadImageIntoLeftSlot(hwnd, undo.oldPath, [](bool success) {
+                            AppContext::GetInstance().CompareCtrl->LoadImageIntoLeftSlot(hwnd, targetLoadPath, [](bool success) {
                                 if (success) {
                                     AppContext::GetInstance().Compare.activePane = ComparePane::Left;
                                     AppContext::GetInstance().Compare.contextPane = ComparePane::Left;
@@ -14257,13 +14443,13 @@ bool HandleHotkeyAction(HWND hwnd, HotkeyAction action) {
                                 }
                             });
                         } else {
-                            GetPaneContext(PaneSlot::Primary).navigator.Initialize(undo.oldPath, hwnd);
-                            LoadImageAsync(hwnd, GetPaneContext(PaneSlot::Primary).navigator.GetResolvedPath(undo.oldPath).c_str());
+                            GetPaneContext(PaneSlot::Primary).navigator.Initialize(targetLoadPath, hwnd);
+                            LoadImageAsync(hwnd, GetPaneContext(PaneSlot::Primary).navigator.GetResolvedPath(targetLoadPath).c_str());
                             MarkCompareDirty();
                         }
                     } else {
-                        GetPaneContext(PaneSlot::Primary).navigator.Initialize(undo.oldPath, hwnd);
-                        LoadImageAsync(hwnd, GetPaneContext(PaneSlot::Primary).navigator.GetResolvedPath(undo.oldPath).c_str());
+                        GetPaneContext(PaneSlot::Primary).navigator.Initialize(targetLoadPath, hwnd);
+                        LoadImageAsync(hwnd, GetPaneContext(PaneSlot::Primary).navigator.GetResolvedPath(targetLoadPath).c_str());
                     }
                 } else {
                     g_osd.Show(hwnd, AppStrings::OSD_UndoRenameFailed, false);

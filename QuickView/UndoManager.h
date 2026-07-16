@@ -44,6 +44,18 @@ public:
         m_undoStack.push_back(action);
     }
 
+    void PushDeletePair(const std::wstring& path1, const std::wstring& path2, bool leftSlot) {
+        if (m_undoStack.size() >= MAX_UNDO_DEPTH) {
+            m_undoStack.erase(m_undoStack.begin());
+        }
+        UndoAction action;
+        action.type = UndoType::Delete;
+        action.path = path1;
+        action.oldPath = path2; // Store the RAW path
+        action.leftSlot = leftSlot;
+        m_undoStack.push_back(action);
+    }
+
     void PushRename(const std::wstring& oldPath, const std::wstring& newPath, bool leftSlot) {
         if (m_undoStack.size() >= MAX_UNDO_DEPTH) {
             m_undoStack.erase(m_undoStack.begin());

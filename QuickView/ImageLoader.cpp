@@ -10509,6 +10509,10 @@ int64_t ReadCaptureTimeFallback(const wchar_t *filePath) {
   if (QuickView::IsRawPath(filePath)) {
     LibRaw RawProcessor;
 
+#ifdef _WIN32
+    if (RawProcessor.open_file(filePath) != LIBRAW_SUCCESS)
+      return 0;
+#else
     std::string pathUtf8;
     int len = WideCharToMultiByte(CP_UTF8, 0, filePath, -1, NULL, 0, NULL, NULL);
     if (len <= 0)
@@ -10519,6 +10523,7 @@ int64_t ReadCaptureTimeFallback(const wchar_t *filePath) {
 
     if (RawProcessor.open_file(pathUtf8.c_str()) != LIBRAW_SUCCESS)
       return 0;
+#endif
     return (int64_t)RawProcessor.imgdata.other.timestamp;
   }
 
@@ -10582,6 +10587,10 @@ static HRESULT ReadMetadataLibRaw(LPCWSTR filePath,
   // Use LibRaw to extract ISO, Shutter, etc. fast.
   LibRaw RawProcessor;
 
+#ifdef _WIN32
+  if (RawProcessor.open_file(filePath) != LIBRAW_SUCCESS)
+    return E_FAIL;
+#else
   // Conversion helper for LibRaw::open_file
   std::string pathUtf8;
   {
@@ -10597,6 +10606,7 @@ static HRESULT ReadMetadataLibRaw(LPCWSTR filePath,
 
   if (RawProcessor.open_file(pathUtf8.c_str()) != LIBRAW_SUCCESS)
     return E_FAIL;
+#endif
 
   // [v5.8] Dimensions
   if (RawProcessor.imgdata.sizes.width > 0 &&
@@ -14387,6 +14397,10 @@ HRESULT CImageLoader::GetEmbeddedPreviewInfo(LPCWSTR filePath, int *width,
   // Use LibRaw to extract thumbnail Dimensions FAST.
   LibRaw RawProcessor;
 
+#ifdef _WIN32
+  if (RawProcessor.open_file(filePath) != LIBRAW_SUCCESS)
+    return E_FAIL;
+#else
   // Conversion helper (same as ReadMetadataLibRaw)
   std::string pathUtf8;
   {
@@ -14402,6 +14416,7 @@ HRESULT CImageLoader::GetEmbeddedPreviewInfo(LPCWSTR filePath, int *width,
 
   if (RawProcessor.open_file(pathUtf8.c_str()) != LIBRAW_SUCCESS)
     return E_FAIL;
+#endif
 
   // Try unpack_thumb to get dimensions (unfortunately needed for some formats)
   // Optimization: Check if sizes are already available in imgdata.thumbnail

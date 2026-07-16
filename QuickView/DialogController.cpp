@@ -488,13 +488,13 @@ std::optional<LRESULT> DialogController::OnLButtonDown(HWND hwnd, int x, int y) 
         if (mouseX >= layout.Buttons[i].left && mouseX <= layout.Buttons[i].right &&
             mouseY >= layout.Buttons[i].top && mouseY <= layout.Buttons[i].bottom) {
             
-            if (m_context.Dialog.HasInput && i == 0) {
+            if (m_context.Dialog.HasInput && m_context.Dialog.Buttons[i].Result != DialogResult::None && m_context.Dialog.Buttons[i].Result != DialogResult::Cancel) {
                  int len = GetWindowTextLengthW(m_context.Dialog.hEdit);
                  if (len > 0) {
                     std::vector<wchar_t> buf(len + 1);
                     GetWindowTextW(m_context.Dialog.hEdit, buf.data(), len + 1);
                     m_context.Dialog.InputText = buf.data();
-                    m_context.Dialog.FinalResult = DialogResult::Yes;
+                    m_context.Dialog.FinalResult = m_context.Dialog.Buttons[i].Result;
                  } else {
                     m_context.Dialog.FinalResult = DialogResult::None;
                  }
@@ -511,14 +511,21 @@ std::optional<LRESULT> DialogController::OnLButtonDown(HWND hwnd, int x, int y) 
 
 std::wstring DialogController::ShowInputDialog(HWND hwnd, const std::wstring& title, const std::wstring& message, const std::wstring& initialText, const std::wstring& confirmButtonText) 
 {
+    std::wstring okBtnText = confirmButtonText.empty() ? L"Rename" : confirmButtonText;
+    std::vector<DialogButton> buttons = { { DialogResult::Yes, okBtnText.c_str(), true }, { DialogResult::None, L"Cancel" } };
+    DialogResult res = DialogResult::None;
+    return ShowInputDialog(hwnd, title, message, initialText, buttons, res);
+}
+
+std::wstring DialogController::ShowInputDialog(HWND hwnd, const std::wstring& title, const std::wstring& message, const std::wstring& initialText, const std::vector<DialogButton>& buttons, DialogResult& outResult)
+{
     m_hwnd = hwnd;
     m_context.Dialog.IsVisible = true;
     m_context.Dialog.Title = title;
     m_context.Dialog.Message = message;
     m_context.Dialog.QualityText.clear();
     m_context.Dialog.AccentColor = D2D1::ColorF(D2D1::ColorF::Orange); 
-    std::wstring okBtnText = confirmButtonText.empty() ? L"Rename" : confirmButtonText;
-    m_context.Dialog.Buttons = { { DialogResult::Yes, okBtnText.c_str(), true }, { DialogResult::None, L"Cancel" } };
+    m_context.Dialog.Buttons = buttons;
     m_context.Dialog.SelectedButtonIndex = 0;
     m_context.Dialog.HasCheckbox = false;
     m_context.Dialog.HasInput = true;
@@ -545,7 +552,8 @@ std::wstring DialogController::ShowInputDialog(HWND hwnd, const std::wstring& ti
         AdjustWindowForOverlay(hwnd, true);
     }
     
-    if (m_context.Dialog.FinalResult == DialogResult::Yes) {
+    outResult = m_context.Dialog.FinalResult;
+    if (outResult != DialogResult::None && outResult != DialogResult::Cancel) {
         return m_context.Dialog.InputText;
     }
     return L"";
