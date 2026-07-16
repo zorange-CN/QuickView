@@ -163,6 +163,14 @@ enum class HotkeyAction : uint8_t {
     Help,              // Toggle Help Overlay
     Exit,              // Exit App / Restore Screen
     UndoDelete,        // Undo last delete operation (Ctrl+Z)
+    PanUp,
+    PanDown,
+    PanLeft,
+    PanRight,
+    PanUpFast,
+    PanDownFast,
+    PanLeftFast,
+    PanRightFast,
     Count              // Sentinel
 };
 
@@ -213,6 +221,14 @@ inline std::wstring_view HotkeyActionToString(HotkeyAction action) noexcept {
         case HotkeyAction::Exit: return L"Exit";
         case HotkeyAction::Loupe: return L"Loupe";
         case HotkeyAction::UndoDelete: return L"UndoDelete";
+        case HotkeyAction::PanUp: return L"PanUp";
+        case HotkeyAction::PanDown: return L"PanDown";
+        case HotkeyAction::PanLeft: return L"PanLeft";
+        case HotkeyAction::PanRight: return L"PanRight";
+        case HotkeyAction::PanUpFast: return L"PanUpFast";
+        case HotkeyAction::PanDownFast: return L"PanDownFast";
+        case HotkeyAction::PanLeftFast: return L"PanLeftFast";
+        case HotkeyAction::PanRightFast: return L"PanRightFast";
         default: return L"None";
     }
 }
@@ -259,6 +275,14 @@ inline HotkeyAction StringToHotkeyAction(std::wstring_view sv) noexcept {
     if (sv == L"Exit") return HotkeyAction::Exit;
     if (sv == L"Loupe") return HotkeyAction::Loupe;
     if (sv == L"UndoDelete") return HotkeyAction::UndoDelete;
+    if (sv == L"PanUp") return HotkeyAction::PanUp;
+    if (sv == L"PanDown") return HotkeyAction::PanDown;
+    if (sv == L"PanLeft") return HotkeyAction::PanLeft;
+    if (sv == L"PanRight") return HotkeyAction::PanRight;
+    if (sv == L"PanUpFast") return HotkeyAction::PanUpFast;
+    if (sv == L"PanDownFast") return HotkeyAction::PanDownFast;
+    if (sv == L"PanLeftFast") return HotkeyAction::PanLeftFast;
+    if (sv == L"PanRightFast") return HotkeyAction::PanRightFast;
     return HotkeyAction::None;
 }
 
@@ -647,6 +671,8 @@ struct AppConfig {
     bool InfoPanelExpanded = false;      
     bool ForceRawDecode = false;         
     bool RenderRAW = false;
+    float PanStepNormal = 20.0f;
+    float PanStepFast = 100.0f;
     
     /// <summary>
     bool IsAdvancedColorEnabled(bool isSystemHdrActive) const {

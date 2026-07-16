@@ -333,7 +333,15 @@ std::array<HotkeyBinding, static_cast<size_t>(HotkeyAction::Count)> g_hotkeys = 
     HotkeyBinding{ HotkeyAction::OverlayTogglePassthrough, KeyCombo{ VK_ESCAPE, 2 }, KeyCombo{ VK_ESCAPE, 2 } }, // Shift + Esc
     HotkeyBinding{ HotkeyAction::Help, KeyCombo{ VK_F1, 0 }, KeyCombo{ VK_F1, 0 } },
     HotkeyBinding{ HotkeyAction::Exit, KeyCombo{ VK_ESCAPE, 0 }, KeyCombo{ VK_ESCAPE, 0 } },
-    HotkeyBinding{ HotkeyAction::UndoDelete, KeyCombo{ 'Z', 1 }, KeyCombo{ 'Z', 1 } }
+    HotkeyBinding{ HotkeyAction::UndoDelete, KeyCombo{ 'Z', 1 }, KeyCombo{ 'Z', 1 } },
+    HotkeyBinding{ HotkeyAction::PanUp, KeyCombo{ VK_UP, 1 }, KeyCombo{ VK_UP, 1 } },
+    HotkeyBinding{ HotkeyAction::PanDown, KeyCombo{ VK_DOWN, 1 }, KeyCombo{ VK_DOWN, 1 } },
+    HotkeyBinding{ HotkeyAction::PanLeft, KeyCombo{ VK_LEFT, 1 }, KeyCombo{ VK_LEFT, 1 } },
+    HotkeyBinding{ HotkeyAction::PanRight, KeyCombo{ VK_RIGHT, 1 }, KeyCombo{ VK_RIGHT, 1 } },
+    HotkeyBinding{ HotkeyAction::PanUpFast, KeyCombo{ VK_UP, 3 }, KeyCombo{ VK_UP, 3 } },
+    HotkeyBinding{ HotkeyAction::PanDownFast, KeyCombo{ VK_DOWN, 3 }, KeyCombo{ VK_DOWN, 3 } },
+    HotkeyBinding{ HotkeyAction::PanLeftFast, KeyCombo{ VK_LEFT, 3 }, KeyCombo{ VK_LEFT, 3 } },
+    HotkeyBinding{ HotkeyAction::PanRightFast, KeyCombo{ VK_RIGHT, 3 }, KeyCombo{ VK_RIGHT, 3 } }
 };
 RuntimeConfig g_runtime;
 UndoManager g_undoManager;
@@ -4205,6 +4213,8 @@ void SaveConfig() {
     WritePrivateProfileStringW(L"Controls", L"RightButtonDragZoom", g_config.RightButtonDragZoom ? L"1" : L"0", iniPath.c_str());
     WritePrivateProfileStringW(L"Controls", L"WheelZoomSpeed", std::to_wstring(g_config.WheelZoomSpeed).c_str(), iniPath.c_str());
     WritePrivateProfileStringW(L"Controls", L"RightDragZoomSpeed", std::to_wstring(g_config.RightDragZoomSpeed).c_str(), iniPath.c_str());
+    WritePrivateProfileStringW(L"Controls", L"PanStepNormal", std::to_wstring(g_config.PanStepNormal).c_str(), iniPath.c_str());
+    WritePrivateProfileStringW(L"Controls", L"PanStepFast", std::to_wstring(g_config.PanStepFast).c_str(), iniPath.c_str());
     WritePrivateProfileStringW(L"Controls", L"LeftDragAction", std::to_wstring((int)g_config.LeftDragAction).c_str(), iniPath.c_str());
     WritePrivateProfileStringW(L"Controls", L"MiddleDragAction", std::to_wstring((int)g_config.MiddleDragAction).c_str(), iniPath.c_str());
     WritePrivateProfileStringW(L"Controls", L"MiddleClickAction", std::to_wstring((int)g_config.MiddleClickAction).c_str(), iniPath.c_str());
@@ -4489,6 +4499,10 @@ void LoadConfig() {
     g_config.WheelZoomSpeed = std::clamp((float)_wtof(buf), 5.0f, 50.0f);
     GetPrivateProfileStringW(L"Controls", L"RightDragZoomSpeed", L"1.0", buf, 64, iniPath.c_str());
     g_config.RightDragZoomSpeed = std::clamp((float)_wtof(buf), 0.1f, 3.0f);
+    GetPrivateProfileStringW(L"Controls", L"PanStepNormal", L"20.0", buf, 64, iniPath.c_str());
+    g_config.PanStepNormal = std::clamp((float)_wtof(buf), 1.0f, 100.0f);
+    GetPrivateProfileStringW(L"Controls", L"PanStepFast", L"100.0", buf, 64, iniPath.c_str());
+    g_config.PanStepFast = std::clamp((float)_wtof(buf), 10.0f, 500.0f);
     g_config.LeftDragAction = (MouseAction)GetPrivateProfileIntW(L"Controls", L"LeftDragAction", (int)MouseAction::WindowDrag, iniPath.c_str());
     g_config.MiddleDragAction = (MouseAction)GetPrivateProfileIntW(L"Controls", L"MiddleDragAction", (int)MouseAction::PanImage, iniPath.c_str());
     g_config.MiddleClickAction = (MouseAction)GetPrivateProfileIntW(L"Controls", L"MiddleClickAction", (int)MouseAction::ExitApp, iniPath.c_str());
@@ -13816,6 +13830,67 @@ bool HandleHotkeyAction(HWND hwnd, HotkeyAction action) {
                 } else {
                     g_osd.Show(hwnd, AppStrings::OSD_UndoTransformFailed, false);
                 }
+            }
+        }
+        return true;
+    }
+
+    case HotkeyAction::PanUp:
+    case HotkeyAction::PanDown:
+    case HotkeyAction::PanLeft:
+    case HotkeyAction::PanRight:
+    case HotkeyAction::PanUpFast:
+    case HotkeyAction::PanDownFast:
+    case HotkeyAction::PanLeftFast:
+    case HotkeyAction::PanRightFast: {
+        float step = 0.0f;
+        if (action == HotkeyAction::PanUp || action == HotkeyAction::PanDown ||
+            action == HotkeyAction::PanLeft || action == HotkeyAction::PanRight) {
+            step = g_config.PanStepNormal;
+        } else {
+            step = g_config.PanStepFast;
+        }
+
+        float dx = 0.0f;
+        float dy = 0.0f;
+        if (action == HotkeyAction::PanUp || action == HotkeyAction::PanUpFast) {
+            dy = step;
+        } else if (action == HotkeyAction::PanDown || action == HotkeyAction::PanDownFast) {
+            dy = -step;
+        } else if (action == HotkeyAction::PanLeft || action == HotkeyAction::PanLeftFast) {
+            dx = step;
+        } else if (action == HotkeyAction::PanRight || action == HotkeyAction::PanRightFast) {
+            dx = -step;
+        }
+
+        if (IsCompareModeActive()) {
+            if (AppContext::GetInstance().Compare.activePane == ComparePane::Left) {
+                GetPaneContext(PaneSlot::Left).view.PanX += dx;
+                GetPaneContext(PaneSlot::Left).view.PanY += dy;
+                if (AppContext::GetInstance().Compare.syncPan) {
+                    GetPaneContext(PaneSlot::Primary).view.PanX += dx;
+                    GetPaneContext(PaneSlot::Primary).view.PanY += dy;
+                }
+            } else {
+                GetPaneContext(PaneSlot::Primary).view.PanX += dx;
+                GetPaneContext(PaneSlot::Primary).view.PanY += dy;
+                if (AppContext::GetInstance().Compare.syncPan) {
+                    GetPaneContext(PaneSlot::Left).view.PanX += dx;
+                    GetPaneContext(PaneSlot::Left).view.PanY += dy;
+                }
+            }
+            MarkCompareDirty();
+            RequestRepaint(PaintLayer::Image | PaintLayer::Static);
+        } else {
+            GetPaneContext(PaneSlot::Primary).view.PanX += dx;
+            GetPaneContext(PaneSlot::Primary).view.PanY += dy;
+
+            RECT rc; GetClientRect(hwnd, &rc);
+            SyncDCompState(hwnd, (float)rc.right, (float)rc.bottom);
+            if (UseSvgViewportRendering(GetPaneContext(PaneSlot::Primary).resource)) {
+                RequestRepaint(PaintLayer::Image | PaintLayer::Dynamic | PaintLayer::Static);
+            } else {
+                RequestRepaint(PaintLayer::Dynamic | PaintLayer::Static);
             }
         }
         return true;

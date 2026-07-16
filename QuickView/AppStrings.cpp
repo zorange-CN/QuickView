@@ -323,6 +323,9 @@ const wchar_t *OSD_WheelZoomSpeed = nullptr;
 const wchar_t *Help_Action_AdjustZoomSpeed = nullptr;
 const wchar_t *Help_Action_LockWindowZoom = nullptr;
 const wchar_t *Settings_Label_InvertButtons = nullptr;
+const wchar_t *Settings_Header_KeyboardPan = nullptr;
+const wchar_t *Settings_Label_PanStepNormal = nullptr;
+const wchar_t *Settings_Label_PanStepFast = nullptr;
 const wchar_t *Settings_Label_UseFixedZoom = nullptr;
 const wchar_t *Settings_Tooltip_UseFixedZoom = nullptr;
 const wchar_t *Settings_Label_FixedZoomLevels = nullptr;
@@ -5744,6 +5747,9 @@ void SetLanguage(Language lang) {
     Settings_Hotkey_Restore = L"恢复快捷键默认值";
     Settings_Hotkey_Restored = L"已恢复";
     Settings_Hotkey_MouseTip = L"提示：支持鼠标中键、侧键等鼠标多功能按键。更多侧键请在鼠标驱动中映射为键盘按键后绑定。";
+    Settings_Header_KeyboardPan = L"按键平移步长";
+    Settings_Label_PanStepNormal = L"按键平移步长 (普通)";
+    Settings_Label_PanStepFast = L"按键平移步长 (加速)";
     break;
   case Language::ChineseTraditional:
     Settings_Tab_Shortcuts = L"快捷鍵";
@@ -5752,6 +5758,9 @@ void SetLanguage(Language lang) {
     Settings_Hotkey_Restore = L"恢復快捷鍵預設值";
     Settings_Hotkey_Restored = L"已恢復";
     Settings_Hotkey_MouseTip = L"提示：支持滑鼠中鍵、側鍵等滑鼠多功能按鍵。更多側鍵請在滑鼠驅動中映射為鍵盤按鍵後綁定。";
+    Settings_Header_KeyboardPan = L"按鍵平移步長";
+    Settings_Label_PanStepNormal = L"按鍵平移步長 (普通)";
+    Settings_Label_PanStepFast = L"按鍵平移步長 (加速)";
     break;
   case Language::Japanese:
     Settings_Tab_Shortcuts = L"ショートカット";
@@ -5760,6 +5769,9 @@ void SetLanguage(Language lang) {
     Settings_Hotkey_Restore = L"既定のショートカットに戻す";
     Settings_Hotkey_Restored = L"復元されました";
     Settings_Hotkey_MouseTip = L"ヒント：中央ボタンやサイドボタンなどのマウス多機能ボタンに対応しています。その他のサイドボタンは、マウスのドライバーでキーボードのキーにマッピングしてからバインドしてください。";
+    Settings_Header_KeyboardPan = L"キーボードパン歩幅";
+    Settings_Label_PanStepNormal = L"キーボードパン歩幅 (標準)";
+    Settings_Label_PanStepFast = L"キーボードパン歩幅 (高速)";
     break;
   case Language::Russian:
     Settings_Tab_Shortcuts = L"Клавиши";
@@ -5768,6 +5780,9 @@ void SetLanguage(Language lang) {
     Settings_Hotkey_Restore = L"Сбросить горячие клавиши";
     Settings_Hotkey_Restored = L"Восстановлено";
     Settings_Hotkey_MouseTip = L"Подсказка: поддерживаются средняя кнопка, боковые и другие многофункциональные кнопки мыши. Для сопоставления дополнительных кнопок сначала назначьте их на клавиши клавиатуры в драйвере мыши.";
+    Settings_Header_KeyboardPan = L"Шаг клавиатурного сдвига";
+    Settings_Label_PanStepNormal = L"Шаг клавиатурного сдвига (Обычный)";
+    Settings_Label_PanStepFast = L"Шаг клавиатурного сдвига (Быстрый)";
     break;
   case Language::German:
     Settings_Tab_Shortcuts = L"Kürzel";
@@ -5776,6 +5791,9 @@ void SetLanguage(Language lang) {
     Settings_Hotkey_Restore = L"Standard-Tastenkombinationen wiederherstellen";
     Settings_Hotkey_Restored = L"Wiederhergestellt";
     Settings_Hotkey_MouseTip = L"Tipp: Unterstützt die mittlere Maustaste, Seitentasten und andere Multifunktionstasten. Ordnen Sie weitere Seitentasten im Maustreiber Tastaturtasten zu, um sie zu binden.";
+    Settings_Header_KeyboardPan = L"Tastatur-Pan-Schrittweite";
+    Settings_Label_PanStepNormal = L"Tastatur-Pan-Schrittweite (Normal)";
+    Settings_Label_PanStepFast = L"Tastatur-Pan-Schrittweite (Schnell)";
     break;
   case Language::Spanish:
     Settings_Tab_Shortcuts = L"Atajos";
@@ -5784,6 +5802,9 @@ void SetLanguage(Language lang) {
     Settings_Hotkey_Restore = L"Restablecer atajos predeterminados";
     Settings_Hotkey_Restored = L"Restablecido";
     Settings_Hotkey_MouseTip = L"Consejo: Admite el botón central del mouse, los botones laterales y otros botones multifunción. Asigne botones laterales adicionales a teclas del teclado en el controlador del mouse para vincularlos.";
+    Settings_Header_KeyboardPan = L"Paso de pan con teclado";
+    Settings_Label_PanStepNormal = L"Paso de pan con teclado (Normal)";
+    Settings_Label_PanStepFast = L"Paso de pan con teclado (Rápido)";
     break;
   case Language::French:
     Settings_Tab_Shortcuts = L"Raccourcis";
@@ -5792,6 +5813,9 @@ void SetLanguage(Language lang) {
     Settings_Hotkey_Restore = L"Restaurer les raccourcis par défaut";
     Settings_Hotkey_Restored = L"Restauré";
     Settings_Hotkey_MouseTip = L"Conseil : Prend en charge le bouton central de la souris, les boutons latéraux et autres boutons multifonctions. Mappez les boutons latéraux supplémentaires sur les touches du clavier dans le pilote de votre souris pour les lier.";
+    Settings_Header_KeyboardPan = L"Pas de pan clavier";
+    Settings_Label_PanStepNormal = L"Pas de pan clavier (Normal)";
+    Settings_Label_PanStepFast = L"Pas de pan clavier (Rapide)";
     break;
   case Language::English:
   default:
@@ -5801,6 +5825,9 @@ void SetLanguage(Language lang) {
     Settings_Hotkey_Restore = L"Restore Default Hotkeys";
     Settings_Hotkey_Restored = L"Restored";
     Settings_Hotkey_MouseTip = L"Tip: Supports middle mouse button, side buttons, and other multi-function mouse keys. Map additional buttons to keyboard keys in your mouse driver to bind them.";
+    Settings_Header_KeyboardPan = L"Keyboard Pan Step";
+    Settings_Label_PanStepNormal = L"Keyboard Pan Step (Normal)";
+    Settings_Label_PanStepFast = L"Keyboard Pan Step (Fast)";
     break;
   }
 }
@@ -6078,6 +6105,118 @@ std::wstring GetHotkeyActionName(HotkeyAction action) {
     case HotkeyAction::Exit:
         raw = AppStrings::Context_Exit;
         break;
+    case HotkeyAction::PanUp: {
+        needsCleaning = false;
+        switch (GetActiveLanguage()) {
+        case AppStrings::Language::ChineseSimplified:  raw = L"向上平移"; break;
+        case AppStrings::Language::ChineseTraditional: raw = L"向上平移"; break;
+        case AppStrings::Language::Japanese:           raw = L"上にパン"; break;
+        case AppStrings::Language::Russian:            raw = L"Сдвиг вверх"; break;
+        case AppStrings::Language::German:             raw = L"Nach oben verschieben"; break;
+        case AppStrings::Language::Spanish:            raw = L"Pan hacia arriba"; break;
+        case AppStrings::Language::French:             raw = L"Déplacer vers le haut"; break;
+        default:                                       raw = L"Pan Up"; break;
+        }
+        break;
+    }
+    case HotkeyAction::PanDown: {
+        needsCleaning = false;
+        switch (GetActiveLanguage()) {
+        case AppStrings::Language::ChineseSimplified:  raw = L"向下平移"; break;
+        case AppStrings::Language::ChineseTraditional: raw = L"向下平移"; break;
+        case AppStrings::Language::Japanese:           raw = L"下にパン"; break;
+        case AppStrings::Language::Russian:            raw = L"Сдвиг вниз"; break;
+        case AppStrings::Language::German:             raw = L"Nach unten verschieben"; break;
+        case AppStrings::Language::Spanish:            raw = L"Pan hacia abajo"; break;
+        case AppStrings::Language::French:             raw = L"Déplacer vers le bas"; break;
+        default:                                       raw = L"Pan Down"; break;
+        }
+        break;
+    }
+    case HotkeyAction::PanLeft: {
+        needsCleaning = false;
+        switch (GetActiveLanguage()) {
+        case AppStrings::Language::ChineseSimplified:  raw = L"向左平移"; break;
+        case AppStrings::Language::ChineseTraditional: raw = L"向左平移"; break;
+        case AppStrings::Language::Japanese:           raw = L"左にパン"; break;
+        case AppStrings::Language::Russian:            raw = L"Сдвиг влево"; break;
+        case AppStrings::Language::German:             raw = L"Nach links verschieben"; break;
+        case AppStrings::Language::Spanish:            raw = L"Pan hacia la izquierda"; break;
+        case AppStrings::Language::French:             raw = L"Déplacer vers la gauche"; break;
+        default:                                       raw = L"Pan Left"; break;
+        }
+        break;
+    }
+    case HotkeyAction::PanRight: {
+        needsCleaning = false;
+        switch (GetActiveLanguage()) {
+        case AppStrings::Language::ChineseSimplified:  raw = L"向右平移"; break;
+        case AppStrings::Language::ChineseTraditional: raw = L"向右平移"; break;
+        case AppStrings::Language::Japanese:           raw = L"右にパン"; break;
+        case AppStrings::Language::Russian:            raw = L"Сдвиг вправо"; break;
+        case AppStrings::Language::German:             raw = L"Nach rechts verschieben"; break;
+        case AppStrings::Language::Spanish:            raw = L"Pan hacia la derecha"; break;
+        case AppStrings::Language::French:             raw = L"Déplacer vers la droite"; break;
+        default:                                       raw = L"Pan Right"; break;
+        }
+        break;
+    }
+    case HotkeyAction::PanUpFast: {
+        needsCleaning = false;
+        switch (GetActiveLanguage()) {
+        case AppStrings::Language::ChineseSimplified:  raw = L"向上平移 (加速)"; break;
+        case AppStrings::Language::ChineseTraditional: raw = L"向上平移 (加速)"; break;
+        case AppStrings::Language::Japanese:           raw = L"上にパン (高速)"; break;
+        case AppStrings::Language::Russian:            raw = L"Быстрый сдвиг вверх"; break;
+        case AppStrings::Language::German:             raw = L"Nach oben verschieben (schnell)"; break;
+        case AppStrings::Language::Spanish:            raw = L"Pan hacia arriba (rápido)"; break;
+        case AppStrings::Language::French:             raw = L"Déplacer vers le haut (rapide)"; break;
+        default:                                       raw = L"Pan Up (Fast)"; break;
+        }
+        break;
+    }
+    case HotkeyAction::PanDownFast: {
+        needsCleaning = false;
+        switch (GetActiveLanguage()) {
+        case AppStrings::Language::ChineseSimplified:  raw = L"向下平移 (加速)"; break;
+        case AppStrings::Language::ChineseTraditional: raw = L"向下平移 (加速)"; break;
+        case AppStrings::Language::Japanese:           raw = L"下にパン (高速)"; break;
+        case AppStrings::Language::Russian:            raw = L"Быстрый сдвиг вниз"; break;
+        case AppStrings::Language::German:             raw = L"Nach unten verschieben (schnell)"; break;
+        case AppStrings::Language::Spanish:            raw = L"Pan hacia abajo (rápido)"; break;
+        case AppStrings::Language::French:             raw = L"Déplacer vers le bas (rapide)"; break;
+        default:                                       raw = L"Pan Down (Fast)"; break;
+        }
+        break;
+    }
+    case HotkeyAction::PanLeftFast: {
+        needsCleaning = false;
+        switch (GetActiveLanguage()) {
+        case AppStrings::Language::ChineseSimplified:  raw = L"向左平移 (加速)"; break;
+        case AppStrings::Language::ChineseTraditional: raw = L"向左平移 (加速)"; break;
+        case AppStrings::Language::Japanese:           raw = L"左にパン (高速)"; break;
+        case AppStrings::Language::Russian:            raw = L"Быстрый сдвиг влево"; break;
+        case AppStrings::Language::German:             raw = L"Nach links verschieben (schnell)"; break;
+        case AppStrings::Language::Spanish:            raw = L"Pan hacia la izquierda (rápido)"; break;
+        case AppStrings::Language::French:             raw = L"Déplacer vers la gauche (rapide)"; break;
+        default:                                       raw = L"Pan Left (Fast)"; break;
+        }
+        break;
+    }
+    case HotkeyAction::PanRightFast: {
+        needsCleaning = false;
+        switch (GetActiveLanguage()) {
+        case AppStrings::Language::ChineseSimplified:  raw = L"向右平移 (加速)"; break;
+        case AppStrings::Language::ChineseTraditional: raw = L"向右平移 (加速)"; break;
+        case AppStrings::Language::Japanese:           raw = L"右にパン (高速)"; break;
+        case AppStrings::Language::Russian:            raw = L"Быстрый сдвиг вправо"; break;
+        case AppStrings::Language::German:             raw = L"Nach rechts verschieben (schnell)"; break;
+        case AppStrings::Language::Spanish:            raw = L"Pan hacia la derecha (rápido)"; break;
+        case AppStrings::Language::French:             raw = L"Déplacer vers la droite (rapide)"; break;
+        default:                                       raw = L"Pan Right (Fast)"; break;
+        }
+        break;
+    }
     default:
         needsCleaning = false;
         raw = L"None";

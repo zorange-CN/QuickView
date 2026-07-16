@@ -359,6 +359,9 @@ namespace AppStrings {
     extern const wchar_t* Help_Action_AdjustZoomSpeed;
     extern const wchar_t* Help_Action_LockWindowZoom;
     extern const wchar_t* Settings_Label_InvertButtons;
+    extern const wchar_t* Settings_Header_KeyboardPan;
+    extern const wchar_t* Settings_Label_PanStepNormal;
+    extern const wchar_t* Settings_Label_PanStepFast;
     extern const wchar_t* Settings_Label_UseFixedZoom;
     extern const wchar_t* Settings_Tooltip_UseFixedZoom;
     extern const wchar_t* Settings_Label_FixedZoomLevels;

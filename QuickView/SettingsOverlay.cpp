@@ -1745,6 +1745,16 @@ void SettingsOverlay::BuildMenu() {
     };
     tabControl.items.push_back(itemMiddleClick);
     
+    tabControl.items.push_back({ AppStrings::Settings_Header_KeyboardPan, OptionType::Header });
+    
+    SettingsItem itemPanNormal = { AppStrings::Settings_Label_PanStepNormal, OptionType::Slider, nullptr, &g_config.PanStepNormal, nullptr, nullptr, 1.0f, 100.0f, {}, L"%.0f px" };
+    itemPanNormal.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) { SaveConfig(); };
+    tabControl.items.push_back(itemPanNormal);
+
+    SettingsItem itemPanFast = { AppStrings::Settings_Label_PanStepFast, OptionType::Slider, nullptr, &g_config.PanStepFast, nullptr, nullptr, 10.0f, 500.0f, {}, L"%.0f px" };
+    itemPanFast.onChange = []([[maybe_unused]] SettingsOverlay* overlay, [[maybe_unused]] SettingsItem* item) { SaveConfig(); };
+    tabControl.items.push_back(itemPanFast);
+
     tabControl.items.push_back({ AppStrings::Settings_Header_Edge, OptionType::Header });
     tabControl.items.push_back({ AppStrings::Settings_Label_EdgeNavClick, OptionType::Toggle, &g_config.EdgeNavClick });
     tabControl.items.push_back({ AppStrings::Settings_Label_DisableEdgeNavInCompare, OptionType::Toggle, &g_config.DisableEdgeNavInCompare });
@@ -1800,6 +1810,8 @@ void SettingsOverlay::BuildMenu() {
         // Category Group Headers
         if (action == HotkeyAction::NavNext) {
             tabKeys.items.push_back({ isChinese ? L"图片导航" : L"Navigation", OptionType::Header });
+        } else if (action == HotkeyAction::PanUp) {
+            tabKeys.items.push_back({ isChinese ? L"图片平移" : L"Image Panning", OptionType::Header });
         } else if (action == HotkeyAction::ZoomIn) {
             tabKeys.items.push_back({ isChinese ? L"图片缩放" : L"Zoom", OptionType::Header });
         } else if (action == HotkeyAction::RotateCW) {
